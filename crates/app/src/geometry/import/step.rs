@@ -26,6 +26,10 @@ use crate::geometry::{Mesh, Point3, Triangle};
 
 /// Lower bound for tessellation tolerance; truck asserts tol >= 1e-7.
 const MIN_TOL: f64 = 1e-6;
+/// The coarsest chord tolerance a STEP mesh is made at (mm): half the
+/// program sim's verdict tolerance, so the facets' sagitta on a curved
+/// wall stays inside what the gouge verdict already forgives (#689).
+const MAX_CHORD: f64 = crate::stock_sim::DEV_TOL * 0.5;
 
 pub fn parse(data: &[u8]) -> Result<Mesh, ImportError> {
     if data.is_empty() {
@@ -147,8 +151,15 @@ fn shell_facets(
         Ok(facets)
     };
     // Quality target: ~0.1% of the model extent, floored so tiny parts still
-    // subdivide and truck's assert (tol >= 1e-7) holds.
-    let tol_target = (extent * 1e-3).max(MIN_TOL);
+    // subdivide and truck's assert (tol >= 1e-7) holds - and never coarser
+    // than half the program gate's verdict tolerance (#689). The sim judges
+    // the program against these facets, and on a concave wall a chord
+    // stands inside the true surface by its sagitta: a mesh coarser than
+    // the verdict charged a bore at the hole's own size as a gouge the
+    // wall's full height. Half the verdict leaves the other half for the
+    // cut itself, so a nominal finish passes and 0.05 mm into the wall is
+    // still a gouge. The facet budget below still bounds the mesh.
+    let tol_target = (extent * 1e-3).min(MAX_CHORD).max(MIN_TOL);
     // Start 250x coarser than the target - the first pass then costs a few
     // dozen triangles per face no matter how big the model, so no shell can
     // silently allocate a monster mesh before we have measured it.

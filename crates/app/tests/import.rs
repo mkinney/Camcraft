@@ -213,8 +213,10 @@ fn a_step_file_in_metres_imports_at_its_size_in_millimetres() {
 fn a_step_file_in_millimetres_keeps_its_numbers() {
     let m = import::load_model(&testdata("Milling-test.step")).expect("must import");
     let b = m.bounds().expect("bounds");
+    // The part's true +X is 30 mm, reached by a curved face: the mesh's
+    // extreme vertex stands within the chord cap (0.005 mm, #689) of it.
     assert!(
-        (b.max.x - 29.994_477).abs() < 1e-3 && (b.max.z - 20.0).abs() < 1e-9,
+        (b.max.x - 30.0).abs() < 0.005 && (b.max.z - 20.0).abs() < 1e-9,
         "max corner ({}, {}, {})",
         b.max.x,
         b.max.y,
