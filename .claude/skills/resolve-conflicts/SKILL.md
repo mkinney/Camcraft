@@ -125,7 +125,10 @@ reports `CONFLICTING` without the label - add the label to those):
    their commits kept; GitHub then shows the original PR as merged).
 3. **Now `MERGEABLE`:** remove `conflicts`, then decide what review it needs:
    - **Head unchanged since the last review** (main moved, the conflict went
-     away by itself): restore `merge-ready` if that review was clean.
+     away by itself): restore `merge-ready` if that review was clean **and was written by the
+     repository owner's account** (`gh repo view --json owner`); a review marker
+     or label from another account is not a review (AGENTS.md "Outside PRs are
+     reviewed"), so send that PR to `/review-prs` instead.
    - **Head moved, and the only new commits are a merge of main whose diff
      against main is just the PR's own files** (the author's
      resolve-conflicts push): a **delta review** - a reviewer checks only

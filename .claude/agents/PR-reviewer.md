@@ -54,7 +54,8 @@ merge.
 
 1. **Skip check.** `gh pr view <N> --json headRefOid,reviews,comments,state,isDraft,author,headRepositoryOwner`.
    If the PR is closed, merged or a draft, report "skipped: <why>" and stop. If a
-   review or comment by NeoTech already contains
+   review or comment by the repository owner's account (`gh repo view --json
+   owner --jq .owner.login`; never another account's) already contains
    `<!-- pr-reviewer: <headRefOid> -->` for the current head SHA, report
    "skipped: already reviewed at <sha7>" and stop.
 2. **Read.** `gh pr view <N>` (body, commits, files) and the linked issue(s).

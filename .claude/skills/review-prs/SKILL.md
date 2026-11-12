@@ -46,14 +46,21 @@ draft (or not open), say "PR #N is a draft - not reviewed until it is marked
 ready (`gh pr ready N`)" in one line and stop. Otherwise take just that one
 and go to step 2.
 
-Otherwise list open PRs that are ready for review (non-draft) with their head SHA and reviews:
+Otherwise list open PRs that are ready for review (non-draft) with their head SHA and reviews.
+**Only the repository owner's account counts as a reviewer** (maintainer,
+2026-11-12, #1207: "No, only ours count"): a marker comment or review written by
+anyone else - a contributor running this skill on their own PR included - is
+not a review, so that head still needs one. The owner is read from the repo,
+not hard-coded:
 
 ```bash
+OWNER=$(gh repo view NeoTech/Camcraft --json owner --jq .owner.login)
 gh pr list --repo NeoTech/Camcraft --state open --limit 100 \
   --json number,isDraft,author,headRepositoryOwner,headRefOid,reviews,comments \
-  --jq '.[] | select(.isDraft|not)
+  | jq -r --arg o "$OWNER" '.[] | select(.isDraft|not)
         | .headRefOid as $s
-        | select([.reviews[].body, .comments[].body] | map(select(contains("<!-- pr-reviewer: " + $s))) | length == 0)
+        | select([(.reviews[], .comments[]) | select(.author.login == $o) | .body]
+                 | map(select(contains("<!-- pr-reviewer: " + $s))) | length == 0)
         | "\(.number) \(.author.login) \($s)"'
 ```
 
@@ -62,8 +69,9 @@ Every line printed is a PR that needs a review:
   "All PR*s made by owner should be reviewd and tagged"); our own PRs are
   flagged ready by a quick pass (AGENTS.md "Every PR opens as a draft") and
   get their full review here;
-- no review or comment carries the marker for its current head SHA (a new push
-  after our last review means the contributor answered - review again).
+- no review or comment **by the owner's account** carries the marker for its
+  current head SHA (a new push after our last review means the contributor
+  answered - review again; a marker from another account does not count).
 
 Nothing to review: say "no PRs need review" in one line and stop (this is the
 common case on a loop tick - keep it quiet).
@@ -126,6 +134,15 @@ was clean. Merging a PR can turn others `CONFLICTING`, so each run also
 re-checks every open PR labelled `merge-ready` and swaps any that now
 conflict to `conflicts`.
 
+**Foreign `merge-ready` labels are removed** (#1207). Each run also checks
+every open PR labelled `merge-ready`: read who set the label last
+(`gh api repos/NeoTech/Camcraft/issues/<N>/events --paginate --jq '[.[] |
+select(.event == "labeled" and .label.name == "merge-ready")] | last |
+.actor.login'`). If that is not the owner's account and no owner-authored
+marker for the PR's current head exists (the step 1 test), remove the label
+and comment one line: "merge-ready removed: only the repository owner's
+review counts; this head has no owner review (a review is queued)."
+
 ## 2c. Token cost comment - when a PR turns merge-ready
 
 When a review ends with the PR labelled `merge-ready` (step 2b), the
@@ -149,7 +166,8 @@ merge ready").
   Sonnet 5.5 about $2.80, Haiku 5.5 about $0.14. When list prices change,
   update these numbers from the `claude-api` skill's model table.
 - **Comment shape** (one comment, first line is the marker so it's never
-  posted twice for the same head):
+  posted twice for the same head; only a `review-cost` marker authored by the
+  repository owner's account counts as already posted):
 
   ```
   <!-- review-cost: <head sha> -->

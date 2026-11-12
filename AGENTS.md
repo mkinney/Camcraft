@@ -875,7 +875,7 @@ run on demand (`/review-prs`, or `/review-prs <N>` for one PR) and on a loop
 its own worktree, builds, runs the suites it touches and clippy, checks this
 file's laws, and posts a plain review **comment** whose first line is
 `<!-- pr-reviewer: <head sha> -->` (the marker that stops a second review of
-the same push), and sets the review label (below). It never approves, requests changes, merges or pushes:
+the same push), and sets the review label (below). Only the repository owner's account counts as a reviewer (maintainer, 2026-11-12, #1207: "No, only ours count"): a marker or `merge-ready` label from any other account is not a review and is removed, and a contributor's own pre-check is a plain comment without the marker. It never approves, requests changes, merges or pushes:
 the user approves and merges an outside PR by hand ("make sure u leave a
 comment and allow us to approve it manually"). **Never two PR reviews at
 once** ("make sure we are not running concurrent PR reviews"): one PR per
