@@ -12,6 +12,9 @@ use super::GenError;
 use super::front::{densify, dist, len, rotate_to, thin};
 use super::near::SegIndex;
 
+#[path = "simplify.rs"]
+mod simplify;
+
 /// Arc flattening of the rings' fillets (mm): about 2.6 degrees a chord
 /// on a 1 mm fillet.
 pub(super) const ARC_TOL: f64 = 2.5e-4;
@@ -33,8 +36,32 @@ pub(super) const SEG: f64 = 0.2;
 /// The morph's nearest-point grid (mm).
 pub(super) const NEAR_CELL: f64 = 0.5;
 
+/// The opening thins its area's outline to within this (mm) first
+/// (`simplify`, issue #882): the rings' own arc flattening, the finest
+/// shape the planner tells apart. The erosion's work goes with the
+/// square of the vertices it is handed; a STEP outline's nanometre
+/// chords cost seconds a trial and say nothing about the shape.
+pub(super) const SIMPLIFY: f64 = ARC_TOL;
+
+/// The boolean engine's lattice with room to spare (mm): the engine
+/// rounds each vertex to a nanometre.
+const LATTICE: f64 = 1e-5;
+
+/// The opening erodes this much deeper than it dilates back (mm): the
+/// thinned outline may stand [`SIMPLIFY`] outside the area, and the
+/// erosion's round joins at reflex corners another [`ARC_TOL`] (their
+/// chords pass inside the true arc). Shrunk by both, the opening lies
+/// inside the area it opens - on a wall, half a micron off it - whatever
+/// the outline's tessellation: it never cuts outside the boundary.
+pub(super) const INSET: f64 = SIMPLIFY + ARC_TOL + LATTICE;
+
+/// The morphological opening of `r` at `rho` (Serra 1982), its outline
+/// thinned to [`SIMPLIFY`] first and the result kept inside `r`
+/// ([`INSET`]).
 pub(super) fn open(r: &Region, rho: f64) -> Result<Region, GenError> {
-    Ok(r.offset_fine(-rho, ARC_TOL)?.offset_fine(rho, ARC_TOL)?)
+    let light = simplify::within(r, SIMPLIFY);
+    let r = light.as_ref().unwrap_or(r);
+    Ok(r.offset_fine(-(rho + INSET), ARC_TOL)?.offset_fine(rho, ARC_TOL)?)
 }
 
 pub(super) fn one_loop(r: &Region) -> bool {
