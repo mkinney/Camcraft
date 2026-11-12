@@ -26,7 +26,7 @@ use super::rings::circle;
 use super::spiral::revolution;
 use super::star::orbit_radius;
 use super::trochoid::choose_step;
-use super::{AdaptivePlan, AdaptiveSpec, BITE_LOAD, GRID_PER_D, GenError, SPIRAL_STEPS, lift, wall};
+use super::{AdaptivePlan, AdaptiveSpec, BITE_LOAD, GRID_PER_D, GenError, SPIRAL_STEPS, lift_travel, wall};
 
 /// A trochoid of more loops a level than this is impractical (the
 /// user's 14 mm band reads 2575 at its load): refused by name, the
@@ -358,7 +358,7 @@ pub(super) fn plan_with(reach: &Region, center: &Region, s: &AdaptiveSpec, landi
         p.extend(fin);
         p.dedup_by(|a, b| dist(*a, *b) <= 1e-9);
     }
-    let mut out = AdaptivePlan { travel: lift::travel(&ras0, &passes, &joins, (s.r, rim, step, bite)), ..AdaptivePlan::default() };
+    let mut out = AdaptivePlan { travel: lift_travel::travel(&ras0, &passes, &joins, (s.r, rim, step, bite)), ..AdaptivePlan::default() };
     out.notes.push(format!(
         "adaptive: trochoidal loops - {} front arcs of radius {rho:.2} mm at a {st:.3} mm step along the channel's medial line, each reached by a microlift return; worst planned load {:.1}% of D",
         arcs.len().saturating_sub(1),

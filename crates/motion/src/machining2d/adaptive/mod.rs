@@ -45,6 +45,7 @@ mod kernel;
 mod lift;
 mod lift_link;
 mod lift_split;
+mod lift_travel;
 mod link;
 mod loops;
 // Issue #5: the trochoidal fallback (`pocket_hsm`: spiral -> trochoid ->
@@ -73,7 +74,7 @@ use star::orbit_radius;
 pub(crate) use guard::first_crossing;
 pub(crate) use troch_plan::{plan as plan_trochoid, seed as trochoid_seed};
 
-pub(crate) use lift::Travel;
+pub(crate) use lift_travel::Travel;
 pub(crate) use lift_link::Return;
 pub(crate) use loops::boundary_dist;
 /// The plan's chord sagitta (`morph`): the finest tessellation the
@@ -163,8 +164,8 @@ pub(crate) struct AdaptivePlan {
     pub notes: Vec<String>,
     /// Stock the plan leaves standing in the reach (mm^2, planner grid).
     pub rest: f64,
-    /// Its travel, read on the planner's stock (`lift::travel`).
-    pub travel: lift::Travel,
+    /// Its travel, read on the planner's stock (`lift_travel::travel`).
+    pub travel: lift_travel::Travel,
     /// Refused past the planning budget (`budget`), by this name: no
     /// passes, the area is the Offset rings'.
     pub refused: Option<String>,
@@ -300,7 +301,7 @@ fn plan_within(reach: &Region, center: &Region, s: &AdaptiveSpec, work: budget::
             }
         }
     }
-    out.travel = lift::travel(&ras0, &out.passes, &out.joins, (s.r, rim, p.step, p.bite));
+    out.travel = lift_travel::travel(&ras0, &out.passes, &out.joins, (s.r, rim, p.step, p.bite));
     if fronts {
         // Kinks the morph seams and blend joints left are spread out
         // (inside the center area only), so the walk reads smooth.

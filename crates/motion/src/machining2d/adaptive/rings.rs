@@ -34,7 +34,19 @@ pub(super) const SEG: f64 = 0.2;
 pub(super) const NEAR_CELL: f64 = 0.5;
 
 pub(super) fn open(r: &Region, rho: f64) -> Result<Region, GenError> {
-    Ok(r.offset_fine(-rho, ARC_TOL)?.offset_fine(rho, ARC_TOL)?)
+    #[cfg(test)]
+    let rho_in = rho + OPEN_INSET.with(std::cell::Cell::get);
+    #[cfg(not(test))]
+    let rho_in = rho;
+    Ok(r.offset_fine(-rho_in, ARC_TOL)?.offset_fine(rho, ARC_TOL)?)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests only (issue #982): the opening erodes this much (mm) deeper
+    /// than it dilates back - a sub-micron perturbation of every ring,
+    /// to pin that no planner decision flips on it.
+    pub(super) static OPEN_INSET: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
 }
 
 pub(super) fn one_loop(r: &Region) -> bool {

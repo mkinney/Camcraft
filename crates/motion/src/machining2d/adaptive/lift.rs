@@ -28,7 +28,9 @@
 //! none is. The easing laps are split the same way on the stock the
 //! pieces left; the last lap is cut whole. The re-ordered plan is
 //! walked on a fresh stock and kept only if it reads no worse than the
-//! spiral. Ours; the schedule, the pads and the lift are our choices.
+//! spiral - re-cut on its pieces' own fine chords first where the
+//! coarse ones read worse (issue #982). Ours; the schedule, the pads
+//! and the lift are our choices.
 
 use crate::geo2d::{Point2, Region};
 
@@ -113,8 +115,9 @@ pub(super) struct Lifted {
 }
 
 /// Split `walk` at its air stretches and re-order the pieces with lifted
-/// returns; `None` when there is nothing to lift (one piece).
-pub(super) fn lift(walk: &[Point2], ras0: &Raster, center: &Region, s: &LiftSpec) -> Result<Option<Lifted>, GenError> {
+/// returns, the fronts' pieces re-thinned where `coarse`; `None` when
+/// there is nothing to lift (one piece).
+pub(super) fn lift(walk: &[Point2], ras0: &Raster, center: &Region, s: &LiftSpec, coarse: bool) -> Result<Option<Lifted>, GenError> {
     let Some(&w0) = walk.first() else { return Ok(None) };
     let last = walk.len() - 1;
     let ease = s.laps.0.min(last);
@@ -124,7 +127,9 @@ pub(super) fn lift(walk: &[Point2], ras0: &Raster, center: &Region, s: &LiftSpec
     if pieces.len() < 2 {
         return Ok(None);
     }
-    coarsen(&mut pieces, &walk[ease..]);
+    if coarse {
+        coarsen(&mut pieces, &walk[ease..]);
+    }
     let mut out = Lifted { passes: Vec::new(), joins: Vec::new(), worst: (0.0, w0), ras: ras0.clone(), dropped: 0.0, lift: 0.0, hops: 0, rides: 0, highs: 0, links: Vec::new() };
     schedule(&mut out, pieces, center, s, true);
     if out.hops > HOP_CAP {
@@ -328,7 +333,21 @@ impl Planner<'_> {
         }
         let laps = (self.laps_from.saturating_sub(1), self.fin_from.saturating_sub(1));
         let s = LiftSpec { r: self.s.r, rim: self.rim, step: self.step, bite: self.bite, bound: self.bound, laps, orbit: (self.s.seed, self.s.helix_r) };
-        let Some(l) = lift(&self.walk, ras0, self.center, &s)? else { return Ok(None) };
+        let Some(mut l) = lift(&self.walk, ras0, self.center, &s, true)? else { return Ok(None) };
+        let limit = self.worst.0.max(self.bound) + 1e-9;
+        if l.hops <= HOP_CAP && l.worst.0 > limit {
+            // Issue #982: a coarse piece reads within the bound itself but
+            // may leave a sliver its neighbour then eats (one rim sample
+            // over, flipping with a few nm of the rings): the pieces are
+            // re-cut on their own fine chords - the spiral's - before the
+            // lifted plan is dropped.
+            if let Some(fine) = lift(&self.walk, ras0, self.center, &s, false)?
+                && fine.hops <= HOP_CAP
+                && fine.worst.0 <= limit
+            {
+                l = fine;
+            }
+        }
         if l.hops > HOP_CAP {
             // Over the hop budget: posted as lifted so the pocket's budget
             // law names it and the Offset rings cut instead - never the
@@ -337,7 +356,7 @@ impl Planner<'_> {
         }
         let (worst, left) = (l.worst.0, l.ras.standing() as f64);
         let planned = self.ras.standing() as f64;
-        if worst > self.worst.0.max(self.bound) + 1e-9 || left > planned * (1.0 + CRUMBS) + CRUMB_CELLS {
+        if worst > limit || left > planned * (1.0 + CRUMBS) + CRUMB_CELLS {
             self.plan.notes.push(format!(
                 "adaptive: the microlift plan read {worst:.1} deg over the spiral's {:.1} and left {:.1} mm2 over {:.1} - the spiral is posted as planned",
                 self.worst.0.max(self.bound),
@@ -348,45 +367,6 @@ impl Planner<'_> {
         }
         Ok(Some(l))
     }
-}
-
-/// A plan's travel, per level (XY mm): in cut, in air at the floor and
-/// lifted; and the moves it posts.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct Travel {
-    pub cut: f64,
-    pub air: f64,
-    pub lift: f64,
-    pub moves: usize,
-    /// Passes reached by the ladder's retract hop rather than a microlift
-    /// return (the entry's own first pass aside).
-    pub hops: usize,
-}
-
-/// The travel of `passes` (reached by `joins`) walked in order from
-/// `ras0`, read by `(r, rim, step, bite)`: a segment reading over the
-/// bite is cut, the rest floor air.
-pub(super) fn travel(ras0: &Raster, passes: &[Vec<Point2>], joins: &[Option<Return>], (r, rim, step, bite): (f64, f64, f64, f64)) -> Travel {
-    let mut ras = ras0.clone();
-    let mut t = Travel::default();
-    for (k, pass) in passes.iter().enumerate() {
-        if let (Some(Some(ret)), Some(from)) = (joins.get(k), k.checked_sub(1).and_then(|j| passes[j].last())) {
-            let lg = legs(*from, ret);
-            t.lift += lg.iter().map(|l| dist(l.0, l.1)).sum::<f64>();
-            t.moves += lg.len();
-        } else if k > 0 {
-            t.hops += 1;
-        }
-        for (w, m) in pass.windows(2).zip(ras.walk_marks(pass, (r, rim, step))) {
-            if m > bite {
-                t.cut += dist(w[0], w[1]);
-            } else {
-                t.air += dist(w[0], w[1]);
-            }
-        }
-        t.moves += pass.len().saturating_sub(1);
-    }
-    t
 }
 
 /// The plan's note: how many returns are lifted, over how much.
