@@ -42,13 +42,13 @@ use crate::geo2d::Point2;
 /// touching bodies, apart by float noise).
 const THIN: f64 = 1e-6;
 
-/// The offsets a grazing vertical is retried at
-/// ([`SolidIndex`]'s own parity rule).
 /// The model's facets under an XY grid, built on the first ask of a
 /// path's verdict and held by the caller (`reach`); the inner `None`
 /// is a mesh that cannot be read - failing closed.
 pub(super) type Columns<'a> = std::cell::RefCell<Option<Option<SolidIndex<'a>>>>;
 
+/// The offsets a grazing vertical is retried at
+/// ([`SolidIndex`]'s own parity rule).
 const ASIDE: [(f64, f64); 3] = [(0.0, 0.0), (1.37e-7, 0.71e-7), (-0.93e-7, 1.73e-7)];
 
 /// The air-under-material stretches `(under, over)` of a vertical's

@@ -117,3 +117,8 @@ with the height rule above it does: the grid's plane lies inside the
 range each point of its disc is asked over. #1319's pin `the_backstop_reads_the_exact_dip_lowered_by_the_span_floor`
 was ported from `backstop_columns` to `backstop_asks` with the same
 verdicts and the same exact reading (-56.43).
+
+**Known limit (XY sampling).** The backstop reads XY on the hidden law's
+0.5 mm lattice (`hidden_in_cover`), clipped to the overhang; a hidden
+pocket narrower than that lattice in both X and Y can fall between its
+verticals.
