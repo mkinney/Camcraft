@@ -839,7 +839,7 @@ holds `issues: write`.
 
 **The PR test runner** (#1420; maintainer, 2026-11-13: "then that is the
 decision, workflow_dispatch"). `pr-test.yml` runs a PR review's build and
-tests on the maintainer's self-hosted Linux runner (no billed minutes)
+tests on the maintainer's self-hosted runners (no billed minutes)
 instead of a 10-20 GB worktree on the reviewer's machine. It has a
 `workflow_dispatch` trigger only (inputs: the PR number and the head SHA
 the reviewer read), a read-only token and no secrets; it checks out
@@ -855,7 +855,10 @@ the workflow checks the author's push access itself and refuses otherwise,
 other PRs build locally) when a runner is online and no cut is using it; a "read, not built" PR
 is never sent. With no runner, or a run that is cancelled, times out or
 never starts, the review builds locally or says "not built" - never "pass".
-The job targets its own runner label (`camcraft-pr-test`) under its own OS
+The job targets the runner label `camcraft-pr-test` and runs on any self-hosted
+runner carrying it, Linux (`uma`) or macOS (`m3`); on macOS the UI suites open
+real windows, so that runner needs a logged-in session, and per-OS pinned
+readings run that OS's arm. Each runs under its own OS
 user, HOME, cargo home and sccache dir, never shared with the cut/release
 runner of issue 1413 ("Separate runner/user", same date). The refusal list
 does not stop hostile test code: that is why only collaborators' PRs run.
