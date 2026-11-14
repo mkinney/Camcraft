@@ -1,6 +1,6 @@
 ---
 name: review-prs
-description: Find open pull requests on NeoTech/Camcraft that need a review (third-party PRs from forks, or any PR whose current head has not been reviewed yet) and dispatch the PR-reviewer agent on each, one at a time (it builds on the self-hosted Linux runner through pr-test.yml when one is online, else locally). Posts review COMMENTS only - never approves or merges. Use when asked to "review the PRs", "check for new pull requests", "review PR #N", or from the periodic loop (`/loop 10m /review-prs`).
+description: Find open pull requests on NeoTech/Camcraft that need a review (third-party PRs from forks, or any PR whose current head has not been reviewed yet) and dispatch the PR-reviewer agent on each, one at a time (it builds on the self-hosted runner through pr-test.yml when one is online, else locally). Posts review COMMENTS only - never approves or merges. Use when asked to "review the PRs", "check for new pull requests", "review PR #N", or from the periodic loop (`/loop 10m /review-prs`).
 ---
 
 # Review open pull requests
@@ -95,7 +95,7 @@ takes the next. Never launch two `PR-reviewer` agents at once.
 **Build on the runner when one is online** (#1420; maintainer, 2026-11-13:
 "then that is the decision, workflow_dispatch"). The agent, not this skill,
 decides where the PR is built, because the decision needs the diff it reads
-(PR-reviewer step 2b): with a self-hosted Linux runner online, no cut on it,
+(PR-reviewer step 2b): with a self-hosted `camcraft-pr-test` runner online, no cut on it,
 a PR written by a collaborator with push access ("Collaborators only"; the
 workflow refuses any other author, which builds locally) and a PR that is
 not "read, not built", it starts `pr-test.yml`

@@ -1,6 +1,6 @@
 ---
 name: PR-reviewer
-description: Reviews ONE open pull request on NeoTech/Camcraft (usually a third-party PR from a fork) against AGENTS.md - trial-merges it with current main and runs the touched suites and clippy, on the self-hosted Linux runner (pr-test.yml) when one is online, else in its own worktree, checks the project laws, posts the result as a plain review COMMENT and sets the PR's review label (merge-ready / needs-rework / conflicts / needs-maintainer). Never approves, never merges, never pushes; the maintainer approves and merges by hand.
+description: Reviews ONE open pull request on NeoTech/Camcraft (usually a third-party PR from a fork) against AGENTS.md - trial-merges it with current main and runs the touched suites and clippy, on a self-hosted runner (pr-test.yml) when one is online, else in its own worktree, checks the project laws, posts the result as a plain review COMMENT and sets the PR's review label (merge-ready / needs-rework / conflicts / needs-maintainer). Never approves, never merges, never pushes; the maintainer approves and merges by hand.
 model: sonnet
 ---
 
@@ -73,7 +73,7 @@ merge.
    diff with `git fetch origin pull/<N>/head:pr-<N>-review` and
    `git show pr-<N>-review:<path>`; no worktree is needed for reading.
 2b. **Where to build: the runner or here** (#1420; maintainer, 2026-11-13:
-   `workflow_dispatch` only, self-hosted Linux, started after the diff is
+   `workflow_dispatch` only, self-hosted (Linux or macOS), started after the diff is
    read). Use the runner only when all hold, else go to step 3 (local):
    - the PR's author is a collaborator with push access (`gh api
      repos/NeoTech/Camcraft/collaborators/<login>/permission --jq .permission`
@@ -85,8 +85,8 @@ merge.
      `.cargo/` directory at any depth, or `xtask/`. One of those is "read,
      not built" (Hard rules; no runner run), except an `xtask/`-only
      change, which is built locally (step 3);
-   - a self-hosted Linux runner is online:
-     `gh api repos/NeoTech/Camcraft/actions/runners --jq '[.runners[] | select(.status=="online") | select([.labels[].name|ascii_downcase] | index("self-hosted") and index("linux"))] | length'`
+   - a self-hosted runner with the `camcraft-pr-test` label is online:
+     `gh api repos/NeoTech/Camcraft/actions/runners --jq '[.runners[] | select(.status=="online") | select([.labels[].name|ascii_downcase] | index("self-hosted") and index("camcraft-pr-test"))] | length'`
      prints more than 0 (an error - a 403 for a token without admin read -
      counts as none online);
    - no cut is running on it: `gh run list --workflow cut.yml --json status
@@ -117,7 +117,7 @@ merge.
       that suite locally before calling it a blocker. `cancelled`,
       `timed_out` or any other conclusion is no verdict: build locally
       (step 3), or say "not built" - never a pass.
-   4. Linux does not check Windows-only readings. If the diff adds or
+   4. The runner checks only its own OS's arm of Windows-only readings. If the diff adds or
       changes a `cfg(windows)`, `cfg(target_os = ...)` or `cfg!(windows)`
       line or a per-OS pinned value (issue 1402), also run the touched
       suites locally (steps 3-4, those binaries only).
