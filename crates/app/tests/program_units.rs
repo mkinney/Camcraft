@@ -79,6 +79,20 @@ fn post(cps: &str, stream: &str, u: &str) -> Result<engine::PostOutput, PostErro
     engine::run_with(cps, &vmc(), stream, &units(u))
 }
 
+/// #976: TNC ISO G70 lengths are inches, while path F is tenths of inch/min.
+#[test]
+fn heidenhain_inch_linear_uses_g70_and_tenths_inch_feed() {
+    let cps = read("assets/posts/heidenhain.cps");
+    let stream = "PARAM ClearancePlane 25.4\nTOOL 1 T1\nPARAM SpindleSpeed 6000\nSECTION\nRapid X 0 Y 0 Z 25400\nFeed X 25400 Y 12700 Z 0 F 254000\nENDSECTION\n";
+    let out = post(&cps, stream, "inch").expect("Heidenhain posts an inch document");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    let lines: Vec<_> = out.program.lines().collect();
+    assert!(lines.first().is_some_and(|l| l.starts_with('%') && l.ends_with(" G70 *")), "{}", out.program);
+    assert!(lines.last().is_some_and(|l| l.starts_with("N99999999 %") && l.ends_with(" G70 *")), "{}", out.program);
+    assert!(out.program.contains("X+1 Y+0.5 Z+0 F100"), "{}", out.program);
+    assert!(!out.program.contains("G71"), "{}", out.program);
+}
+
 /// The words of a line, comments dropped (`( )`, and `;` to the end).
 fn words(line: &str) -> Vec<String> {
     let mut out = String::new();
