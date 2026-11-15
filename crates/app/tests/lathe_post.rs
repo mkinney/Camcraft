@@ -196,7 +196,7 @@ fn facing_posts_to_the_lathe_golden() {
     // #630: the nose CENTRE ends on the axis, so the posted control
     // point (orientation 2, r 0.8) stands r past it - X-1.6 diameter -
     // and the last pass posts the facing plane itself, Z14, not 14 + r.
-    assert!(text.contains("X-1.6 Z14 "), "the pass ends with the nose centre on the axis: {text}");
+    assert!(text.contains("X-1.6 Z14. "), "the pass ends with the nose centre on the axis: {text}");
     assert!(!text.contains("Z14.8"), "a face at Z14 posts Z14, not the nose centre: {text}");
     assert!(text.contains("ORIENTATION 2"), "the tool note names the orientation: {text}");
     assert!(!text.contains("Y"), "a lathe program has no Y word: {text}");
@@ -351,7 +351,7 @@ fn groove_and_part_post_to_the_lathe_golden() {
     assert!(text.contains("(PART LOAD ADVANCE 30)") && text.contains("(PART UNLOAD)"), "{text}");
     // #641: the parting plane Z-10 is the kerf's centre; the 3 mm blade
     // posts its default left (-Z) corner, half a width below it.
-    assert!(text.contains("Z-11.5 ") && !text.contains("Z-10 "), "the kerf's left corner: {text}");
+    assert!(text.contains("Z-11.5 ") && !text.contains("Z-10. "), "the kerf's left corner: {text}");
     common::write_golden("nc/fanuc-lathe/groove_part.nc", &text);
 }
 
@@ -391,8 +391,8 @@ fn an_axial_drill_posts_through_the_document_with_the_lathe_post_chosen() {
     posting::post_setup(&world, &path).expect("a clean lathe hole posts through the gate");
     let text = std::fs::read_to_string(&path).expect("written");
     let _ = std::fs::remove_file(&path);
-    assert!(text.contains("G83 Z10 "), "the face drilling cycle to the floor: {text}");
-    assert!(text.contains("G00 X0 Z"), "the positioning rapid ahead of the cycle: {text}");
+    assert!(text.contains("G83 Z10. "), "the face drilling cycle to the floor: {text}");
+    assert!(text.contains("G00 X0. Z"), "the positioning rapid ahead of the cycle: {text}");
     assert!(text.contains("G80"), "the cycle cancels: {text}");
     assert!(!text.contains("G81") && !text.contains("G98"), "no mill cycle words: {text}");
     assert_eq!(text, program_of(&world), "the gated program is the stream's own translation");

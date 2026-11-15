@@ -210,9 +210,16 @@ fn source_region(
             let z = z?;
             section(&material.facets, z - oz)
         }
-        OpParams::Slot { a, b, width, .. } | OpParams::TrochoidalSlot { a, b, width, .. } => {
-            stadium(*a, *b, width * 0.5)
+        // #1731: the Slot's machine area is the stadium of its EXTENDED
+        // ends - the channel the pass is asked to cut. Where the
+        // extension enters a part the job keeps, the part law (the
+        // solid section on a part source, the setup's parts on a stock
+        // source) convicts it; the area never excuses it.
+        OpParams::Slot { a, b, width, extend_start, extend_end, .. } => {
+            let (ea, eb) = crate::machining2d::slot_extended_ends(*a, *b, *extend_start, *extend_end)?;
+            stadium(ea, eb, width * 0.5)
         }
+        OpParams::TrochoidalSlot { a, b, width, .. } => stadium(*a, *b, width * 0.5),
         // The circular ladder's machine area is the AUTHORED disk -
         // the slot's authored-geometry law with a circle for a
         // stadium; the generator refuses a disk that meets no

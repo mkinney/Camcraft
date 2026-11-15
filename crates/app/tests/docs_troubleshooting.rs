@@ -2,7 +2,7 @@
 //! sources, so a reworded refusal cannot leave the page describing a message
 //! nobody sees. Provenance: our own docs convention (see the page's source).
 //!
-//! Gate map (#1253): covers site/content/guide/troubleshooting.md vs crates/*/src.
+//! Gate map (#1253): covers site/content/guide/reference/troubleshooting.md vs crates/*/src.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,7 +79,8 @@ fn stems(page: &str) -> Vec<String> {
 
 #[test]
 fn troubleshooting_messages_still_exist_in_the_sources() {
-    let page = fs::read_to_string(root().join("site/content/guide/troubleshooting.md"))
+    // #1908 grouped the guide by job stage: the page is under reference/.
+    let page = fs::read_to_string(root().join("site/content/guide/reference/troubleshooting.md"))
         .expect("troubleshooting page is readable");
     let mut src = String::new();
     for entry in fs::read_dir(root().join("crates"))

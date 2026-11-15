@@ -48,5 +48,5 @@ just those areas instead of re-cutting everything.
   leaves standing.
 
 The full list of kinds and their settings is on the
-[Operations](@/guide/operations.md) page; ordering them is covered by
-[Order of operations](@/guide/order-of-operations.md).
+[Operations](@/guide/operations/_index.md) page; ordering them is covered by
+[Order of operations](@/guide/check-and-post/order-of-operations.md).

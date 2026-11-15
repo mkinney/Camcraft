@@ -182,6 +182,7 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         ("pocket_waterline_plate_with_island.cl", PocketStrategy::Waterline, false),
     ] {
         let p = PocketParams {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tool_diameter: 8.0,
             stepover: 3.0,
@@ -227,6 +228,7 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         pitch_min: 0.0,
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     };
     let hole = |x: f64, y: f64, r: f64, floor: f64, through: bool| Hole { xy: Point2::new(x, y), radius: r, entry_z: 0.0, floor_z: floor, through, stepped: false };

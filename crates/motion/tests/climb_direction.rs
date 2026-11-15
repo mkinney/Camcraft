@@ -203,6 +203,7 @@ fn arc_leads_stay_tangent_after_the_flip() {
 
 fn pp(strategy: PocketStrategy, climb: bool) -> PocketParams {
     PocketParams {
+        blend_radius: None,
         tool_diameter: 10.0,
         stepover: 4.0,
         stock_to_leave: 0.0,

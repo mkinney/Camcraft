@@ -22,6 +22,11 @@ workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets not verified here 
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 millSpindleReverse = true; // reads PARAM MillSpindle (#988, #1411): M4 for a left-hand-cut mill; the engine refuses a reverse mill spindle for a post without it
 
+// #1388: optional explanations; conservative house budgets, not control maxima.
+explains = "paren";
+commentMax = 60;
+explainBlockMax = 80;
+
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
 
@@ -41,6 +46,7 @@ var hopZ = null;           // #1028: the section's RetractPlane (its hop), null 
 var coolant = "";          // the M-code this program started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
+var setupNext = null;      // #1647: null means no marker; a cleaned name may be empty
 var homedAt = -1;          // linesWritten() just after a trip home (#504): onClose skips its own home when nothing followed
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
@@ -65,10 +71,17 @@ function trimNum(s) {
   if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
   return s === "-0" ? "0" : s;
 }
-function fu(v) {  // a length: mm at three decimals, or inch at four
+// #1836: a length word always carries its decimal point (`Z14.`, never
+// `Z14`). An EIA/ISO control of the Fanuc family can read a word with no
+// point in its least increment (Fanuc parameter 3401#0 DPI=0: Z14 is
+// 0.014 mm). With the point, the control reads the same value whatever
+// that setting is.
+function pt(s) { return s.indexOf(".") >= 0 ? s : s + "."; }
+function fn(v) {  // a length as text (comments): mm at three decimals, or inch at four
   if (!has(v)) return "0";
   return trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
 }
+function fu(v) { return pt(fn(v)); }  // a length word, with its point
 function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
   if (!(has(v) && v > 0)) return "0";
   return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
@@ -82,7 +95,12 @@ function block(words) {  // join the non-empty words onto one line
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var line = a.join(" "), c = explain(a);
+    // Omit an explanation that does not fit; never cut executable words.
+    if (c && line.length + 1 + c.length <= explainBlockMax) line += " " + c;
+    writeln(line);
+  }
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative
@@ -272,8 +290,8 @@ function opNotes() {  // at the section's preamble: the setup once, the op each 
 function toolNote() {  // just before the tool change it describes
   var desc = [];
   if (toolKind) desc.push(toolKind);
-  if (toolDia > 0) desc.push("D" + fu(toolDia));
-  if (toolCr > 0) desc.push("R" + fu(toolCr));
+  if (toolDia > 0) desc.push("D" + fn(toolDia));
+  if (toolCr > 0) desc.push("R" + fn(toolCr));
   note(joinDash(["T" + ni(tNo) + (toolName ? " " + toolName : ""), desc.join(" ")]));
   toolKind = ""; toolCr = 0;
 }
@@ -356,6 +374,7 @@ function onParameter(name, value) {
   if (name === "MillSpindle") { spinRev = String(value || "") === "reverse"; return; }
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
+  if (name === "SetupChange") { setupNext = clean(value); return; }
   if (name === "WorkOffset" && value) wcsWord = offsetWord(value);
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
@@ -434,8 +453,16 @@ function startPreamble() {
 // section states its own.
 function afterOp() {
   var ask = afterAsk;
+  var next = setupNext;
   afterAsk = "";
+  setupNext = null;
   if (!ask) return;
+  if (next !== null && (ask === "optional-stop" || ask === "stop")) {
+    // #1647: lift Z before inviting the operator to re-clamp the part.
+    block(["G91", "G28", "Z0"]);
+    block(["G90"]);
+    note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
+  }
   if (ask === "optional-stop") { block(["M1"]); return; }
   if (ask === "stop") { block(["M0"]); return; }
   if (ask === "home") {
@@ -714,7 +741,7 @@ function alarmUnless(cond, n, text) {  // alarm #3000=n unless cond holds
   block(["N" + probeLabel]);
 }
 function minusU(expr, v) {  // expr - v, the sign folded into the operator
-  var s = fu(v);
+  var s = fn(v);  // macro-B text: a constant is not scaled by DPI (#1836)
   if (s === "0") return expr;
   return s.charAt(0) === "-" ? expr + "+" + s.substring(1) : expr + "-" + s;
 }
@@ -778,7 +805,7 @@ function onProbeResult() {
     // (edge, outside corner) never writes a doubled sign like `--`.
     var ex = a.Expected - org[ai];
     var op = ex < 0 ? "+" : "-";
-    block(["#" + (dev + i) + "=" + mean + op + fu(Math.abs(ex))]);
+    block(["#" + (dev + i) + "=" + mean + op + fn(Math.abs(ex))]);
     alarmUnless("ABS[#" + (dev + i) + "]LE" + fu(p.Tolerance), 1, "PROBE " + a.Axis + " OUT OF TOLERANCE");
   }
   if (has(p.SetWorkOffset) && p.SetWorkOffset >= 0) {

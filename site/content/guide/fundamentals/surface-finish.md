@@ -43,7 +43,7 @@ face.
 - **Stock to leave** is the finish allowance.
 - **Setups** carry stock and the work offset between setups (**Carry stock
   and WCS over**), and a later setup can see the material an earlier one
-  left. See [Setups](@/guide/setups.md).
+  left. See [Setups](@/guide/set-up/setups.md).
 
 CamCraft does not read tolerances from the model, and it does not check a
 programmed size against a drawing. The program is a path toward the

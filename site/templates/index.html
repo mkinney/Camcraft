@@ -28,9 +28,13 @@
     copy of this site; this local preview does not have it.</p>
   {% endif %}
   <p>
-    The browser version is an early one. It cannot open or save files yet (models,
-    projects and programs), simulation playback does not work in it yet, it does not use
-    the newer WebGPU graphics, and views that need more graphics features than the
+    The browser version is an early one. It opens a model or a project with the
+    browser's file picker. Save and Save As download the project. Post downloads the
+    program when Output is set to one combined program; one file for each operation
+    is refused. Other file commands are greyed, or refused with the reason on the
+    status line: recent files, loading a machine, post, theme, fixture or tool
+    library, and exporting a setup sheet, tool list or stock model. The browser
+    version does not use the newer WebGPU graphics, and views that need more graphics features than the
     browser offers say so instead of drawing. For real work, use the
     <a href="{{ config.extra.repo }}/releases">desktop downloads</a>
     (<a href="{{ config.extra.repo }}/issues/31">#31</a> tracks what is still missing).

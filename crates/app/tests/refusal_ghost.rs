@@ -50,6 +50,8 @@ fn slot_world(center_cutting: bool) -> World {
         helix_radius: 1.5,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
+        extend_start: 0.0,
+        extend_end: 0.0,
     };
     h.execute(&world, CreateOperation::new(&world, "SLT", "EM", SrcRef::Stock, slot).expect("create"));
     world

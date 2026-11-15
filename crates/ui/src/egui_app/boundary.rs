@@ -229,7 +229,7 @@ fn entry_row(ui: &mut Ui, state: &State, n: usize, e: &Entry, acts: &mut Vec<Act
         if !e.picks.is_empty() {
             let target = boundary_draft::target_of(e.at);
             let on = state.boundary_pick == Some(target);
-            if ui.selectable_label(on, "Pick").on_hover_text("route viewport clicks into this boundary").clicked() {
+            if super::pick_button::pick_button(ui, on, "Pick").on_hover_text("route viewport clicks into this boundary").clicked() {
                 acts.push(Act::Pick(if on { None } else { Some(target) }));
             }
         }

@@ -55,8 +55,7 @@ pub(super) fn row(ui: &mut Ui, state: &mut State, setup: &str) {
     ui.horizontal(|ui| {
         ui.label("     ");
         let pick_text = if armed { "Stop picking points" } else { "Pick three points" };
-        if ui
-            .selectable_label(armed, pick_text)
+        if super::pick_button::pick_button(ui, armed, pick_text)
             .on_hover_text("Click three corners of the model in the viewport; the plane through them is laid on the plane.")
             .clicked()
         {

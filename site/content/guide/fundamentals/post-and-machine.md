@@ -35,7 +35,7 @@ spindle direction, and how it handles a tool change. Then proceed to
 
 - **Built-in posts** are scripts: Fanuc, Haas, Siemens 840D, Heidenhain,
   Mazak, Tormach PathPilot, Makera Carvera and Fanuc Lathe, and you can load your own.
-  The setup chooses its post and machine; see [Setups](@/guide/setups.md).
+  The setup chooses its post and machine; see [Setups](@/guide/set-up/setups.md).
 - **Start blocks.** At each operation the Fanuc-family post writes absolute
   mode, the work offset, cutter compensation off, length offset
   cancelled and canned cycles cancelled, then the tool change and length
@@ -45,14 +45,14 @@ spindle direction, and how it handles a tool change. Then proceed to
   the post raises a warning when the machine file is in inches. Making the program unit a
   document setting is an open issue (#902), so for an inch control check the
   first block of the file. See
-  [Units and coordinates](@/guide/units-and-coordinates.md).
+  [Units and coordinates](@/guide/reference/units-and-coordinates.md).
 - **Tilted output.** The Fanuc post arms its tool-centre-point mode (G43.4)
   when the path tilts the tool. The intermediate stream is specified so that a
   post that keeps the machine prismatic refuses a tilted record rather
   than reinterpret it ([the stream
   spec](https://github.com/NeoTech/Camcraft/blob/main/docs/CNC-INTERMEDIATE.md)).
   See Machine types and
-  [Multi-axis operations](@/guide/operations-multiaxis.md).
+  [Multi-axis operations](@/guide/multi-axis/operations-multiaxis.md).
 - **Machine files** state facts (axis travel, spindle range, tool changer,
   rigid tapping, coolant codes), and the program is checked against the
   facts stated. A machine file is not a guarantee that a real machine is
@@ -62,4 +62,4 @@ spindle direction, and how it handles a tool change. Then proceed to
 
 Post output is always a first draft. Read the first program line by line
 against your control's manual before running it. See
-[Posting](@/guide/posting.md).
+[Posting](@/guide/check-and-post/posting.md).

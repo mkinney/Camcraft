@@ -1,4 +1,4 @@
-//! A closed STEP solid wound inward is turned outward at import (#1617).
+//! A closed imported solid wound inward is turned outward at import (#1617).
 //! A file can wind every face of a solid inward, consistently, so no face
 //! disagrees with a neighbour: the mesh then has a negative signed volume
 //! and every facet normal points into the material. Only a body that is
@@ -42,7 +42,7 @@ pub(super) fn turn_outward(mesh: &mut Mesh) -> Option<String> {
     let note = format!(
         "{bodies} closed solid(s) wound inward (negative volume) were turned outward: {turned} facet(s) reversed"
     );
-    tracing::warn!("step: {note}");
+    tracing::warn!("import: {note}");
     Some(note)
 }
 

@@ -16,6 +16,8 @@ mod catalog_asset_tests;
 pub mod cutting;
 // #541: the sinker EDM electrode as a tool record.
 pub mod electrode;
+// #1152: the body electrode's outline law.
+pub mod electrode_outline;
 // #368: a modelled tool body as the stack laws read it.
 pub mod holder_profile;
 // #793: the built-in BT/CAT taper holder library, drawn as spun profiles.

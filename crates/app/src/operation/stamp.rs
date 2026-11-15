@@ -172,7 +172,7 @@ pub fn current_stamp(
                 let entity = model::find_by_name(world, &g.entity)?;
                 if !digested.contains(&g.entity.as_str()) {
                     digested.push(g.entity.as_str());
-                    let loc = model::transform_of(world, &entity).unwrap_or_default();
+                    let loc = crate::setup_align::pose_in(world, &entity, setup).unwrap_or_default();
                     for v in [
                         loc.pos.x,
                         loc.pos.y,

@@ -264,6 +264,7 @@ fn pocket_zigzag_plate_with_island_matches_golden() {
     // 30x30 region with a centered 10x10 island; zigzag rows must stop
     // at the island and step over it between levels.
     let p = PocketParams {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tool_diameter: 8.0,
         stepover: 3.0,
@@ -330,6 +331,7 @@ fn pocket_zigzag_plate_with_island_blended_matches_golden() {
     // of at most stepover/2); plunges, lifts and pass starts are the
     // sharp golden's to the byte.
     let p = PocketParams {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tool_diameter: 8.0,
         stepover: 3.0,
@@ -359,6 +361,7 @@ fn pocket_waterline_matches_golden() {
     // ring ordering is a place where a "small" generator change tends to
     // reorder everything.
     let p = PocketParams {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tool_diameter: 8.0,
         stepover: 3.0,
@@ -477,6 +480,7 @@ fn cycle_tool(kind: ToolKind, diameter: f64, tip_angle: f64, pitch: f64) -> Tool
         pitch_min: 0.0,
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     }
 }

@@ -95,6 +95,42 @@ pub fn guide_planes(machine: &Machine, origin_z: f64) -> Result<(f64, f64), Stri
     }
 }
 
+/// The taper door (#1800): a non-zero `taper_deg` is admitted only on a
+/// machine that can post it - one that states `edm.max_taper_deg` at or
+/// above the taper and, when it tapers by U/V moves (no
+/// `edm.taper_angle`), both guide planes. Read at the operation's
+/// create and edit commands, so the GUI and MCP refuse the parameter by
+/// name instead of a later generate or post. A zero taper is the
+/// vertical cut and is always admitted. Nothing is guessed: an unstated
+/// limit refuses.
+///
+/// # Errors
+/// An unstated or exceeded maximum taper, or unstated guide planes on a
+/// U/V machine, named.
+pub fn taper_door(machine: &Machine, taper_deg: f64) -> Result<(), String> {
+    if taper_deg == 0.0 {
+        return Ok(());
+    }
+    let a = taper_deg.abs();
+    let edm = machine.edm.as_ref();
+    let Some(max) = edm.and_then(|e| e.max_taper_deg) else {
+        return Err(format!(
+            "a {a:.3} degree taper is asked, and machine {} states no edm.max_taper_deg - a taper is cut only on a machine that states how far it leans; set the taper to 0",
+            machine.model
+        ));
+    };
+    if a > max + 1e-9 {
+        return Err(format!(
+            "a {a:.3} degree taper is asked, and machine {} leans the wire at most {max:.3} degrees (edm.max_taper_deg)",
+            machine.model
+        ));
+    }
+    if edm.and_then(|e| e.taper_angle).is_none() {
+        guide_planes(machine, 0.0).map_err(|e| format!("a {a:.3} degree taper is asked, and {e}; set the taper to 0"))?;
+    }
+    Ok(())
+}
+
 /// The wire of a move ending at `to` with pose `axis` (#290 D2: the
 /// unit direction toward the upper guide) on the two guide planes
 /// `(lower, upper)`: the lower guide's X Y and the upper guide's offset

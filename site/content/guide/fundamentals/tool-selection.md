@@ -51,5 +51,5 @@ radius in this part against your tool." A tool too large for a corner
 simply leaves material there; **Deviate** shows the material left, and
 rest machining with a smaller tool can take it.
 
-See [Operations](@/guide/operations.md) and the
-[glossary](@/guide/glossary.md) for holder and stick-out terms.
+See [Operations](@/guide/operations/_index.md) and the
+[glossary](@/guide/reference/glossary.md) for holder and stick-out terms.

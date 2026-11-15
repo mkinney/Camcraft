@@ -142,6 +142,7 @@ pub(super) fn plan_level(
     }
     // One level: the planner's budget counts its moves once.
     let pp = PocketParams {
+        blend_radius: None,
         tool_diameter: p.tool_diameter,
         stepover: p.stepover,
         stock_to_leave: p.stock_to_leave,
@@ -306,6 +307,7 @@ mod tests {
 
     fn pp(entry: Entry3D) -> PocketParams {
         PocketParams {
+            blend_radius: None,
             tool_diameter: 6.0,
             stepover: 4.0,
             stock_to_leave: 0.5,

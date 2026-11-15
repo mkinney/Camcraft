@@ -138,7 +138,7 @@ pub(crate) fn browser_rows(state: &State) -> (Vec<painted::Row>, Vec<Leaf>) {
     let t = state.pane_target();
 
     let setup_open = state.browser_expanded[BrowserSection::Setup.index()];
-    push_row(&mut rows, &mut leaves, "Setup".into(), String::new(), painted::Kind::Parent(setup_open), None, false, false, 0, Leaf::Parent(BrowserSection::Setup));
+    push_row(&mut rows, &mut leaves, "SETUP".into(), String::new(), painted::Kind::Parent(setup_open), None, false, false, 0, Leaf::Parent(BrowserSection::Setup));
     if setup_open {
         // The manager row stands whenever the section is open (#322): its
         // page is where the FIRST setup is created.
@@ -158,7 +158,7 @@ pub(crate) fn browser_rows(state: &State) -> (Vec<painted::Row>, Vec<Leaf>) {
     }
 
     let models_open = state.browser_expanded[BrowserSection::Models.index()];
-    push_row(&mut rows, &mut leaves, "Models".into(), String::new(), painted::Kind::Parent(models_open), None, false, false, 0, Leaf::Parent(BrowserSection::Models));
+    push_row(&mut rows, &mut leaves, "MODELS".into(), String::new(), painted::Kind::Parent(models_open), None, false, false, 0, Leaf::Parent(BrowserSection::Models));
     if models_open {
         let entities = model::model_entities(&state.world);
         if entities.is_empty() {
@@ -176,7 +176,7 @@ pub(crate) fn browser_rows(state: &State) -> (Vec<painted::Row>, Vec<Leaf>) {
     // The document's tool LIBRARY (decision #343 (b)): every setup's Tool
     // list is a view over these entries.
     let tools_open = state.browser_expanded[BrowserSection::Tools.index()];
-    push_row(&mut rows, &mut leaves, "Tools".into(), String::new(), painted::Kind::Parent(tools_open), None, false, false, 0, Leaf::Parent(BrowserSection::Tools));
+    push_row(&mut rows, &mut leaves, "TOOLS".into(), String::new(), painted::Kind::Parent(tools_open), None, false, false, 0, Leaf::Parent(BrowserSection::Tools));
     if tools_open {
         let tools: Vec<(String, camcraft_app::tools::Tool)> = model::named_entities(&state.world)
             .into_iter()
@@ -215,6 +215,29 @@ fn setup_children(
     let stock_hidden = state.hidden_stocks.contains(&setup::stock_entity_name(w, ctx));
     let stock_text = if model::stock_world_aabb_for(w, ctx).is_some() { String::new() } else { "not set".to_owned() };
     push_row(rows, leaves, "Stock".to_owned(), stock_text, painted::Kind::Stock, Some(Icon::Stock), is_active && matches!(t, UiTarget::Stock), stock_hidden, depth, Leaf::Stock(name.to_owned()));
+    let ops = setup_ops(state, ctx);
+    let tools = count(distinct_tools(state, &ops), "tool");
+    // Operations first - the core CAM workflow stays near the top.
+    push_row(rows, leaves, "Operations".to_owned(), count(ops.len(), "operation"), painted::Kind::Section, Some(Icon::OpGroup), false, false, depth, Leaf::SetupOps(name.to_owned()));
+    if ops.is_empty() {
+        push_row(rows, leaves, "(no operations yet)".into(), String::new(), painted::Kind::Section, None, false, true, depth + 1, Leaf::Section);
+    }
+    for (key, entity) in &ops {
+        if camcraft_app::program_entry::is_entry(w, entity) {
+            super::tree_entry::entry_row(state, key, entity, depth + 1, rows, leaves);
+        } else {
+            op_row(state, t, key, entity, depth + 1, rows, leaves);
+        }
+    }
+    push_row(rows, leaves, "Tool list".to_owned(), tools, painted::Kind::Section, Some(Icon::Tools), page_open(SetupPage::Tools), false, depth, Leaf::Page(name.to_owned(), SetupPage::Tools));
+    let fixtures = camcraft_app::fixture::tagged(w, ctx);
+    push_row(rows, leaves, "Fixtures".to_owned(), count(fixtures.len(), "fixture"), painted::Kind::Section, Some(Icon::Fixture), page_open(SetupPage::Fixtures), false, depth, Leaf::Page(name.to_owned(), SetupPage::Fixtures));
+    for (fixture, entity) in fixtures {
+        let hidden = state.hidden_models.contains(&fixture);
+        let selected = matches!(t, UiTarget::Model(n) if *n == fixture) || model::is_selected(w, &entity);
+        let suffix = fixture_row_suffix(state.fixture_mesh_state(&fixture), hidden);
+        push_row(rows, leaves, fixture.clone(), suffix, painted::Kind::Fixture, Some(Icon::Fixture), selected, hidden, depth + 1, Leaf::Model(fixture));
+    }
     let own = |owns: bool| if owns { "  (own)" } else { "" };
     let machine = format!(
         "{}{}",
@@ -228,28 +251,6 @@ fn setup_children(
         own(setup_mount::own_post(w, ctx).is_some()),
     );
     push_row(rows, leaves, "Post".to_owned(), post, painted::Kind::Section, Some(Icon::Post), page_open(SetupPage::Post), false, depth, Leaf::Page(name.to_owned(), SetupPage::Post));
-    let fixtures = camcraft_app::fixture::tagged(w, ctx);
-    push_row(rows, leaves, "Fixtures".to_owned(), count(fixtures.len(), "fixture"), painted::Kind::Section, Some(Icon::Fixture), page_open(SetupPage::Fixtures), false, depth, Leaf::Page(name.to_owned(), SetupPage::Fixtures));
-    for (fixture, entity) in fixtures {
-        let hidden = state.hidden_models.contains(&fixture);
-        let selected = matches!(t, UiTarget::Model(n) if *n == fixture) || model::is_selected(w, &entity);
-        let suffix = fixture_row_suffix(state.fixture_mesh_state(&fixture), hidden);
-        push_row(rows, leaves, fixture.clone(), suffix, painted::Kind::Fixture, Some(Icon::Fixture), selected, hidden, depth + 1, Leaf::Model(fixture));
-    }
-    let ops = setup_ops(state, ctx);
-    let tools = count(distinct_tools(state, &ops), "tool");
-    push_row(rows, leaves, "Tool list".to_owned(), tools, painted::Kind::Section, Some(Icon::Tools), page_open(SetupPage::Tools), false, depth, Leaf::Page(name.to_owned(), SetupPage::Tools));
-    push_row(rows, leaves, "Operations".to_owned(), String::new(), painted::Kind::Section, Some(Icon::OpGroup), false, false, depth, Leaf::SetupOps(name.to_owned()));
-    if ops.is_empty() {
-        push_row(rows, leaves, "(no operations yet)".into(), String::new(), painted::Kind::Section, None, false, true, depth + 1, Leaf::Section);
-    }
-    for (key, entity) in ops {
-        if camcraft_app::program_entry::is_entry(w, &entity) {
-            super::tree_entry::entry_row(state, &key, &entity, depth + 1, rows, leaves);
-        } else {
-            op_row(state, t, &key, &entity, depth + 1, rows, leaves);
-        }
-    }
 }
 
 fn count(n: usize, word: &str) -> String {

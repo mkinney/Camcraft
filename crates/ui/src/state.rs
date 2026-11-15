@@ -90,6 +90,9 @@ pub use tool_body_ui::{BodyDraft, BodyPickMode, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, 
 #[path = "state_tool_body_lathe.rs"]
 mod tool_body_lathe_ui;
 pub use tool_body_lathe_ui::{LatheBodyDraft, LatheDraft};
+#[path = "state_tool_body_assembly.rs"]
+mod tool_body_assembly_ui;
+pub use tool_body_assembly_ui::AssemblyUi;
 #[path = "state_tool_profile.rs"]
 mod tool_profile_ui;
 #[path = "state_tool_cutter.rs"]
@@ -291,6 +294,19 @@ pub enum CommandKind {
     SetLatheToolBody {
         name: String,
         body: LatheBodyDraft,
+    },
+    /// #361 / #1040: attach a modular piece onto a tool's landed body
+    /// as one `SetToolBody::attach_piece`.
+    AttachToolBodyPiece {
+        name: String,
+        path: PathBuf,
+        place: camcraft_app::tool_body_assembly::PiecePlace,
+    },
+    /// #361 / #1040: remove a piece from a multi-piece tool body
+    /// assembly as one `SetToolBody::remove_piece`.
+    RemoveToolBodyPiece {
+        name: String,
+        index: usize,
     },
     /// #93: set a milling tool's drawn spun holder (`Some` points) or
     /// return it to its parametric cylinder (`None`) - the tool editor's
@@ -1086,6 +1102,9 @@ pub struct ToolUi {
     /// #891: the turning cutting data (Vc, f/rev, max rpm), None = not
     /// stated - carried so an Apply never drops it.
     pub turning: Option<camcraft_app::tools::TurningData>,
+    /// #1152: a sinker body electrode's section - carried so an Apply
+    /// never turns the body into the rectangle of its two sizes.
+    pub outline: Vec<[f64; 2]>,
 }
 
 impl Default for ToolUi {
@@ -1148,6 +1167,7 @@ impl ToolUi {
             notes: t.catalog.notes.clone().unwrap_or_default(),
             cutting: t.cutting.clone(),
             turning: t.turning,
+            outline: t.outline.clone(),
         }
     }
 
@@ -1222,6 +1242,7 @@ impl ToolUi {
             catalog: self.catalog(),
             cutting: self.cutting.clone(),
             turning: self.turning,
+            outline: self.outline.clone(),
         };
         tool.corner_r = tool.tip_corner_r();
         tool
@@ -1242,6 +1263,7 @@ pub fn quat_yaw_deg(q: [f64; 4]) -> f64 {
 pub enum DragMode {
     Orbit,
     Pan,
+    Zoom,
 }
 
 /// Where a Face/Edge viewport pick lands while the Boundary group is
@@ -1487,8 +1509,14 @@ pub struct State {
     /// Viewport image rect in logical screen coords; the shell publishes it
     /// each frame, `interact` hit-tests pointer events against it.
     pub viewport_rect: ([f32; 2], [f32; 2]),
-    /// Live viewport drag (orbit/pan), driven by the shell's pointer layer.
+    /// Live viewport drag (orbit/pan/zoom), driven by the shell's pointer layer.
     pub drag: Option<DragMode>,
+    /// The nav tool latched on the viewport's control ribbon: `None`
+    /// keeps the stock gestures (LMB bends into orbit, MMB orbits, RMB
+    /// pans); `Some` hands the next drag to that tool regardless of
+    /// the mouse button (#1198's tool-mode buttons). View state like
+    /// `drag` - not undoable, never saved.
+    pub nav_tool: Option<DragMode>,
     /// #979: the live box-select rubber band (press point, current point),
     /// logical px. View state like `drag` - its release queues one command.
     pub pick_box: Option<[[f32; 2]; 2]>,
@@ -1522,6 +1550,9 @@ pub struct State {
     /// Setups other than the active one whose eye is on (#1494); the active
     /// setup is always drawn. View state, never saved: display only.
     pub shown_setups: Vec<String>,
+    /// The Browser's "Show work envelope" box (#1567): view state, never
+    /// saved, never a command; display only.
+    pub show_work_envelope: bool,
     pub operation_clipboard: Option<OperationClipboard>,
     /// Expanded state of Setup, Models, Tools, and Operations in the browser.
     pub browser_expanded: [bool; 3],
@@ -1754,6 +1785,9 @@ pub struct State {
     /// The Setups page's three-points draft (#555); `Some` routes Vertex
     /// picks into it (and refuses faces and edges by name).
     pub points_pick: Option<crate::points_pick::PointsPick>,
+    /// The Wire Contour page's sync-point pick (#1171); armed, Vertex
+    /// picks state the draft's sync pairs.
+    pub wire_sync: crate::wire_sync_pick::WireSync,
     /// The Setups page's cylinder-angle draft (#771); while it is
     /// collecting, Face picks land in it ahead of everything else.
     pub cylinder_pick: Option<crate::cylinder_pick::CylinderPick>,
@@ -1787,6 +1821,11 @@ pub struct State {
     /// highlight (#1507) reads last frame's answer - a one-frame lag, with a
     /// repaint requested whenever the two differ. Ephemeral, never a command.
     pub geo_hover_drawn: Option<GeoSel>,
+    /// The Geometry-tab rows marked this frame because the viewport pointer
+    /// is over their picked face, chain or vertex (#1519, the reverse of
+    /// `geo_hover`). Cleared at the frame edge, set by the page as it draws
+    /// each row. Ephemeral view state, never a command.
+    pub geo_row_marked: Vec<GeoSel>,
     /// Which named section of the operation page is open (the M1.4 tab
     /// bar, restored after M9.1 B's stack on user feedback). An index into
     /// `egui_app::op_tabs::SECTIONS`. Ephemeral pane state like the drafts
@@ -1972,6 +2011,7 @@ impl State {
             selection_version: 0,
             viewport_rect: ([0.0, 0.0], [0.0, 0.0]),
             drag: None,
+            nav_tool: None,
             pick_box: None,
             hover: None,
             hover_mesh: None,
@@ -1983,6 +2023,7 @@ impl State {
             locate_form_drawn: false,
             axis_pick: None,
             points_pick: None,
+            wire_sync: crate::wire_sync_pick::WireSync::default(),
             cylinder_pick: None,
             origin_pick: None,
             axis_rows_shown: false,
@@ -1992,12 +2033,14 @@ impl State {
             incoming_view: Default::default(),
             geo_hover: None,
             geo_hover_drawn: None,
+            geo_row_marked: Vec::new(),
             op_tab: 0,
             hidden_models: Vec::new(),
             hidden_stocks: Vec::new(),
             hidden_offsets: Vec::new(),
             hidden_paths: Vec::new(),
             shown_setups: Vec::new(),
+            show_work_envelope: false,
             operation_clipboard: None,
             browser_expanded: [true; 3],
             cam: Camera::default(),
@@ -3156,6 +3199,12 @@ impl State {
             }
             CommandKind::SetToolBody { name, body } => self.run_set_tool_body(&name, body),
             CommandKind::SetLatheToolBody { name, body } => self.run_set_lathe_tool_body(&name, body),
+            CommandKind::AttachToolBodyPiece { name, path, place } => {
+                self.run_attach_tool_body_piece(&name, &path, place)
+            }
+            CommandKind::RemoveToolBodyPiece { name, index } => {
+                self.run_remove_tool_body_piece(&name, index)
+            }
             CommandKind::SetToolProfile { name, points } => self.run_set_tool_profile(&name, points),
             CommandKind::SetToolCutter { name, points } => self.run_set_tool_cutter(&name, points),
             CommandKind::ReshapeTool { name, tool, points } => self.run_reshape_tool(&name, tool, points),
@@ -3952,8 +4001,8 @@ impl State {
                     return;
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
-                    let (coarse, budget) = (command.coarse_mm, command.facet_budget);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_budget(budget)) {
+                    let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);
@@ -3972,10 +4021,10 @@ impl State {
                 }
                 // #864: an import kept coarser than promised is said, not
                 // only logged.
-                if let Some(chord) = model::find_by_name(&self.world, &name)
-                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e))
+                if let Some((e, chord)) = model::find_by_name(&self.world, &name)
+                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e).map(|c| (e, c)))
                 {
-                    let said = camcraft_app::model_fidelity::summary(&self.world, chord);
+                    let said = camcraft_app::mesh_open::summary(&self.world, &e, chord);
                     self.status = format!("{} - {said}", self.status);
                 }
             }

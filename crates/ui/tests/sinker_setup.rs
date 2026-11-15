@@ -53,6 +53,7 @@ fn electrode() -> Tool {
         pitch_min: 0.0,
         catalog: Default::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
     }
 }
 
@@ -109,4 +110,25 @@ fn a_sinker_machine_and_a_burn_to_depth_are_set_up_and_undone() {
     assert!(!state.tool_names().iter().any(|t| t == "E-10x6"));
     push(&mut state, CommandKind::Undo);
     assert!(machine::of(&state.world).1.is_none_or(|m| m.edm.is_none()), "undo unmounts the sinker");
+}
+
+/// #1152: the tool draft carries a body electrode's outline, so an
+/// Apply of the tool page never turns the body into the rectangle of
+/// its two sizes (a larger electrode than the one the user holds).
+#[test]
+fn the_tool_draft_carries_a_body_electrodes_outline_through_an_apply() {
+    use camcraft_ui::state::ToolUi;
+    let ell = vec![[-5.0, -4.0], [5.0, -4.0], [5.0, 0.0], [-1.0, 0.0], [-1.0, 4.0], [-5.0, 4.0]];
+    let body = Tool { diameter: 10.0, width: 8.0, outline: ell.clone(), ..electrode() };
+    assert!(body.is_sane() && body.torch_refusal().is_none(), "{:?}", body.torch_refusal());
+    let draft = ToolUi::from_tool("E-L", &body, true);
+    assert_eq!(draft.outline, ell);
+    assert_eq!(draft.to_tool(), body, "the outline survives an Apply");
+    // A size edited on the page leaves the outline: the command refuses
+    // it by name, the draft does not drop the outline to make it pass.
+    let edited = ToolUi { diameter: 12.0, ..draft }.to_tool();
+    assert_eq!(edited.outline, ell);
+    assert!(edited.torch_refusal().is_some_and(|w| w.contains("the outline's X and Y extents")), "{:?}", edited.torch_refusal());
+    // A rectangular electrode's draft states none.
+    assert!(ToolUi::from_tool("E", &electrode(), true).to_tool().outline.is_empty());
 }

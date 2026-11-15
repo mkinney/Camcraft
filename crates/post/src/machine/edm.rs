@@ -50,6 +50,10 @@ pub struct Edm {
     /// vertical (0 < angle < 90).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_taper_deg: Option<f64>,
+    /// Wire: the angle-word taper dialect (#1164); `None` = the machine
+    /// tapers by U/V moves (#536).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub taper_angle: Option<super::edm_taper::TaperAngle>,
     /// Wire: the wire diameters the machine takes, mm.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub wire_diameters: Vec<f64>,
@@ -74,7 +78,7 @@ pub struct Edm {
 }
 
 /// The keys only a wire machine states.
-pub const WIRE_KEYS: [&str; 5] = ["lower_guide_z", "upper_guide_z", "max_taper_deg", "wire_diameters", "awt"];
+pub const WIRE_KEYS: [&str; 6] = ["lower_guide_z", "upper_guide_z", "max_taper_deg", "wire_diameters", "awt", "taper_angle"];
 /// The keys only a sinker machine states.
 pub const SINKER_KEYS: [&str; 3] = ["orbits", "max_orbit_radius", "pickup"];
 /// The keys either EDM kind states (`codes`: the control's own words,
@@ -280,6 +284,7 @@ pub(super) fn parse_edm(v: Option<&Value>, f: f64, k: Option<Kind>) -> Result<Op
         }
         Some(x) => return Err(format!("machine file: edm.orbits must be a list, not {x}")),
     }
+    e.taper_angle = super::edm_taper::parse_taper_angle(v.get("taper_angle"))?;
     Ok(Some(e))
 }
 

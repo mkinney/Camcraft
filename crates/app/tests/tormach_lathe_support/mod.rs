@@ -65,6 +65,22 @@ pub fn lathe(inch: bool) -> Machine {
     }
 }
 
+/// The stock a hand-built stream states before its section (#1604: the
+/// post orders the moves around G30 by it): a round bar of this radius
+/// about the axis, its face at `top`, and the section's ClearancePlane
+/// `clear`, all world mm - the PARAMs `post::dump` writes.
+pub fn stock_params(radius: f64, top: f64, clear: f64) -> Vec<cnc::Record> {
+    let p = |name: &str, v: f64| cnc::Record::Param { name: name.into(), value: serde_json::json!(v) };
+    vec![
+        p("StockXYLeft", -radius),
+        p("StockXYRight", radius),
+        p("StockXYFront", -radius),
+        p("StockXYBack", radius),
+        p("StockZTop", top),
+        p("ClearancePlane", clear),
+    ]
+}
+
 pub fn lathe_mch(inch: bool) -> serde_json::Value {
     camcraft_app::post::machine::mirror(&lathe(inch))
 }

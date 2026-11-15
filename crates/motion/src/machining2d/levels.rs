@@ -122,7 +122,9 @@ pub(super) struct Motion {
     /// when the approach asks for pre-drilled entry.
     pub(super) holes: Vec<super::predrilled::PreHole>,
     /// Every pass is a ring walked as arcs about one centre (#1558, the
-    /// circular kernel): a zig-zag ramp rides the ring's arcs.
+    /// circular kernel; #1665, the bore's ring and its radial sweep): the
+    /// ramp entry zig-zags along the first cut at the ramp angle, and a
+    /// zig-zag ramp rides the ring's arcs.
     pub(super) ring_zig: bool,
 }
 

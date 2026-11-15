@@ -487,6 +487,7 @@ fn picks_of(world: &World, name: &str, fits: impl Fn(f64, f64, f64, f64) -> bool
 
 fn pocket(top: f64, bottom: f64) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,
         stock_to_leave: 0.0,

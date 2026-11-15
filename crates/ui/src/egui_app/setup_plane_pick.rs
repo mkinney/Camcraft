@@ -57,8 +57,7 @@ pub(super) fn row(ui: &mut Ui, state: &mut State, setup: &str) {
     ui.horizontal(|ui| {
         ui.label("    Lay on a plane - pick a face");
         let pick_text = if armed { "Stop picking" } else { "Pick a face" };
-        if ui
-            .selectable_label(armed, pick_text)
+        if super::pick_button::pick_button(ui, armed, pick_text)
             .on_hover_text("Click one flat face in the viewport; it is laid on the plane.")
             .clicked()
         {

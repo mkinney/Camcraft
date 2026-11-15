@@ -303,7 +303,7 @@ fn op_coarse(world: &World, op: &Operation) -> Option<(String, f64)> {
 pub fn op_problem(world: &World, name: &str, op: &Operation) -> Option<String> {
     let (model, chord) = op_coarse(world, op)?;
     if is_unknown(chord) {
-        return Some(format!("{name}: model '{model}' was {UNKNOWN_NOTE}"));
+        return Some(format!("{name}: model '{model}' was {}", crate::mesh_open::unknown_note(world, &model)));
     }
     let said = format!("surfaces are approximated to within {}", within(world, chord));
     if !fidelity_law::excess_aware(&op.params) {
@@ -343,7 +343,7 @@ pub fn gate_problems(world: &World) -> Vec<String> {
         model::model_entities(world)
             .into_iter()
             .filter(|(_, e)| model::is_fixture(world, e) && chord_of(world, e).is_some_and(is_unknown))
-            .map(|(n, _)| format!("fixture '{n}' was {UNKNOWN_NOTE}")),
+            .map(|(n, _)| format!("fixture '{n}' was {}", crate::mesh_open::unknown_note(world, &n))),
     );
     out
 }
@@ -379,7 +379,7 @@ pub fn verdict_tol(world: &World) -> Result<f64, String> {
         return Ok(DEV_TOL);
     };
     if is_unknown(chord) {
-        return Err(format!("model '{name}' was {UNKNOWN_NOTE}"));
+        return Err(format!("model '{name}' was {}", crate::mesh_open::unknown_note(world, &name)));
     }
     excess_floor(DEV_TOL, excess(chord)).ok_or_else(|| {
         format!("model '{name}' was {TOO_COARSE} (surfaces are approximated to within {})", within(world, chord))

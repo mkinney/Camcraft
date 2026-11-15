@@ -33,6 +33,10 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             return Err(corrupt(format!("'{}' records a chord error and an unknown fidelity at once", dto.name)));
         }
     }
+    // #1610: a hole is said of a model of unknown fidelity only.
+    if dto.mesh_open.is_some() && !(dto.fidelity_unknown && matches!(kind, EntityKind::Model)) {
+        return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
+    }
     match kind {
         EntityKind::Entry => {}
         EntityKind::Model => {

@@ -38,6 +38,8 @@ mod pick;
 // #979: the box pick, the viewport's Ctrl+drag box select headless.
 mod box_pick;
 mod pockets;
+// #1534: document and per-setup post options (`SetPostOptions` / `SetSetupPostOptions`).
+mod post_options_tools;
 mod render;
 mod setup_tools;
 mod tool_delete;

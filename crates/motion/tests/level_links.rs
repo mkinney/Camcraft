@@ -158,6 +158,7 @@ fn top(ms: &[Move]) -> f64 {
 
 fn pp(entry: Entry3D, links: Links) -> PocketParams {
     PocketParams {
+        blend_radius: None,
         tool_diameter: 6.0,
         stepover: 3.0,
         stock_to_leave: 0.0,

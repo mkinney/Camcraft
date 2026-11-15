@@ -81,7 +81,7 @@ fn params_sanity_gates() {
         climb: true,
     };
     assert!(!no_step.is_sane(), "stepdown must be positive when set");
-    let bad = OpParams::Pocket { tilt: None,
+    let bad = OpParams::Pocket { tilt: None, blend_radius: None,
         links: crate::links::Links::PLANAR,
         stepover: f64::NAN,
         stock_to_leave: 0.0,
@@ -495,6 +495,7 @@ fn the_arc_entry_splits_the_stamp_and_leaves_the_others_alone() {
     // words keep the bytes they always wrote.
     let world = crate::world::new_world();
     let pocket = |entry: Entry3D| OpParams::Pocket {
+        blend_radius: None,
         links: crate::links::Links::PLANAR,
         tilt: None,
         stepover: 3.0,

@@ -59,6 +59,7 @@ fn prev() -> RestParams {
 
 fn pp(strategy: PocketStrategy) -> PocketParams {
     PocketParams {
+        blend_radius: None,
         links: camcraft_motion::links::Links::PLANAR,
         tool_diameter: TOOL_D,
         stepover: 1.5,

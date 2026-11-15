@@ -33,6 +33,10 @@ pub struct ThreadInfeedDto {
     pub min_depth: f64,
     pub finish_allowance: f64,
     pub spring_passes: u32,
+    /// #418: absent (and written only when set) is one cut per depth -
+    /// every #416 file.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub repeat_each_depth: bool,
 }
 
 impl Default for ThreadInfeedDto {
@@ -63,6 +67,7 @@ impl From<ThreadInfeed> for ThreadInfeedDto {
             min_depth: p.min_depth,
             finish_allowance: p.finish_allowance,
             spring_passes: p.spring_passes,
+            repeat_each_depth: p.repeat_each_depth,
         }
     }
 }
@@ -83,6 +88,11 @@ impl From<ThreadInfeedDto> for ThreadInfeed {
             min_depth: d.min_depth,
             finish_allowance: d.finish_allowance,
             spring_passes: d.spring_passes,
+            repeat_each_depth: d.repeat_each_depth,
         }
     }
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }

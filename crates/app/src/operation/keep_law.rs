@@ -66,6 +66,44 @@ pub fn is_keep_kind(params: &OpParams) -> bool {
     matches!(params, OpParams::Pocket { .. } | OpParams::Adaptive2D { .. } | OpParams::Offset2D { .. })
 }
 
+/// #1655: a pocket-family op that clears the stock AROUND the part (a
+/// whole-model source, #12, or the stock source with parts, #1554) says
+/// by name each band of that area narrower than the tool: the generator
+/// gives such a band no pass, and refuses only when nothing is left to
+/// cut. `cleared_around` is that reading; every other job is unchanged.
+/// The note never blocks the cut: a region the band check cannot read
+/// keeps its path and says that the check did not run.
+pub(super) fn narrow_noted(
+    mut path: crate::cl::Toolpath,
+    params: &OpParams,
+    region: &crate::geo2d::Region,
+    tool_diameter: f64,
+    cleared_around: bool,
+    unit: crate::units::Unit,
+) -> crate::cl::Toolpath {
+    let leave = match params {
+        OpParams::Pocket { stock_to_leave, .. }
+        | OpParams::Adaptive2D { stock_to_leave, .. }
+        | OpParams::Offset2D { stock_to_leave, .. } => *stock_to_leave,
+        _ => return path,
+    };
+    if !cleared_around {
+        return path;
+    }
+    let label = params.kind().info().label;
+    match crate::machining2d::unreached_note(region, tool_diameter, leave, unit) {
+        Ok(Some(n)) => path.notes.push(format!("{label}: {n}")),
+        Ok(None) => {}
+        Err(e) => {
+            tracing::warn!(kind = label, "the band check around the part did not run: {e}");
+            path.notes.push(format!(
+                "{label}: the check for bands of the stock narrower than the tool did not run ({e}) - look at the stock around the part"
+            ));
+        }
+    }
+    path
+}
+
 /// Whether `params` answers for the parts standing in its stock when
 /// its source is the stock (#1603, #1607, #1631): every 2D kind that
 /// carries a part law on a part source - the pocket family (`Keep`),
@@ -163,6 +201,15 @@ pub(super) fn neighbour_parts(
         .collect()
 }
 
+/// Whether a part-source operation keeps neighbouring parts. Generation
+/// and the live posting check share this rule, including kinds whose
+/// own source is judged outside `depth_law_of`.
+pub(super) fn is_part_kept_kind(params: &OpParams, src: &SrcRef) -> bool {
+    super::generate::depth_law_of(params, src, true) != super::generate::DepthLaw::None
+        || is_cross_drill(params)
+        || matches!(params, OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. })
+}
+
 /// The models whose meshes an operation's part laws read beyond its own
 /// source: on a part source ([`neighbour_parts`]) the setup's other
 /// parts, on a stock source ([`parts_in_stock`]) every part. Empty for a
@@ -181,10 +228,11 @@ fn kept_models(
             Vec::new()
         }
         // #1641: a cross drill carries its radial part law
-        // (`cross_part`) though its `DepthLaw` reads `None`.
-        _ if super::generate::depth_law_of(params, src, true) == super::generate::DepthLaw::None && !is_cross_drill(params) => {
-            return Vec::new()
-        }
+        // (`cross_part`) though its `DepthLaw` reads `None`. #1749: so
+        // does a 3D Pocket (and its stamped twin), whose cutter now passes its model's
+        // silhouette edge - its footprint keeps out of these parts, and
+        // the solid law below holds them as the second net.
+        _ if !is_part_kept_kind(params, src) => return Vec::new(),
         SrcRef::Stock => return Vec::new(),
         SrcRef::Entity(n) => vec![n.as_str()],
         SrcRef::Selection(items) => items.iter().map(|g| g.entity.as_str()).collect(),
@@ -213,4 +261,23 @@ pub(super) fn kept_parts_named(
         .into_iter()
         .filter_map(|(name, e)| crate::setup_align::facets_in(world, &e, setup).map(|f| (name, f)))
         .collect()
+}
+
+/// #1637: a stock-source 2D Chamfer whose solid-law check hits a part
+/// breaks an edge belonging to the part rather than stock-only material.
+/// Rewrite `Warning::Gouge` into `Warning::StockChamferGouge` so every
+/// channel names the cause and the part-source workaround.
+pub(super) fn note_stock_chamfer_gouges(
+    params: &OpParams,
+    part_solid: bool,
+    warns: &mut [crate::verify::Warning],
+) {
+    if part_solid || !matches!(params, OpParams::Chamfer2D { .. }) {
+        return;
+    }
+    for w in warns {
+        if let crate::verify::Warning::Gouge { at } = *w {
+            *w = crate::verify::Warning::StockChamferGouge { at };
+        }
+    }
 }

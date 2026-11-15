@@ -17,6 +17,9 @@
 
 mod common;
 
+#[path = "sinker_undersize/orbit_cases.rs"]
+mod orbit_cases;
+
 use flecs_ecs::prelude::World;
 
 use camcraft_app::commands::{
@@ -210,12 +213,10 @@ fn a_finish_that_leaves_the_cavity_under_size_is_refused_by_name() {
     assert!(err.to_string().contains("states no undersize"), "{err}");
 }
 
-/// Review of #1136 (validate early): a rough or finish without its
-/// finished cavity size, or with an orbit the undersize law does not
-/// count yet (#1355), is refused by name when the command is built -
-/// create and edit alike - not first at generate.
+/// Missing cavity sizes still refuse at command creation; #1355 lets
+/// an orbited pass reach the undersize law at generation.
 #[test]
-fn a_pass_without_its_cavity_or_with_an_orbit_is_refused_at_command_creation() {
+fn a_pass_requires_its_cavity_but_accepts_an_orbit_at_command_creation() {
     let (world, mut h) = sinker_doc();
     let no_cavity = |pass, x: f64, y: f64| {
         let mut p = burn(pass, "R1");
@@ -243,8 +244,7 @@ fn a_pass_without_its_cavity_or_with_an_orbit_is_refused_at_command_creation() {
     if let OpParams::SinkerBurn(op) = &mut orbited {
         op.orbit = Some(SinkerOrbit { kind: SinkerOrbitKind::Circular, radius: 0.05, vectors: 4, turns: 1 });
     }
-    let Err(err) = EditOperationParams::new(&world, "Rough", orbited) else { panic!("an orbited rough was accepted") };
-    assert!(err.to_string().contains("a sinker rough burns without an orbit"), "{err}");
+    h.execute(&world, EditOperationParams::new(&world, "Rough", orbited).expect("an orbited rough is accepted"));
 }
 
 #[test]

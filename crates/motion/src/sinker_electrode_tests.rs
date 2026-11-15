@@ -8,7 +8,7 @@
 use crate::geo2d::Point2;
 use crate::geometry::{Point3, Triangle};
 use crate::sinker_cavity::{cavity_of, Cavity, PickedFace};
-use crate::sinker_electrode::{derive, rect_of, standing_in, ElectrodeSpec, NON_RECTANGULAR};
+use crate::sinker_electrode::{derive, rect_of, standing_in, ElectrodeSpec};
 
 pub(crate) fn p(x: f64, y: f64, z: f64) -> Point3 {
     Point3::new(x, y, z)
@@ -136,21 +136,74 @@ fn every_degenerate_face_set_is_refused_by_its_own_name() {
 }
 
 #[test]
-fn a_cavity_the_box_atom_cannot_burn_is_refused_by_name() {
+fn a_cavity_that_is_no_rectangle_yields_a_body_electrode() {
+    // #1152: a rectangle turned 30 degrees, an L, a chamfered corner -
+    // each refused by name until the stock sim had an outline atom.
+    let c = |outline: Vec<Point2>| Cavity { outline, floor_z: 0.0, top_z: 5.0, walls: 4 };
+    let q = Point2::new;
+    let (s, k) = (0.5_f64, 0.75_f64.sqrt());
+    let turned: Vec<Point2> = [(0.0, 0.0), (20.0, 0.0), (20.0, 12.0), (0.0, 12.0)].iter().map(|(x, y)| q(x * k - y * s, x * s + y * k)).collect();
+    let ell = vec![q(0.0, 0.0), q(20.0, 0.0), q(20.0, 6.0), q(8.0, 6.0), q(8.0, 12.0), q(0.0, 12.0)];
+    let chamfered = vec![q(0.0, 0.0), q(19.0, 0.0), q(20.0, 1.0), q(20.0, 12.0), q(0.0, 12.0)];
+    for (shape, area) in [(turned, 240.0), (ell.clone(), 168.0), (chamfered, 239.5)] {
+        let cav = c(shape);
+        let e = derive(&cav, &spec(0.1)).expect("a body electrode");
+        assert!(e.body && e.ring == cav.outline && e.inset == 0.1 && e.length == 15.0, "{e:?}");
+        // The section stands the inset inside every wall, and no further
+        // than a mitre's reach: its area is the cavity's less a 0.1 band.
+        let n = e.outline.len();
+        let got = 0.5 * (0..n).map(|i| e.outline[i].x * e.outline[(i + 1) % n].y - e.outline[(i + 1) % n].x * e.outline[i].y).sum::<f64>();
+        let ring_len: f64 = (0..cav.outline.len())
+            .map(|i| {
+                let (a, b) = (cav.outline[i], cav.outline[(i + 1) % cav.outline.len()]);
+                (b.x - a.x).hypot(b.y - a.y)
+            })
+            .sum();
+        assert!(got < area && (got - (area - 0.1 * ring_len)).abs() < 0.05, "area {got} of {area}, ring {ring_len}");
+        // The record: an electrode with that section about the burn
+        // point, its two sizes the section's extents.
+        let t = e.tool();
+        assert!(t.is_sane() && t.torch_refusal().is_none(), "{:?}", t.torch_refusal());
+        assert_eq!(t.outline.len(), n);
+        assert!((t.diameter - e.face.0).abs() < 1e-9 && (t.width - e.face.1).abs() < 1e-9, "{t:?}");
+        let back = q(t.outline[0][0] + e.center.0, t.outline[0][1] + e.center.1);
+        assert!((back.x - e.outline[0].x).abs() < 1e-9 && (back.y - e.outline[0].y).abs() < 1e-9);
+    }
+    // The L's electrode keeps its notch: the bounds' corner is no part
+    // of it. (The box of its extents would burn the part there.)
+    let e = derive(&c(ell), &spec(0.1)).expect("the L");
+    assert_eq!(e.outline.len(), 6, "{:?}", e.outline);
+    assert!(e.outline.iter().any(|p| (p.x - 7.9).abs() < 1e-5 && (p.y - 5.9).abs() < 1e-5), "the inner corner: {:?}", e.outline);
+    assert!((e.face.0 - 19.8).abs() < 1e-5 && (e.face.1 - 11.8).abs() < 1e-5 && e.cavity == (20.0, 12.0), "{e:?}");
+    // The body's own refusals, by name.
+    let refusal = |cav: &Cavity, s: &ElectrodeSpec| derive(cav, s).expect_err("refused").to_string();
+    let l = c(vec![q(0.0, 0.0), q(20.0, 0.0), q(20.0, 6.0), q(8.0, 6.0), q(8.0, 12.0), q(0.0, 12.0)]);
+    assert!(refusal(&l, &spec(6.0)).contains("leaves no electrode"));
+    // A dumbbell: two 10 x 10 rooms joined by a 2-wide neck.
+    let bell = c(vec![
+        q(0.0, 0.0), q(10.0, 0.0), q(10.0, 4.0), q(20.0, 4.0), q(20.0, 0.0), q(30.0, 0.0),
+        q(30.0, 10.0), q(20.0, 10.0), q(20.0, 6.0), q(10.0, 6.0), q(10.0, 10.0), q(0.0, 10.0),
+    ]);
+    assert!(derive(&bell, &spec(0.5)).is_ok_and(|e| e.body));
+    assert!(refusal(&bell, &spec(1.5)).contains("splits the electrode into 2 pieces"));
+    // More points than the stock sim sweeps.
+    let fine: Vec<Point2> = (0..1500).map(|i| {
+        let a = f64::from(i) * std::f64::consts::TAU / 1500.0;
+        q(40.0 * a.cos(), 40.0 * a.sin())
+    }).collect();
+    let why = refusal(&c(fine), &spec(0.1));
+    assert!(why.contains("more than the 1024 the stock sim sweeps"), "{why}");
+    let wide = c(vec![q(0.0, 0.0), q(600.0, 0.0), q(601.0, 1.0), q(601.0, 12.0), q(0.0, 12.0)]);
+    assert!(refusal(&wide, &spec(0.1)).contains("larger than the 500 mm"));
+    let short = ElectrodeSpec { stub: 1e-3, ..spec(0.1) };
+    assert!(refusal(&Cavity { floor_z: -1e17, top_z: 1e17, ..l.clone() }, &short).contains("does not stand above"));
+}
+
+#[test]
+fn a_cavity_the_box_atom_burns_is_judged_by_its_own_numbers() {
     let c = |outline: Vec<Point2>| Cavity { outline, floor_z: 0.0, top_z: 5.0, walls: 4 };
     let q = Point2::new;
     let refusal = |cav: &Cavity, s: &ElectrodeSpec| derive(cav, s).expect_err("refused").to_string();
-    // A rectangle turned 30 degrees, an L, a chamfered corner.
-    let (s, k) = (0.5_f64, 0.75_f64.sqrt());
-    let turned: Vec<Point2> = [(0.0, 0.0), (20.0, 0.0), (20.0, 12.0), (0.0, 12.0)].iter().map(|(x, y)| q(x * k - y * s, x * s + y * k)).collect();
-    for shape in [
-        turned,
-        vec![q(0.0, 0.0), q(20.0, 0.0), q(20.0, 6.0), q(8.0, 6.0), q(8.0, 12.0), q(0.0, 12.0)],
-        vec![q(0.0, 0.0), q(19.0, 0.0), q(20.0, 1.0), q(20.0, 12.0), q(0.0, 12.0)],
-    ] {
-        let e = refusal(&c(shape), &spec(0.1));
-        assert!(e.contains("not an axis-aligned rectangle") && e.contains(NON_RECTANGULAR) && e.contains("#1152"), "{e}");
-    }
     assert!(rect_of(&[q(0.0, 0.0), q(20.0, 0.0), q(20.0, 12.0), q(0.0, 12.0)], 1e-6).is_some());
     assert!(rect_of(&[q(0.0, 0.0), q(20.0, 0.0), q(20.0, 12.0), q(0.0, 12.000_01)], 1e-6).is_none(), "ten nanometres off is not a rectangle");
     // A bow-tie floor is self-intersecting.
@@ -183,7 +236,7 @@ fn the_model_standing_in_the_cavitys_column_is_found() {
         t(p(5.0, 5.0, -4.0), p(6.0, 5.0, -4.0), p(5.0, 6.0, -1.0)),
         t(p(f64::NAN, 5.0, 3.0), p(6.0, 5.0, 3.0), p(5.0, 6.0, 3.0)),
     ];
-    assert_eq!(standing_in(&e, &own), None);
+    assert_eq!(standing_in(&e, &own), Ok(None));
     // A boss's top, a rib's side, an overhang across the mouth (no
     // corner of it inside the column).
     let boss = t(p(8.0, 4.0, 2.0), p(12.0, 4.0, 2.0), p(12.0, 8.0, 2.0));
@@ -192,7 +245,45 @@ fn the_model_standing_in_the_cavitys_column_is_found() {
     for obstacle in [boss, rib, over] {
         let mut all = own.clone();
         all.push(obstacle);
-        let at = standing_in(&e, &all).expect("found");
+        let at = standing_in(&e, &all).expect("judged").expect("found");
         assert!(at.x > 0.0 && at.x < 20.0 && at.y > 0.0 && at.y < 12.0 && at.z > 0.0, "{at:?}");
     }
+}
+
+#[test]
+fn a_body_electrodes_column_is_the_cavitys_outline_not_its_bounds() {
+    // #1152: an L cavity. The part fills the bounds' upper right - it
+    // stands beside the cavity, not in it.
+    let q = Point2::new;
+    let cav = Cavity { outline: vec![q(0.0, 0.0), q(20.0, 0.0), q(20.0, 6.0), q(8.0, 6.0), q(8.0, 12.0), q(0.0, 12.0)], floor_z: 0.0, top_z: 6.0, walls: 6 };
+    let e = derive(&cav, &spec(0.1)).expect("the L's electrode");
+    assert!(e.body);
+    let t = |a: Point3, b: Point3, c: Point3| Triangle::new(a, b, c);
+    let own = vec![
+        // The floor, a wall, the notch's two walls.
+        t(p(0.0, 0.0, 0.0), p(20.0, 0.0, 0.0), p(20.0, 6.0, 0.0)),
+        t(p(0.0, 0.0, 0.0), p(20.0, 0.0, 0.0), p(20.0, 0.0, 6.0)),
+        t(p(8.0, 6.0, 0.0), p(20.0, 6.0, 0.0), p(20.0, 6.0, 6.0)),
+        t(p(8.0, 6.0, 0.0), p(8.0, 12.0, 0.0), p(8.0, 12.0, 6.0)),
+        // The part's top over the notch: inside the bounds, outside the L.
+        t(p(8.0, 6.0, 6.0), p(20.0, 6.0, 6.0), p(20.0, 12.0, 6.0)),
+        t(p(8.0, 6.0, 6.0), p(20.0, 12.0, 6.0), p(8.0, 12.0, 6.0)),
+        t(p(f64::NAN, 5.0, 3.0), p(6.0, 5.0, 3.0), p(5.0, 6.0, 3.0)),
+    ];
+    assert_eq!(standing_in(&e, &own), Ok(None), "the part round the L is not in its way");
+    // A boss's top, an upright rib, an overhang with no corner in the
+    // column - each in the L itself.
+    let boss = t(p(2.0, 8.0, 2.0), p(6.0, 8.0, 2.0), p(6.0, 10.0, 2.0));
+    let rib = t(p(4.0, 0.0, 0.0), p(4.0, 12.0, 0.0), p(4.0, 12.0, 3.0));
+    let over = t(p(-50.0, -50.0, 9.0), p(90.0, -50.0, 9.0), p(20.0, 90.0, 9.0));
+    for obstacle in [boss, rib, over] {
+        let mut all = own.clone();
+        all.push(obstacle);
+        let at = standing_in(&e, &all).expect("judged").expect("found");
+        assert!(at.z > 0.0 && (at.x < 8.0 || at.y < 6.0) && at.x > 0.0 && at.y > 0.0, "{at:?}");
+    }
+    // A rib in the notch (beside the cavity) is no obstacle.
+    let mut beside = own.clone();
+    beside.push(t(p(14.0, 7.0, 0.0), p(14.0, 11.0, 0.0), p(14.0, 11.0, 5.0)));
+    assert_eq!(standing_in(&e, &beside), Ok(None));
 }

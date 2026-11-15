@@ -45,7 +45,7 @@ history, and `apply` / `invert` are plain writes that cannot fail halfway.
 `camcraft-cli mcp` runs a Model Context Protocol server that lets an AI
 agent drive CamCraft; its tools (in `crates/app/src/mcp/`) call the same
 undoable commands the GUI uses. How to run and use it is in the
-[AI agents (MCP) guide](@/guide/mcp.md). A pull request that adds a
+[AI agents (MCP) guide](@/guide/automate/mcp.md). A pull request that adds a
 user-facing command also adds its MCP tool, or files a follow-up issue for
 it.
 

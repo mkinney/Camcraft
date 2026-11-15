@@ -215,7 +215,9 @@ fn axis_through(world: &World, rot: [f64; 4], g: &GeoSel) -> Result<[f64; 3], St
         }
     }
     // Into the world (the part's placement), then the reading frame.
-    let loc = crate::setup_align::view_pose(world, &e).unwrap_or_default();
+    // The supplied frame already includes the setup alignment; view_pose
+    // would apply the active setup alignment a second time.
+    let loc = model::transform_of(world, &e).unwrap_or_default();
     let w = quat_rotate_point(loc.rot, Point3::new(d[0], d[1], d[2]));
     let r = quat_rotate_point(rot, Point3::new(w.x, w.y, w.z));
     Ok([r.x, r.y, r.z])

@@ -55,7 +55,7 @@ pub use skims::{check_passes, wire_passes, WirePass};
 pub use ruled::{wire_contour_ruled, WirePairing, WireProfile, WireRuled, WireSync, SYNC_TOL};
 pub use tabs::{cutoff_split, TabParams, MAX_TABS};
 
-pub use taper::{wire_contour_tapered, WireTaper};
+pub use taper::{wire_contour_tapered, WireCorner, WireTaper};
 
 pub use burnout::{clearance_door, wire_burnout, CORE_AREA_TOL, RING_STEP};
 pub use open::{CLEARANCE_MAX, EDGE_TOL};

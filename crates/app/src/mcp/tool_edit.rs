@@ -38,6 +38,11 @@ pub(super) fn edit_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, 
     if checked.get("center_cutting") == Some(&Value::Bool(true)) {
         checked.remove("center_cutting");
     }
+    // #1152: an electrode's outline is written only when it states one,
+    // so an empty one (back to a rectangular face) leaves no trace.
+    if checked.get("outline").and_then(Value::as_array).is_some_and(Vec::is_empty) {
+        checked.remove("outline");
+    }
     if let Some(path) = lost(&checked, &back, "") {
         return Err(format!("bad tool patch: unknown field {path} - a tool definition has no field \"{path}\""));
     }

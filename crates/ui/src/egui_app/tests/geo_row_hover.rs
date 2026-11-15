@@ -92,3 +92,31 @@ fn row_hover_style_is_strong_and_distinct_in_both_themes() {
         }
     }
 }
+
+/// #1519, the reverse of the above: the viewport pointer over a picked face
+/// marks that pick's Geometry-tab row, and moving off clears the mark.
+#[test]
+fn viewport_hover_over_a_picked_face_marks_its_row() {
+    let mut harness = three_picks();
+    harness.state_mut().state.geo_pick = GeoPick::Face;
+    harness.run_steps(2);
+    let chips = harness.state().state.geo_chips();
+    let face = chips[0].sel.clone();
+    assert!(harness.state().state.geo_row_marked.is_empty(), "no row marked at rest");
+
+    // The centre of the picked top face, projected to the pane.
+    let ([x0, y0], [x1, y1]) = harness.state().state.viewport_rect;
+    let (w, h) = (x1 - x0, y1 - y0);
+    let mvp = harness.state().state.cam.mvp((w / h) as f64);
+    let uv = interact::project_uv(&mvp, [30.0, 30.0, 30.0]).expect("the top face centre projects");
+    set_pos(&mut harness, egui::pos2(x0 + uv[0] * w, y0 + uv[1] * h));
+    harness.run_steps(2);
+    let hit = harness.state().state.hover.clone().expect("the face lights under the pointer");
+    assert_eq!(hit.feature, Some(face.feature), "the pointer is over the picked face");
+    assert_eq!(harness.state().state.geo_row_marked, vec![face], "only the face's row is marked");
+    assert!(harness.state().state.pending.is_empty(), "marking files no command");
+
+    set_pos(&mut harness, egui::pos2(1.0, 1.0));
+    harness.run_steps(2);
+    assert!(harness.state().state.geo_row_marked.is_empty(), "leaving the face clears the mark");
+}

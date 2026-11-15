@@ -56,14 +56,14 @@ fn a_menu_row_adds_only_the_sections_its_caption_does_not_name() {
 
 #[test]
 fn the_door_wears_the_plain_caption_for_every_mode() {
-    for (kind, caption, name) in MACHINE_MODES {
+    for (kind, _caption, name) in MACHINE_MODES {
         let mut state = State::new();
         run(&mut state, CommandKind::LoadBuiltinMachine(name.into()));
         assert_eq!(machine::kind_of(&state.world), kind, "{name} mounted");
         assert_eq!(
             panes::text_of(Cmd::Machine, &state),
-            format!("{caption}…"),
-            "the door's word is the caption, never the menu row"
+            machine_modes::short_caption(kind).to_string(),
+            "the door's word is the short caption, never the menu row"
         );
     }
 }

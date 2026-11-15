@@ -76,3 +76,17 @@ fn a_bad_catalog_is_a_named_error_not_a_panic() {
     assert!(err(file(ok, &[row("A", &good.replace("\"rpm\":9000", "\"rpm\":0"))])).contains("'A' is refused"));
     assert!(err(file(ok, &[row("A", &good.replace("\"feed\"", "\"typo\":1,\"feed\""))])).contains("'A'"));
 }
+
+/// #1152: a library row states a body electrode's outline; the reader
+/// keeps it, and refuses by name a row whose sizes leave its outline.
+#[test]
+fn a_catalog_electrode_keeps_its_outline() {
+    let def = |x: f64| format!(
+        r#"{{"kind":"electrode","diameter":{x},"corner_r":0,"width":8,"flute_len":16,"shank_d":10,"shank_len":15,"holder_d":0,"holder_len":0,"material_group":"graphite","rpm":0,"feed":50,"outline":[[-5,-4],[5,-4],[5,0],[-1,0],[-1,4],[-5,4]]}}"#
+    );
+    let file = |d: String| format!(r#"{{"format":"camcraft-tools","version":1,"tools":[{{"name":"E-L","definition":{d}}}]}}"#);
+    let v = parse_catalog(&file(def(10.0))).expect("an outline electrode parses");
+    let ell = vec![[-5.0, -4.0], [5.0, -4.0], [5.0, 0.0], [-1.0, 0.0], [-1.0, 4.0], [-5.0, 4.0]];
+    assert_eq!(v[0].1, crate::electrode::electrode_outline_tool(&ell, 16.0, 15.0));
+    assert!(parse_catalog(&file(def(12.0))).expect_err("sizes off the outline").contains("'E-L' is refused"));
+}

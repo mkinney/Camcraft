@@ -125,8 +125,8 @@ impl Trace {
     /// Whether the trace passes through the loop vertex `v` from one side
     /// of the loop to the other (#1659): `v` lies on the trace's interior
     /// (within [`CROSSING_TOUCH`]) and its neighbours `u` and `w` stand
-    /// strictly on opposite sides of the trace. A row that runs exactly
-    /// through a vertex of the rim crosses the rim as truly as one that
+    /// on opposite sides farther than [`CROSSING_TOUCH`] from the trace.
+    /// A row through a vertex of the rim crosses as truly as one that
     /// cuts an edge's interior, but [`Self::crosses`] counts only the
     /// second. A touch (both neighbours on one side) or a neighbour on
     /// the trace itself is no crossing.
@@ -136,7 +136,10 @@ impl Trace {
             let len2 = (b.x - a.x).powi(2) + (b.y - a.y).powi(2);
             let end = |e: Point2| (v.x - e.x).powi(2) + (v.y - e.y).powi(2) <= touch2;
             let (su, sw) = (orient(a, b, u), orient(a, b, w));
-            len2 > touch2 && dist2_seg(v, a, b) <= touch2 && !end(a) && !end(b) && su * sw < 0.0
+            // Orientation is distance times length: keep the touch band in mm.
+            let band = CROSSING_TOUCH * len2.sqrt();
+            let opposite = (su > band && sw < -band) || (sw > band && su < -band);
+            len2 > touch2 && dist2_seg(v, a, b) <= touch2 && !end(a) && !end(b) && opposite
         };
         match self {
             Trace::Seg(a, b) => seg(*a, *b),
@@ -204,15 +207,18 @@ impl XyArc {
 
     /// [`Trace::through`] for the arc, on the circle through the band's
     /// middle: `v` on that circle strictly inside the sweep, `u` and `w`
-    /// strictly on opposite sides of it.
+    /// on opposite sides farther than [`CROSSING_TOUCH`] from it.
     fn through(&self, u: Point2, v: Point2, w: Point2) -> bool {
         let r = 0.5 * (self.r_lo + self.r_hi);
         let th = (v.y - self.c.y).atan2(v.x - self.c.x);
         let off = (th - self.a0).rem_euclid(2.0 * PI);
+        let (du, dw) = (self.rho(u) - r, self.rho(w) - r);
+        let opposite = (du > CROSSING_TOUCH && dw < -CROSSING_TOUCH)
+            || (dw > CROSSING_TOUCH && du < -CROSSING_TOUCH);
         (self.rho(v) - r).abs() <= CROSSING_TOUCH
             && off > 0.0
             && off < self.sweep
-            && (self.rho(u) - r) * (self.rho(w) - r) < 0.0
+            && opposite
     }
 
     /// A transversal crossing of the segment's interior with the arc's
@@ -249,6 +255,51 @@ mod tests {
     use crate::cl::MoveKind;
     use crate::geometry::Point3;
 
+    #[test]
+    fn rim_vertex_segment_neighbours_need_distance_band() {
+        let v = Point2::new(0.0, 0.0);
+        for length in [0.01, 1000.0] {
+            let a = Point2::new(-length, 0.0);
+            let b = Point2::new(length, 0.0);
+            for trace in [Trace::Seg(a, b), Trace::Poly(vec![a, b], 0.0)] {
+                for (du, dw) in [(0.25, -0.25), (0.25, -4.0), (4.0, -0.25)] {
+                    let u = Point2::new(-length * 0.5, du * CROSSING_TOUCH);
+                    let w = Point2::new(length * 0.5, dw * CROSSING_TOUCH);
+                    assert!(!trace.through(u, v, w), "near-line neighbour is a touch");
+                }
+                let u = Point2::new(-length * 0.5, 4.0 * CROSSING_TOUCH);
+                let w = Point2::new(length * 0.5, -4.0 * CROSSING_TOUCH);
+                assert!(trace.through(u, v, w), "true vertex crossing survives");
+                assert!(trace.through(w, v, u), "reversed crossing survives");
+                assert!(!trace.through(u, a, w), "trace endpoint is only a touch");
+            }
+        }
+    }
+
+    #[test]
+    fn rim_vertex_arc_neighbours_need_distance_band() {
+        let m = Move::new(
+            MoveKind::Feed,
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(-10.0, 0.0, 0.0),
+            Some(100.0),
+        )
+        .with_arc(Point2::new(0.0, 0.0), true);
+        let trace = Trace::of(&m);
+        let v = Point2::new(0.0, 10.0);
+        for (du, dw) in [(0.25, -0.25), (0.25, -4.0), (4.0, -0.25)] {
+            let u = Point2::new(0.0, 10.0 + du * CROSSING_TOUCH);
+            let w = Point2::new(0.0, 10.0 + dw * CROSSING_TOUCH);
+            assert!(!trace.through(u, v, w), "near-circle neighbour is a touch");
+        }
+        let u = Point2::new(0.0, 10.0 + 4.0 * CROSSING_TOUCH);
+        let w = Point2::new(0.0, 10.0 - 4.0 * CROSSING_TOUCH);
+        assert!(trace.through(u, v, w), "true circle crossing survives");
+        assert!(trace.through(w, v, u), "reversed circle crossing survives");
+        assert!(!trace.through(u, Point2::new(10.0, 0.0), w));
+        assert!(!trace.through(u, Point2::new(0.0, -10.0), w));
+        assert!(!trace.through(u, v, u), "same-side neighbours only touch");
+    }
     /// The exact distance agrees with a dense sampling of the arc and
     /// the segment (never farther than the samples; within their
     /// spacing of them: up to 0.044 mm on the 4.5 rad arc, which meets

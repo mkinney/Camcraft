@@ -122,10 +122,8 @@ impl SinkerBurnOp {
 
     /// The rough / finish pass's structural refusal by name (#543, no
     /// world), so it answers at command creation, not first at generate:
-    /// the finished cavity's X and Y must both be stated (> 0), and the
-    /// pass burns without an orbit - the undersize law sizes the burn as
-    /// electrode plus two spark gaps and does not yet count an orbit's
-    /// radius, which would widen it past that (#1355). `None` for a single burn
+    /// the finished cavity's X and Y must both be stated (> 0).
+    /// The undersize law counts any orbit at generation (#1355). `None` for a single burn
     /// or a sound pass.
     #[must_use]
     pub fn pass_refusal(&self) -> Option<String> {
@@ -139,24 +137,11 @@ impl SinkerBurnOp {
                 "a sinker {pass} is judged against the finished cavity - state its X and Y size (both above 0)"
             ));
         }
-        if self.orbit.is_some() {
-            return Some(format!(
-                "a sinker {pass} burns without an orbit: the undersize law does not count an orbit's radius yet (#1355) - burn the {pass} as a plunge"
-            ));
-        }
         None
     }
 }
 
 pub use crate::sinker_side::{SideBurn as SinkerSide, SideDirection as SinkerSideDirection};
-
-/// A Side Burn stating a wear rate, refused by name (#546 meets #545:
-/// the side move is not wear-compensated yet).
-pub const SIDE_WEAR_REFUSAL: &str =
-    "electrode wear compensation is not supported on a Sinker Side Burn yet - clear the wear rate";
-/// A Side Burn stating a layer step (#546's layering), refused by name.
-pub const SIDE_LAYER_REFUSAL: &str =
-    "burning in layers is not supported on a Sinker Side Burn yet - clear the layer step";
 
 /// The Sinker Side Burn's parameters (#545): its own burn (approach,
 /// heights, datum, depth, point, feed and its OWN condition - no
@@ -182,9 +167,10 @@ impl SinkerSideBurnOp {
         SinkerSide { direction: self.direction, amount: self.amount, undersize: self.undersize }
     }
 
-    /// The structural refusal by name (no world): an orbit, a wear rate
-    /// or layer step (#546 - not supported on a side burn yet), an
-    /// amount or undersize out of range, an amount past the undersize.
+    /// The structural refusal by name (no world): an orbit, a measured
+    /// wear or layer step that is not sound (#546's refusals; a sound one
+    /// compensates the plunge, #1340), an amount or undersize out of
+    /// range, an amount past the undersize.
     /// `None` when sound.
     #[must_use]
     pub fn refusal(&self) -> Option<String> {
@@ -197,11 +183,10 @@ impl SinkerSideBurnOp {
                     .into(),
             );
         }
-        if self.burn.wear_lost.is_some() || self.burn.wear_over.is_some() {
-            return Some(SIDE_WEAR_REFUSAL.into());
-        }
-        if self.burn.layer.is_some() {
-            return Some(SIDE_LAYER_REFUSAL.into());
+        // #1340: a measured wear and a layer step compensate the plunge;
+        // only a half-stated or nonsense one is refused, by name.
+        if let Some(why) = self.burn.compensation_refusal() {
+            return Some(why);
         }
         crate::sinker_side::side_refusal(&self.side())
     }

@@ -137,9 +137,13 @@ fn too_deep(what: &str, at: Point3, depth: f64, name: &str, flute: f64, fix: &st
 /// `extra` is, per hole, how much further out than the mouth a shank
 /// wider than the drill first meets the raw stock (`to_raw_mouths`):
 /// the reach is the wider body's, the mouth stays the drill's.
+/// `part_grow` is the coarse-model mouth uncertainty when no raw stock
+/// shifted the mouths (`st.raw.is_none()`, #1053).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn cross_reach(
     local: &[CrossHole],
     extra: &[f64],
+    part_grow: f64,
     world: &[CrossHole],
     cycle: CycleChoice,
     tool: &Tool,
@@ -150,7 +154,7 @@ pub(super) fn cross_reach(
     for (i, (h, w)) in local.iter().zip(world).enumerate() {
         let floor = h.floor_d - if h.through { THROUGH_CLEAR } else { 0.0 };
         let body = extra.get(i).copied().unwrap_or(0.0);
-        let depth = body + if matches!(cycle, CycleChoice::Spot) { SPOT_DEPTH.min(-h.floor_d) } else { -floor };
+        let depth = body + part_grow + if matches!(cycle, CycleChoice::Spot) { SPOT_DEPTH.min(-h.floor_d) } else { -floor };
         if depth.is_nan() || depth > flute + TOL {
             let o = w.origin;
             return Err(too_deep(
@@ -342,7 +346,8 @@ fn band_r(facets: &[Triangle], o: (f64, f64), z0: f64, z1: f64) -> Option<f64> {
 /// swings round the bar; a move on one station (along its hole line,
 /// across it, or in Z) reads the material in the tube its holder sweeps
 /// (`station`), so a box is met at its face, not its corner circle.
-#[allow(clippy::too_many_arguments)] // the law's inputs + the modelled band stack + the document's unit lens (#842, #740)
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 pub(super) fn cross_holder(
     t: &Toolpath,
     part: &[Triangle],
@@ -353,14 +358,32 @@ pub(super) fn cross_holder(
     name: &str,
     unit: Unit,
 ) -> Result<(), GenError> {
+    cross_holder_excess(t, part, stock, origin, tool, body, name, unit, 0.0)
+}
+
+/// [`cross_holder`] on a model `excess` coarser than promised (#1053):
+/// grows station slabs, Z bands and measured radii by `band_growth(excess)`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn cross_holder_excess(
+    t: &Toolpath,
+    part: &[Triangle],
+    stock: Option<&[Triangle]>,
+    origin: (f64, f64),
+    tool: &Tool,
+    body: Option<&BodyBands>,
+    name: &str,
+    unit: Unit,
+    excess: f64,
+) -> Result<(), GenError> {
     // #842: a body's bands each swept at their own face and radius (the
     // stack the other laws read); no body, the one holder cylinder.
     let (bands, what) = stack_bands(tool, body, name)?;
     if bands.is_empty() {
         return Ok(());
     }
-    let mat = station::material(part, stock, origin);
-    let cx = Swept { part, stock, origin, mat: &mat, name, what, unit };
+    let grow = super::fidelity_law::band_growth(excess);
+    let mat = station::material(part, stock, origin, excess);
+    let cx = Swept { part, stock, origin, mat: &mat, grow, name, what, unit };
     for (i, m) in t.moves.iter().enumerate() {
         for b in &bands {
             band_clear(&cx, i, m, *b)?;
@@ -375,6 +398,7 @@ struct Swept<'a> {
     stock: Option<&'a [Triangle]>,
     origin: (f64, f64),
     mat: &'a station::Material,
+    grow: f64,
     name: &'a str,
     what: &'a str,
     unit: Unit,
@@ -418,7 +442,8 @@ fn band_clear(cx: &Swept<'_>, i: usize, m: &crate::cl::Move, b: Band) -> Result<
         return Ok(());
     }
     let facets = [Some(cx.part), cx.stock].into_iter().flatten();
-    let Some(wide) = facets.filter_map(|f| band_r(f, cx.origin, z0, z1)).reduce(f64::max) else { return Ok(()) };
+    let Some(wide) = facets.filter_map(|f| band_r(f, cx.origin, z0 - cx.grow, z1 + cx.grow)).reduce(f64::max) else { return Ok(()) };
+    let wide = wide + cx.grow;
     let got = holder_approach(m.from, m.to, axis, reach, hl, hr);
     if got.is_nan() || got < wide - TOL {
         return Err(GenError::Invalid(format!(

@@ -214,16 +214,16 @@ ENDSECTION
     // the stream's B0 and C0 are letters of rotaries it has none of.
     // #1633: the first traverse's stated height, under the arm (the work
     // frame), then the record with the stated rotaries.
-    assert_eq!(lines[arm + 1], "G00 Z5", "the clearance stated under G43.4");
-    assert_eq!(lines[arm + 2], "G00 X10 Y0 Z5 A40", "the stated rotaries on the arm");
+    assert_eq!(lines[arm + 1], "G00 Z5.", "the clearance stated under G43.4");
+    assert_eq!(lines[arm + 2], "G00 X10. Y0. Z5. A40.", "the stated rotaries on the arm");
     // The cut continues: only A changed since the last block.
-    assert_eq!(lines[at("A45")], "G01 X20 Y0 Z0 A45 F150", "modal words: unchanged angles rest");
+    assert_eq!(lines[at("A45.")], "G01 X20. Y0. Z0. A45. F150", "modal words: unchanged angles rest");
     // (#997: with A the only stated rotary, the arm and the modal block
     // carry the same one angle word - the exact lines above pin both.)
     // The home return: only A had left zero, so only A comes back -
     // the modal law runs in both directions. TCPM stays armed (the
     // next G49 would be a new preamble's; this program ends first).
-    assert_eq!(lines[at("X30")], "G01 X30 Y0 Z0 A0 F150");
+    assert_eq!(lines[at("X30.")], "G01 X30. Y0. Z0. A0. F150");
 }
 
 /// #997: on the A+B tilthead (no C) the arm writes A and B, never a C
@@ -239,8 +239,8 @@ fn an_absent_rotary_takes_no_angle_word() {
     };
     let out = engine::run(&cps, &mch, &stream("0")).expect("post");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.lines().any(|l| l == "G00 X0 Y0 Z20 A30 B0"), "{}", out.program);
-    assert!(out.program.lines().any(|l| l == "G01 X20 Y0 Z0 A0 B30 F300"), "{}", out.program);
+    assert!(out.program.lines().any(|l| l == "G00 X0. Y0. Z20. A30. B0."), "{}", out.program);
+    assert!(out.program.lines().any(|l| l == "G01 X20. Y0. Z0. A0. B30. F300"), "{}", out.program);
     let c_word = |l: &str| l.split(' ').any(|w| w.len() > 1 && w.starts_with('C') && w[1..].parse::<f64>().is_ok());
     assert!(!out.program.lines().any(c_word), "no C word on a machine with no C: {}", out.program);
     let out = engine::run(&cps, &mch, &stream("10000")).expect("post");

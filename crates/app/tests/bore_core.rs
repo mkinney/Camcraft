@@ -1,7 +1,5 @@
-//! #1556: a bore far wider than its tool is never posted as a finished
-//! hole with a free core. Detect holes leaves it out of a Bore op and
-//! names it; a Bore op handed it by hand refuses at generate with the
-//! numbers; a hole the ride clears is bored as before.
+//! #1566: wide bores clear concentric rings. Detect holes keeps them,
+//! hand-entered holes generate, and verification accepts the paths.
 //!
 //! Gate map: covers app::operation::bore_reach, app::operation::material
 //! (detect_holes), app::mcp::edit (detect_holes) and the Bore arm of
@@ -44,12 +42,6 @@ impl Client {
         let (err, body) = self.call(name, args);
         assert!(!err, "{name} refused: {body}");
         body
-    }
-
-    fn refused(&mut self, name: &str, args: Value) -> String {
-        let (err, body) = self.call(name, args);
-        assert!(err, "{name} should have refused, got {body}");
-        body.as_str().unwrap_or_default().to_owned()
     }
 }
 
@@ -125,14 +117,15 @@ fn write_stl(tag: &str, radii: &[f64]) -> PathBuf {
     path
 }
 
-/// The plate imported, its own stock, a 4 mm end mill and a Bore op on it.
+/// The plate imported, its own stock, a 4 mm end mill and a Bore op.
+/// The 0.1 mm wall allowance keeps the nominal circle inside the faceted STL wall.
 fn setup(tag: &str, radii: &[f64]) -> Client {
     let stl = write_stl(tag, radii);
     let mut c = Client::new();
     c.ok("import_model", json!({ "path": stl.display().to_string(), "name": "plate" }));
     c.ok("set_stock", json!({ "from_model": "plate" }));
     c.ok("add_tool", json!({ "catalog": "EM-0400-2FL", "name": "EM4" }));
-    c.ok("add_operation", json!({ "kind": "bore", "tool": "EM4", "source": "plate", "name": "B", "params": { "stepdown": 2.0 } }));
+    c.ok("add_operation", json!({ "kind": "bore", "tool": "EM4", "source": "plate", "name": "B", "params": { "stepdown": 2.0, "stock_to_leave": 0.1 } }));
     c
 }
 
@@ -142,35 +135,23 @@ fn holes(c: &mut Client) -> Vec<Value> {
 }
 
 #[test]
-fn detect_holes_leaves_the_wide_bore_out_of_a_bore_op_and_names_it() {
+fn detect_holes_keeps_wide_bores_and_the_generated_paths_verify() {
     let mut c = setup("detect", &[BIG_R, SMALL_R]);
     let got = c.ok("detect_holes", json!({ "name": "B" }));
-    assert_eq!(got["holes"], json!(1), "only the hole a 4 mm ring clears is stored: {got}");
-    let skipped = got["skipped"].as_array().cloned().unwrap_or_default();
-    assert_eq!(skipped.len(), 1, "the wide bore is named: {got}");
-    let note = skipped[0].as_str().unwrap_or_default();
-    for want in ["74.300 mm hole at (-50.000, 0.000)", "skipped", "12.000 mm", "4.000 mm tool", "pocket"] {
-        assert!(note.contains(want), "the note names `{want}`: {note}");
-    }
-    let stored = holes(&mut c);
-    assert_eq!(stored.len(), 1, "{stored:?}");
-    let r = stored[0]["radius"].as_f64().unwrap_or(f64::NAN);
-    assert!((r - SMALL_R).abs() < 1e-3, "the Ø6 hole is the one kept: {stored:?}");
-
-    // The kept hole bores and verifies as before.
+    assert_eq!(got["holes"], json!(2), "both holes clear with rings: {got}");
+    assert_eq!(got["skipped"], json!([]), "{got}");
+    assert_eq!(holes(&mut c).len(), 2);
     c.ok("generate", json!({ "name": "B" }));
     let v = c.ok("verify", json!({}));
-    assert_eq!(v["ok"], json!(true), "the Ø6 bore verifies: {v}");
+    assert_eq!(v["ok"], json!(true), "the wide bore verifies: {v}");
 }
 
 #[test]
-fn detect_holes_on_a_bore_op_with_only_too_wide_holes_is_refused_by_name() {
+fn detect_holes_with_only_a_wide_bore_keeps_it_and_leaves_drill_detection_unchanged() {
     let mut c = setup("only", &[BIG_R]);
-    let e = c.refused("detect_holes", json!({ "name": "B" }));
-    assert!(e.contains("no hole this Bore op can make") && e.contains("74.300 mm hole"), "{e}");
-    assert!(holes(&mut c).is_empty(), "a refused detection stores nothing");
-
-    // A Drill op on the same plate is not filtered: the rule is the Bore ride's.
+    let got = c.ok("detect_holes", json!({ "name": "B" }));
+    assert_eq!(got["holes"], json!(1), "{got}");
+    assert_eq!(got["skipped"], json!([]), "{got}");
     c.ok("add_tool", json!({ "catalog": "DR-0400", "name": "DR4" }));
     c.ok("add_operation", json!({ "kind": "drill", "tool": "DR4", "source": "plate", "name": "D" }));
     let got = c.ok("detect_holes", json!({ "name": "D" }));
@@ -179,33 +160,25 @@ fn detect_holes_on_a_bore_op_with_only_too_wide_holes_is_refused_by_name() {
 }
 
 #[test]
-fn a_bore_op_handed_the_wide_bore_by_hand_refuses_at_generate() {
+fn a_bore_op_accepts_a_wide_hole_entered_by_hand() {
     let mut c = setup("byhand", &[BIG_R, SMALL_R]);
     c.ok("detect_holes", json!({ "name": "B" }));
     let mut list = holes(&mut c);
+    list.retain(|h| h["radius"].as_f64().is_some_and(|r| r < 4.0));
     let mut wide = list[0].clone();
     wide["radius"] = json!(BIG_R);
     wide["xy"] = json!([-50.0, 0.0]);
     list.push(wide);
     c.ok("edit_operation", json!({ "name": "B", "params": { "holes": list } }));
-    assert_eq!(holes(&mut c).len(), 2, "the edit stored the wide bore");
-    let e = c.refused("generate", json!({ "name": "B" }));
-    for want in ["74.300 mm hole at (-50.000, 0.000)", "too wide to bore", "4.000 mm cutter", "core from 4.000 to 66.300 mm", "up to 12.000 mm"] {
-        assert!(e.contains(want), "the refusal names `{want}`: {e}");
-    }
-    // Nothing generated is nothing to post.
+    assert_eq!(holes(&mut c).len(), 2);
+    let g = c.ok("generate", json!({ "name": "B" }));
+    assert_eq!(g["generated"][0]["status"], json!("ok"), "{g}");
     let v = c.ok("verify", json!({}));
-    assert_ne!(v["ok"], json!(true), "a refused bore never verifies ok: {v}");
+    assert_eq!(v["ok"], json!(true), "the hand-entered wide bore verifies: {v}");
 }
 
-/// The review's bull-nose example (PR #1575): a Ø12 bull nose with r2
-/// corners reaches only R5.732 at a through floor (its tip 1 mm under
-/// it), so a Ø35.5 through bore - inside the 36 mm square-end limit -
-/// would free a C-shaped ridge. Detect holes leaves it out by the corner's
-/// own limit (34.928 mm), and generate refuses it handed in by hand: the
-/// tool's corner radius reaches the kernel from the op's own tool.
 #[test]
-fn a_bull_nose_through_bore_is_judged_by_its_corner_at_detect_and_generate() {
+fn a_wide_bull_nose_through_bore_detects_generates_and_verifies() {
     let stl = write_stl("bull", &[17.75, 8.0]);
     let mut c = Client::new();
     c.ok("import_model", json!({ "path": stl.display().to_string(), "name": "plate" }));
@@ -215,24 +188,12 @@ fn a_bull_nose_through_bore_is_judged_by_its_corner_at_detect_and_generate() {
         "shank_len": 40.0, "holder_d": 44.0, "holder_len": 35.0, "material_group": "general",
         "rpm": 8000.0, "feed": 800.0 } }));
     c.ok("add_operation", json!({ "kind": "bore", "tool": "BN12", "source": "plate", "name": "B", "params": { "stepdown": 2.0 } }));
-
     let got = c.ok("detect_holes", json!({ "name": "B" }));
-    assert_eq!(got["holes"], json!(1), "only the Ø16 hole is stored: {got}");
-    let note = got["skipped"][0].as_str().unwrap_or_default().to_owned();
-    for want in ["35.500 mm hole at (-50.000, 0.000)", "wider than the 34.928 mm", "12.000 mm tool"] {
-        assert!(note.contains(want), "the note names `{want}`: {note}");
-    }
-
-    let mut list = holes(&mut c);
-    let mut wide = list[0].clone();
-    wide["radius"] = json!(17.75);
-    wide["xy"] = json!([-50.0, 0.0]);
-    list.push(wide);
-    c.ok("edit_operation", json!({ "name": "B", "params": { "holes": list } }));
-    let e = c.refused("generate", json!({ "name": "B" }));
-    for want in ["35.500 mm hole at (-50.000, 0.000)", "too wide to bore", "up to 34.928 mm", "2.000 mm corner"] {
-        assert!(e.contains(want), "the refusal names `{want}`: {e}");
-    }
+    assert_eq!(got["holes"], json!(2), "{got}");
+    assert_eq!(got["skipped"], json!([]), "{got}");
+    c.ok("generate", json!({ "name": "B" }));
+    let v = c.ok("verify", json!({}));
+    assert_eq!(v["ok"], json!(true), "{v}");
 }
 
 /// #1560: a hole floor typed off the 1 um lattice (`0.190 in - 0.040 in`

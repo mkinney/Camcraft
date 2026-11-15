@@ -87,6 +87,7 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
     }
     if state.tool_body_ui.lathe.is_some() {
         super::tool_body_lathe_page::section(ui, state, u);
+        super::tool_body_assembly_page::section(ui, state);
         return;
     }
     let old_axis = state.tool_body_ui.axis;
@@ -103,15 +104,13 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
     }
     let pick = state.tool_body_ui.pick;
     ui.horizontal(|ui| {
-        if ui
-            .selectable_label(pick == BodyPickMode::Tip, "Pick tip")
+        if super::pick_button::pick_button(ui, pick == BodyPickMode::Tip, "Pick tip")
             .on_hover_text("click the body in the preview: the nearest corner becomes the tool tip")
             .clicked()
         {
             state.tool_body_ui.pick = if pick == BodyPickMode::Tip { BodyPickMode::Off } else { BodyPickMode::Tip };
         }
-        if ui
-            .selectable_label(pick == BodyPickMode::Axis, "Pick axis")
+        if super::pick_button::pick_button(ui, pick == BodyPickMode::Axis, "Pick axis")
             .on_hover_text("click a face that looks toward the spindle: its normal becomes the tool axis")
             .clicked()
         {
@@ -139,6 +138,7 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
     if ui.button("Apply body").on_hover_text("attach the body with this placement (one undo step)").clicked() {
         state.queue_apply_tool_body();
     }
+    super::tool_body_assembly_page::section(ui, state);
 }
 
 fn axis_combo(ui: &mut Ui, axis: &mut [f64; 3]) {

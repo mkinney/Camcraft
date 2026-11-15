@@ -164,6 +164,10 @@ pub enum ParamsDto {
         /// is the sharp walk every earlier file held - no version step.
         #[serde(default, skip_serializing_if = "is_false")]
         blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
@@ -190,11 +194,10 @@ pub enum ParamsDto {
         entry: EntryDto,
         #[serde(default = "default_helix_radius")]
         helix_radius: f64,
-        /// The pre-M11.4 word: the contact angle in degrees. Still READ
-        /// (absent meant the law's 45 deg), converted to `optimal_load`
-        /// in memory on load - exact, `crate::load` - and never written
-        /// again: a saved file carries `optimal_load` instead (additive,
-        /// the format version does not move; M11.4 B).
+        /// Pre-M11.4 Spiral files stored the contact angle in `max_engagement`
+        /// with `optimal_load` absent (converted via `load_from_file`). For
+        /// M11.4+ files (`optimal_load` present), this holds #1588's
+        /// Trochoidal engagement limit (deg; absent means 90 deg).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_engagement: Option<f64>,
         /// M11.4 B: the adaptive optimal load, radial width as a fraction
@@ -206,6 +209,27 @@ pub enum ParamsDto {
         /// which reads as `spiral` - the path those files always cut.
         #[serde(default)]
         method: AdaptiveMethodDto,
+        /// #1588: return between trochoidal loops (`auto`, `microlift`,
+        /// `retract`); absent reads as `auto`.
+        #[serde(default, rename = "return")]
+        troch_return: AdaptiveTrochReturnDto,
+        /// #1588: microlift height (mm); read when `return` is `microlift`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lift: Option<f64>,
+        /// #1588: return feed (mm/min); absent uses cutting `feed`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        return_feed: Option<f64>,
+        /// #1588: loop width (mm); absent uses all medial room.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        loop_width: Option<f64>,
+        /// #1733 arc turns: absent (written only when ON) is the sharp
+        /// walk every earlier file held - no version step.
+        #[serde(default, skip_serializing_if = "is_false")]
+        blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -230,6 +254,14 @@ pub enum ParamsDto {
         entry: EntryDto,
         #[serde(default = "default_helix_radius")]
         helix_radius: f64,
+        /// #1733 arc turns: absent (written only when ON) is the sharp
+        /// walk every earlier file held - no version step.
+        #[serde(default, skip_serializing_if = "is_false")]
+        blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -336,6 +368,13 @@ pub enum ParamsDto {
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #1731: how far the pass runs past `a` / past `b`, mm. Absent
+        /// (and not written) when zero, so earlier files and saves stay
+        /// byte-identical.
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        extend_start: f64,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        extend_end: f64,
     },
     Trace {
         clearance_z: HeightDto,
@@ -1177,6 +1216,12 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+/// Serde's skip test for an additive length that is zero by default
+/// (#1731 slot end extensions): a zero is absent from the file.
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
+}
+
 /// The facing hole law (M13.11): `lift` is the default and absent from
 /// the file, so a legacy save stays byte-identical and reads as the
 /// safe law; `cut_air` and `through` are the user's own choices.
@@ -1523,6 +1568,18 @@ pub enum AdaptiveMethodDto {
     #[default]
     Spiral,
     Trochoidal,
+}
+
+/// The file mirror of 2D Adaptive Trochoidal's return choice (#1588);
+/// `default` is `auto` (0.3 mm microlift when clearance room permits,
+/// else retract).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AdaptiveTrochReturnDto {
+    #[default]
+    Auto,
+    Microlift,
+    Retract,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]

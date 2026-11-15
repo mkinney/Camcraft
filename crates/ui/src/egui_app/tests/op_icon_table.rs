@@ -68,6 +68,23 @@ fn every_tool_kind_has_its_own_svg_mastered_icon() {
     }
 }
 
+/// The operation page's six section tabs wear their own `sec-*` glyphs,
+/// one per tab the page can show, each SVG-mastered - the rule the
+/// operation rows follow, applied to the tab bar.
+#[test]
+fn every_section_tab_has_its_own_svg_mastered_icon() {
+    use std::collections::HashSet;
+    let svg = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/ui/svg");
+    let mut seen = HashSet::new();
+    for i in 0..crate::egui_app::op_tabs::SECTIONS.len() {
+        let icon = crate::egui_app::op_tabs::sec_icon(i);
+        assert!(seen.insert(icon), "tab {i} shares an icon with another tab");
+        let file = icon.file();
+        assert!(file.starts_with("sec-"), "tab {i} wears the stand-in {file}.png");
+        assert!(svg.join(format!("{file}.svg")).is_file(), "{file}.png has no SVG master");
+    }
+}
+
 /// #661 sections 6-8: the tree rows, badges and CamCraft actions are our
 /// own SVG-mastered glyphs, no longer the stand-ins they borrowed.
 #[test]

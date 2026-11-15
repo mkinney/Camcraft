@@ -10,7 +10,7 @@ for it (5-Axis Contour, 5-Axis Parallel, 5-Axis Flow, Swarf, Advanced Swarf,
 Multi-Axis Rough and Multi-Axis Contour), all in the **Multi-axis** group.
 Each operation's settings, defaults, lead, lag, max tilt, shank avoidance
 and refusals are in the
-[Multi-axis operations](@/guide/operations-multiaxis.md) reference. This page
+[Multi-axis operations](@/guide/multi-axis/operations-multiaxis.md) reference. This page
 covers what that reference leaves out: what the machine and post must offer,
 the checks, and a recipe.
 

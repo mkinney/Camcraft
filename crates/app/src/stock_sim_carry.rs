@@ -22,10 +22,17 @@
 //! - **The carried body is the incoming stock.** A carried setup's own
 //!   stock entity is not read by the sim: the material the machine
 //!   holds is what the previous setup left.
-//! - **Refuse what is not verified.** A turn the column lattice cannot
-//!   carry exactly (side-on, or off the quarter turns) and a lathe or
-//!   mill-turn machine refuse by name, naming both setups. Lathe,
-//!   rotary and posed programs are refused before the walk, as before.
+//! - **Refuse what is not verified.** A turn off the quarter turns and
+//!   a lathe or mill-turn machine refuse by name, naming both setups.
+//!   Lathe, rotary and posed programs are refused before the walk, as
+//!   before.
+//! - **A side-on turn keeps the gouges cut before it (#874).** Stood on
+//!   its edge the body is read again along the new tool axis
+//!   (`Body::carry_side`): never smaller than what stood, cavities
+//!   filled. That read can hide a gouge an earlier setup cut, so the
+//!   body is judged BEFORE the turn and its gouges fold into the final
+//!   verdict, as a block left behind for a new one folds (#320). The
+//!   verdict says the stock was turned ([`side_on_note`]).
 //! - **One machine (#404).** A carry into a setup whose machine (its own
 //!   or the document's, #343) differs from the setup before it refuses
 //!   by name ([`CARRY_MACHINE_CHANGE_REFUSAL`]) in [`entry`], so the rest
@@ -37,7 +44,7 @@
 //!   machine, never the active setup's.
 
 pub(crate) use super::held::{Held, first_carried, first_held};
-use crate::stock_sim::{Body, Deviation, LatticeTurn, Planned, SimOp, stock_grid};
+use crate::stock_sim::{Body, CarryTurn, Deviation, Planned, SimOp, stock_grid};
 
 /// The refusal for a program that moves the stock between setups on
 /// different machines (#404). The program sim judges one machine's
@@ -84,7 +91,7 @@ pub(crate) enum Entry {
     /// block.
     Clip,
     /// The body moves through the transform.
-    Carry(LatticeTurn),
+    Carry(CarryTurn),
     /// Its own stock in a different hold (#320): a new block.
     NewBlock,
 }
@@ -125,14 +132,14 @@ pub(crate) fn one_machine(
     Ok(m_to)
 }
 
-/// The lattice turn that carries the body from setup `from` into setup
-/// `to`.
+/// The turn that carries the body from setup `from` into setup `to`: a
+/// lattice turn, or a side-on quarter turn (#874).
 ///
 /// # Errors
 /// Setups on different machines (#404), a transform that cannot be
 /// carried exactly, a machine kind the carry is not verified on, or a
 /// setup `transform_between` refuses - each named with both setups.
-pub(crate) fn carry_turn(world: &flecs_ecs::prelude::World, from: &str, to: &str) -> Result<LatticeTurn, String> {
+pub(crate) fn carry_turn(world: &flecs_ecs::prelude::World, from: &str, to: &str) -> Result<CarryTurn, String> {
     let head = carry_head(from, to);
     // #404: the machine is the two setups' own (#343), never the active
     // setup's - the body never crosses a machine change. #388: with both
@@ -144,7 +151,7 @@ pub(crate) fn carry_turn(world: &flecs_ecs::prelude::World, from: &str, to: &str
         return Err(format!("{head}: {}", carry_machine_refusal(kind)));
     }
     let t = crate::setup_relative::transform_between(world, from, to).map_err(|e| format!("{head}: {e}"))?;
-    LatticeTurn::from_matrix(matrix_of(t.rot), [t.pos.x, t.pos.y, t.pos.z]).map_err(|e| {
+    CarryTurn::from_matrix(matrix_of(t.rot), [t.pos.x, t.pos.y, t.pos.z]).map_err(|e| {
         if e == crate::stock_sim::CARRY_TURN_REFUSAL {
             // #866: say WHICH turn, in the words the alignment row uses.
             let [x, y, z] = crate::setup_align::angles_of(Some(t));
@@ -185,6 +192,41 @@ pub(crate) fn fold_left(dev: &mut Deviation, left: &Deviation) {
     }
 }
 
+/// Keep the gouges of a verdict taken before the stock leaves the walk's
+/// sight (a new block, #320; a side-on turn, #874) for the final fold.
+fn keep_gouges(left: &mut Option<Deviation>, dev: Deviation) {
+    if dev.gouge_cells > 0 {
+        match left.as_mut() {
+            Some(l) => fold_left(l, &dev),
+            None => *left = Some(dev),
+        }
+    }
+}
+
+/// The line a verdict carries when the program turns the carried stock
+/// side-on (#874): the first such setup change, named, and what the
+/// verdict then reads. `None` when no setup change is a side-on carry.
+#[must_use]
+pub fn side_on_note(world: &flecs_ecs::prelude::World) -> Option<String> {
+    let mut frame: Option<Option<String>> = None;
+    for (_, e) in crate::setup::operation_order(world) {
+        let Some(op) = crate::model::operation_of(world, &e) else { continue };
+        let eff = crate::setup::effective(world, op.setup.as_deref());
+        let Some(before) = frame.replace(eff.clone()) else { continue };
+        if before == eff {
+            continue;
+        }
+        if matches!(entry(world, before.as_deref(), eff.as_deref()), Ok(Entry::Carry(t)) if t.side_on()) {
+            return Some(format!(
+                "the stock carried from setup '{}' into setup '{}' is turned side-on - its turned faces are read up to one grid cell outside the real stock, never inside it, and a gouge cut before the turn is counted from the setup that cut it",
+                before.unwrap_or_default(),
+                eff.unwrap_or_default()
+            ));
+        }
+    }
+    None
+}
+
 /// Where the program's walk stands: the stock, the setup frame it is
 /// held in, and whether the program crossed into another setup.
 pub(crate) struct Walked {
@@ -218,7 +260,7 @@ pub(crate) fn walk(
     let mut origin = first_eff;
     let mut left: Option<Deviation> = None;
     let mut spanned = false;
-    for p in planned {
+    for (index, p) in planned.iter().enumerate() {
         let eff = crate::setup::effective(world, p.setup.as_deref());
         if eff != frame {
             spanned = true;
@@ -235,16 +277,14 @@ pub(crate) fn walk(
                     clip_to_setup_stock(&mut held, world, eff.as_deref(), min_r)?;
                 }
                 Entry::Carry(turn) => {
-                    held = Held::Carried(held.into_carried(world, origin.as_deref())?.carry(&turn)?);
+                    // #874: the side-on read can hide a gouge cut so far.
+                    if turn.side_on() {
+                        keep_gouges(&mut left, judge(world, &held, &frame, &planned[..index])?);
+                    }
+                    held = Held::Carried(held.into_carried(world, origin.as_deref())?.carry_through(&turn)?);
                 }
                 Entry::NewBlock => {
-                    let dev = judge(world, &held, frame.as_deref())?;
-                    if dev.gouge_cells > 0 {
-                        match left.as_mut() {
-                            Some(l) => fold_left(l, &dev),
-                            None => left = Some(dev),
-                        }
-                    }
+                    keep_gouges(&mut left, judge(world, &held, &frame, &planned[..index])?);
                     held = first_held(world, eff.as_deref(), min_r)?;
                     origin = eff.clone();
                 }
@@ -254,9 +294,15 @@ pub(crate) fn walk(
         if until.is_some() && frame.as_deref() == until {
             return Ok(Walked { held, frame, spanned, origin, left });
         }
-        // #541: a sinker electrode burns its box atom.
-        if let Some([hx, hy, gap]) = p.electrode {
-            held.simulate_box(&p.moves, hx, hy, gap).map_err(|e| format!("{}: {e}", p.name))?;
+        // #541: a sinker electrode burns its box atom; #1152: a body
+        // electrode its outline atom.
+        if let Some(e) = &p.electrode {
+            let burned = if e.outline.is_empty() {
+                held.simulate_box(&p.moves, e.half[0], e.half[1], e.gap)
+            } else {
+                held.simulate_outline(&p.moves, &e.outline, e.gap)
+            };
+            burned.map_err(|why| format!("{}: {why}", p.name))?;
             continue;
         }
         let sim_ops = [SimOp { moves: &p.moves, radius: p.radius, ball: p.ball, cone: p.cone, corner: p.corner }];
@@ -268,12 +314,23 @@ pub(crate) fn walk(
     Ok(Walked { held, frame, spanned, origin, left })
 }
 
-/// The verdict of the stock as held, against the parts in `frame`.
-pub(crate) fn judge(world: &flecs_ecs::prelude::World, held: &Held, frame: Option<&str>) -> Result<Deviation, String> {
-    let facets = crate::setup_align::parts_facets_in(world, frame);
+/// The verdict before leaving `frame`, credited only by operations already
+/// cut in that setup. A later setup's declarations cannot excuse this cut.
+fn judge(
+    world: &flecs_ecs::prelude::World,
+    held: &Held,
+    frame: &Option<String>,
+    cut: &[Planned],
+) -> Result<Deviation, String> {
+    let facets = crate::setup_align::parts_facets_in(world, frame.as_deref());
     // #864: the same tightened tolerance the final verdict is read at.
     let tol = crate::model_fidelity::program_tol(world)?;
-    held.deviate(&facets, tol)
+    let breaks = super::program_breaks(world, cut, true, frame);
+    let marks = super::marks::program_marks(world, cut, true, frame);
+    held.verdict_snapshot(&facets, tol, |dev, tops| {
+        super::credit_breaks(dev, tops, &facets, &breaks);
+        super::credit_marks(dev, tops, &facets, &marks);
+    })
 }
 
 /// The stock setup `setup` starts from when the program reaches it: the

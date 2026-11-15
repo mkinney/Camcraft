@@ -15,13 +15,12 @@
 //! against the cavity's column. The refusals are our own design (#290
 //! D1-D10). No vendor material.
 //!
-//! What it makes: the stock sim burns an electrode with the box atom
-//! (`stock_sim::simulate_box`, #541) - an axis-aligned rectangular face.
-//! So only a cavity whose outline IS an axis-aligned rectangle yields an
-//! electrode here; every other outline is refused by name rather than
-//! handed to a sim that would burn the wrong shape (#1152 owns the body
-//! electrode). The offset outline is still computed and carried, for
-//! that successor.
+//! What it makes: a cavity whose outline IS an axis-aligned rectangle
+//! yields the box electrode the stock sim burns with the box atom
+//! (`stock_sim::simulate_box`, #541). Every other outline yields a body
+//! electrode (#1152, `sinker_electrode_body`): the offset outline is
+//! the electrode's section, burned by the outline atom
+//! (`stock_sim::simulate_outline`).
 
 use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::{Point3, Triangle};
@@ -40,9 +39,6 @@ const OFFSET_SLACK: f64 = 1e-5;
 /// How far inside the cavity's column a facet must reach to stand in
 /// it, mm - the cavity's own walls and floor lie ON the column's faces.
 const CLEAR: f64 = 1e-4;
-
-/// The refusal of a cavity the box atom cannot burn, said once.
-pub const NON_RECTANGULAR: &str = "the stock sim burns a rectangular electrode face only, so an electrode for a non-rectangular cavity is not generated yet (#1152)";
 
 /// What the user states about the electrode, mm.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -84,12 +80,22 @@ pub struct ElectrodeBox {
     pub orbit: f64,
     /// The offset outline, counter-clockwise: the electrode's section.
     pub outline: Vec<Point2>,
+    /// A body electrode (#1152): the section is `outline`, not the
+    /// rectangle `face` (which is then the outline's X and Y extents).
+    pub body: bool,
+    /// The cavity's own outline, counter-clockwise: its column.
+    pub ring: Vec<Point2>,
 }
 
 impl ElectrodeBox {
-    /// The electrode as #541's tool record.
+    /// The electrode as #541's tool record; a body electrode's record
+    /// carries its section about the burn point (#1152).
     #[must_use]
     pub fn tool(&self) -> Tool {
+        if self.body {
+            let section = crate::sinker_electrode_body::section(self);
+            return camcraft_tools::electrode::electrode_outline_tool(&section, self.length, self.pickup);
+        }
         camcraft_tools::electrode::electrode_tool(self.face.0, self.face.1, self.length, self.pickup)
     }
 }
@@ -157,10 +163,11 @@ fn check_spec(s: &ElectrodeSpec) -> Result<f64, GenError> {
 /// The electrode `spec` asks for under `cavity`.
 ///
 /// # Errors
-/// By name: a garbled spec; an outline that crosses itself; a cavity
-/// that is not an axis-aligned rectangle ([`NON_RECTANGULAR`]); an inset
+/// By name: a garbled spec; an outline that crosses itself; an inset
 /// that consumes the cavity or splits it; a face beyond the tool
-/// record's bounds; an offset that disagrees with its own arithmetic.
+/// record's bounds; an offset that disagrees with its own arithmetic;
+/// and, for a cavity that is no axis-aligned rectangle, the refusals of
+/// `sinker_electrode_body::derive_body`.
 pub fn derive(cavity: &Cavity, spec: &ElectrodeSpec) -> Result<ElectrodeBox, GenError> {
     let orbit = check_spec(spec)?;
     let depth = cavity.top_z - cavity.floor_z;
@@ -185,11 +192,8 @@ pub fn derive(cavity: &Cavity, spec: &ElectrodeSpec) -> Result<ElectrodeBox, Gen
     // read as one too.
     let rect = rect_of(&cavity.outline, TOL).filter(|_| rect_of(outer.points(), 2.0 * TOL).is_some());
     let Some((lo, hi)) = rect else {
-        return refuse(format!(
-            "the cavity's outline is not an axis-aligned rectangle (it has {} corners and fills {:.1}% of its bounds) - {NON_RECTANGULAR}",
-            outer.points().len(),
-            region.bounds().map_or(0.0, |(a, b)| 100.0 * region.area() / ((b.x - a.x) * (b.y - a.y)).max(f64::MIN_POSITIVE))
-        ));
+        // #1152: any other outline is a body electrode's section.
+        return crate::sinker_electrode_body::derive_body(cavity, spec, orbit, &region);
     };
     let (cx, cy) = (hi.x - lo.x, hi.y - lo.y);
     let inset = spec.undersize + orbit;
@@ -255,6 +259,8 @@ pub fn derive(cavity: &Cavity, spec: &ElectrodeSpec) -> Result<ElectrodeBox, Gen
         inset,
         orbit,
         outline,
+        body: false,
+        ring: cavity.outline.clone(),
     })
 }
 
@@ -294,9 +300,19 @@ fn area(poly: &[Point3]) -> f64 {
 /// a boss on the floor, a rib, an overhang across the mouth - or `None`
 /// when the column is clear. The electrode is fed down that column, so
 /// anything in it is in the electrode's way. Facets with a non-finite
-/// corner are skipped: they bound nothing a burn could meet.
-#[must_use]
-pub fn standing_in(e: &ElectrodeBox, facets: &[Triangle]) -> Option<Point3> {
+/// corner are skipped: they bound nothing a burn could meet. A body
+/// electrode's column is the cavity's own outline (#1152).
+///
+/// # Errors
+/// A body electrode's column that cannot be built, by name.
+pub fn standing_in(e: &ElectrodeBox, facets: &[Triangle]) -> Result<Option<Point3>, GenError> {
+    if e.body {
+        return crate::sinker_electrode_body::standing_in_ring(e, facets);
+    }
+    Ok(standing_in_box(e, facets))
+}
+
+fn standing_in_box(e: &ElectrodeBox, facets: &[Triangle]) -> Option<Point3> {
     let (hx, hy) = (0.5 * e.cavity.0 - CLEAR, 0.5 * e.cavity.1 - CLEAR);
     if !(hx > 0.0 && hy > 0.0) {
         return None;

@@ -109,6 +109,7 @@ fn drill_retract() -> String {
         orientation: None,
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
         pitch_min: 0.0,
     };

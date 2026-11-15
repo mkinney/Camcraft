@@ -130,7 +130,7 @@ pub fn electrode_from_faces(world: &World, picks: &[GeoSel], spec: &ElectrodeSpe
         .ok_or_else(|| {
             "electrode from faces: the part's facets could not be read, so the cavity's column cannot be checked for a boss, a rib or an overhang - no electrode is made".to_owned()
         })?;
-    if let Some(at) = standing_in(&electrode, &facets) {
+    if let Some(at) = standing_in(&electrode, &facets).map_err(words)? {
         return Err(format!(
             "electrode from faces: the part stands inside the cavity above its floor near ({:.3}, {:.3}, {:.3}) - a boss, a rib or an overhang is in the electrode's way, and an electrode shaped round it is not modelled",
             at.x, at.y, at.z

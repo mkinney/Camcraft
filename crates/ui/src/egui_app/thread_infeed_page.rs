@@ -1,6 +1,7 @@
 //! The Threading page's infeed plan rows (issue #416): how the passes
 //! enter (radial, flank, alternating), the depth schedule, the minimum
-//! depth, finish allowance and spring passes. Every value edits the
+//! depth, finish allowance and spring passes, and the repeat of each
+//! roughing depth (issue #418). Every value edits the
 //! page draft; Apply rides EditOperationParams, whose threading door
 //! refuses a plan the insert cannot cut, by name.
 //!
@@ -50,4 +51,6 @@ pub(super) fn rows(ui: &mut Ui, u: Unit, plan: &mut ThreadInfeed) {
         ui.add_sized([CTRL_W, h], DragValue::new(&mut plan.spring_passes).range(0..=camcraft_app::turning::infeed::MAX_SPRING_PASSES));
     });
     hint(ui, "extra passes at full depth after the finish - tooling makers advise 0 unless the thread needs them");
+    check_row(ui, "Repeat each depth", &mut plan.repeat_each_depth);
+    hint(ui, "cut every roughing depth twice, the second cut on the same line, before going deeper - G32 passes only (a G76 cycle refuses it); tooling makers recommend against routine spring passes, so leave it off unless the flanks come out rough");
 }

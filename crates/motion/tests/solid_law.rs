@@ -248,6 +248,7 @@ fn a_pocket_plunging_through_a_thin_blind_floor_is_a_gouge() {
     let (b, f) = table();
     let region = square(-10.0, -10.0, 10.0, 10.0);
     let p = PocketParams {
+        blend_radius: None,
         links: camcraft_motion::links::Links::PLANAR,
         tool_diameter: 2.0 * R,
         stepover: 2.5,

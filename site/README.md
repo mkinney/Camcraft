@@ -13,6 +13,9 @@ zola check          # build and check every link
 - `content/` - the pages, as Markdown: `guide/` (user guide) and
   `developers/` (developer section). A page's place in its section is its
   `weight`.
+- The guide uses sections in job order. Each folder's `_index.md` sets
+  its title and weight. Moved pages keep their old URLs through `aliases`
+  in the front matter. Internal `@/` links point to the new source paths.
 - `templates/` - our own Tera templates; no third-party theme.
 - `static/` - the stylesheet, copied as is, and `vendor/` (elasticlunr, the
   MIT-licensed search library, with its licence beside it).
@@ -20,6 +23,15 @@ zola check          # build and check every link
   header search box loads with the vendored elasticlunr. No third-party
   service; the index is built from each page's title, description and the
   first 2000 characters of its body.
+
+Run the site tests from the repository root with Zola on `PATH`:
+
+```sh
+python3 -m unittest discover -s site/tests -v
+```
+
+They build the site under a URL prefix and check the guide navigation,
+legacy redirects, internal links and operation reference pictures.
 
 The version shown on the site comes from `version.toml`, which the release
 workflow writes from the workspace version before it builds. Without it the

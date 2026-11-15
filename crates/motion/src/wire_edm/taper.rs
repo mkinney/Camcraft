@@ -22,6 +22,14 @@
 //! umbrella's decisions D2 and D7. Our own code; no vendor post,
 //! control manual or CAM product behaviour was consulted.
 //!
+//! An angle-word control (#1164) states its corner rule as machine
+//! data, and the path is what that rule cuts: `Mitre` is the above;
+//! `Cone` pivots the wire about each top-plane corner, its lean held at
+//! the angle while its direction turns from one side's normal to the
+//! next's - the lower end sweeps an arc of radius `height * tan(angle)`,
+//! laid as posed moves at most `CONE_STEP_DEG` apart (the chord stands
+//! within `|d| (1 - cos 1 deg)` of the arc, 1.5e-4 of the lean offset).
+//!
 //! Refused by name, never trimmed: a taper on an open run (#1109,
 //! which has no ring to lean), a taper the machine does not state a
 //! maximum for, an angle (or a corner's lean) above that maximum, a
@@ -36,6 +44,18 @@ use crate::machining2d::GenError;
 /// The sharpest turn (as `1 + n1.n2`) a leaning corner may make: a
 /// turn of about 140 degrees, past which the mitre runs away.
 const MITRE_FLOOR: f64 = 0.25;
+/// The widest turn (degrees) of one posed move of a cone corner.
+const CONE_STEP_DEG: f64 = 2.0;
+
+/// What the wire does at a corner of the top-plane path (#1164).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WireCorner {
+    /// The sides stay planar and meet along the mitre (#536).
+    #[default]
+    Mitre,
+    /// The wire pivots about the corner, its lean held: a cone.
+    Cone,
+}
 
 /// The constant taper of a Wire Contour, resolved to plain numbers.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,6 +68,8 @@ pub struct WireTaper {
     pub max_deg: Option<f64>,
     /// The machine's name, as the refusals say it.
     pub machine: String,
+    /// The corner rule the path models.
+    pub corner: WireCorner,
 }
 
 fn invalid(why: String) -> GenError {
@@ -121,11 +143,16 @@ pub fn wire_contour_tapered(loops: &[Loop], chains: &[Vec<Point2>], p: &WirePara
         _ => return Err(invalid("the wire path lays down no cut".into())),
     };
     let d = h * a.tan();
-    let lean = leans(ring, d, h, t)?;
+    let lean = match t.corner {
+        WireCorner::Mitre => {
+            let l = leans(ring, d, h, t)?;
+            (0..ring.len()).chain(std::iter::once(0)).map(|i| l[i]).collect()
+        }
+        WireCorner::Cone => cones(ring, d, h, t)?,
+    };
     let z = p.plane_z;
     let mut b = PathBuilder::new(Point3::new(start.x, start.y, z));
-    for i in (0..ring.len()).chain(std::iter::once(0)) {
-        let (lo, axis) = lean[i];
+    for &(lo, axis) in &lean {
         b.set_axis(Some(axis));
         b.push(MoveKind::Feed, Point3::new(lo.x, lo.y, z), None);
     }
@@ -142,8 +169,71 @@ pub fn wire_contour_tapered(loops: &[Loop], chains: &[Vec<Point2>], p: &WirePara
         if t.angle_deg > 0.0 { "the profile widens downward" } else { "the profile narrows downward" },
         t.top_z
     ));
+    if t.corner == WireCorner::Cone {
+        said.push(format!(
+            "wire EDM: the control's corner rule is a cone - the wire pivots about each top-plane corner, its lean held at {:.3} degrees, the lower corner rounded to {:.4} mm",
+            t.angle_deg.abs(),
+            d.abs()
+        ));
+    }
     path.notes.extend(said);
     Ok(path)
+}
+
+fn side_normal(a: Point2, b: Point2) -> Option<(f64, f64)> {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let l = dx.hypot(dy);
+    (l > 0.0).then(|| (dy / l, -dx / l))
+}
+
+/// The cone rule's moves (#1164): the lower point and pose of every
+/// move from the lead-in's end round the ring and back, each side
+/// leaning square to itself and each corner turned about its top point.
+fn cones(ring: &[Point2], d: f64, h: f64, t: &WireTaper) -> Result<Vec<(Point2, [f64; 3])>, GenError> {
+    let n = ring.len();
+    let mut normals = Vec::with_capacity(n);
+    for i in 0..n {
+        normals.push(side_normal(ring[i], ring[(i + 1) % n]).ok_or_else(|| invalid("the wire path repeats a point - it cannot be leaned".into()))?);
+    }
+    let pose = |q: Point2, m: (f64, f64)| {
+        let lo = Point2::new(q.x + d * m.0, q.y + d * m.1);
+        let len = (d * d + h * h).sqrt();
+        (lo, [-d * m.0 / len, -d * m.1 / len, h / len])
+    };
+    let turn = |a: (f64, f64), b: (f64, f64)| (a.0 * b.1 - a.1 * b.0).atan2(a.0 * b.0 + a.1 * b.1);
+    // The lead-in arrives with the first side's lean: it must meet a
+    // side, for a cone at the start would be cut by no move.
+    if turn(normals[n - 1], normals[0]).abs() > 1e-9 {
+        return Err(GenError::invalid_at(
+            format!(
+                "wire contour: the lead-in meets the corner at X{:.3} Y{:.3}, and machine {}'s cone corner rule turns the wire there with no move to cut it - move the start hole so its lead meets a side",
+                ring[0].x, ring[0].y, t.machine
+            ),
+            Point3::new(ring[0].x, ring[0].y, t.top_z),
+        ));
+    }
+    let mut out = vec![pose(ring[0], normals[0])];
+    for i in 1..=n {
+        let q = ring[i % n];
+        let (n1, n2) = (normals[i - 1], normals[i % n]);
+        out.push(pose(q, n1));
+        let phi = turn(n1, n2);
+        if phi.abs() > std::f64::consts::PI - 1e-6 {
+            return Err(GenError::invalid_at(format!("wire contour: the path turns back on itself at X{:.3} Y{:.3}", q.x, q.y), Point3::new(q.x, q.y, t.top_z)));
+        }
+        if i == n || phi.abs() <= 1e-9 {
+            continue;
+        }
+        // Whole steps of at most CONE_STEP_DEG; the cast is of a small
+        // positive count (|phi| < pi).
+        let k = (phi.abs().to_degrees() / CONE_STEP_DEG).ceil().max(1.0) as usize;
+        for j in 1..=k {
+            let a = phi * j as f64 / k as f64;
+            let (c, s) = (a.cos(), a.sin());
+            out.push(pose(q, (n1.0 * c - n1.1 * s, n1.0 * s + n1.1 * c)));
+        }
+    }
+    Ok(out)
 }
 
 /// Each ring point's lower-plane point and pose: moved `d` along its
@@ -203,4 +293,24 @@ fn leans(ring: &[Point2], d: f64, h: f64, t: &WireTaper) -> Result<Vec<(Point2, 
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #1164 review (PR #1218): a ring that reverses on itself is refused
+    /// by name under the cone rule - no half turn is laid about a point.
+    #[test]
+    fn the_cone_rule_refuses_a_ring_that_turns_back_on_itself() {
+        let t = WireTaper { angle_deg: 3.0, top_z: 0.0, max_deg: Some(15.0), machine: "M".into(), corner: WireCorner::Cone };
+        let p = |x: f64, y: f64| Point2::new(x, y);
+        // The lead meets the side (5,0)-(10,0); the ring runs up to
+        // (10,10) and straight back down to (10,5).
+        let ring = [p(5.0, 0.0), p(10.0, 0.0), p(10.0, 10.0), p(10.0, 5.0), p(0.0, 0.0)];
+        let err = cones(&ring, 0.6, 12.0, &t).err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(err.contains("the path turns back on itself at X10.000 Y10.000"), "{err}");
+        let square = [p(5.0, 0.0), p(10.0, 0.0), p(10.0, 10.0), p(0.0, 10.0), p(0.0, 0.0)];
+        assert!(cones(&square, 0.6, 12.0, &t).is_ok(), "the control ring turns no half turn");
+    }
 }

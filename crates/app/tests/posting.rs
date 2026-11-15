@@ -202,7 +202,7 @@ fn two_ops_post_to_one_program_cycles_stay_in_their_section() {
         "the cycle returns to R (#994)"
     );
     assert!(
-        parts[2].contains("G73 X20 Y20"),
+        parts[2].contains("G73 X20. Y20."),
         "the peck block, at its hole: {}",
         parts[2]
     );

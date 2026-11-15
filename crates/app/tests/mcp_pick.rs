@@ -454,3 +454,24 @@ fn list_features_normal_follows_the_part_placement() {
     assert_eq!((facings(&flipped, "up"), facings(&flipped, "down")), (1, 1), "{flipped:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #1727: edges are boundaries over MCP too - two picked edge chains set
+/// as the open boundary through `set_operation_area` (the same undoable
+/// `EditOperationParams::with_area` the page's Apply runs), read back,
+/// and undone in one step.
+#[test]
+fn edges_set_as_the_open_boundary_ride_one_undo_step() {
+    let (mut c, dir) = pocket_job("edge-bound");
+    let (_, chains) = floor_loop(&mut c);
+    let picks = json!([{ "model": "part", "id": chains[0] }, { "model": "part", "id": chains[2] }]);
+    let area = json!({ "open": { "picks": picks, "side": "inside" } });
+    let set = c.ok("set_operation_area", json!({ "operation": "P1", "area": area }));
+    assert_eq!(set["area"]["open"]["picks"], picks, "{set}");
+    let g = c.ok("get_operation_geometry", json!({ "operation": "P1" }));
+    assert_eq!(g["area"]["open"]["picks"], picks, "{g}");
+    assert_eq!(g["area"]["open"]["side"], json!("inside"));
+    c.ok("undo", json!({}));
+    let g = c.ok("get_operation_geometry", json!({ "operation": "P1" }));
+    assert_eq!(g["area"]["open"], Value::Null, "undo takes the boundary back out: {g}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

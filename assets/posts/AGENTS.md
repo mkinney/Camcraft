@@ -50,8 +50,7 @@ engine refuses a higher offset by setup name; without the flag the
 script receives the word `G54`..`G59` for offsets 1-6 and the engine
 refuses any offset above 6. A flagged script also defines
 `workOffsetName(n)`, its control's name for offset n (display only).
-Every shipped post sets it except grblhal.cps and tinyg.cps, which
-still take the word (offsets 1-6 only; follow-up issue); an extended word (`G59.1`, `G505`...) is
+Every shipped post sets it. An extended word (`G59.1`, `G505`...) is
 written only where the control's public manual is cited (tormach.cps
 and tormach-lathe.cps: the LinuxCNC G-code reference's G59.1-G59.3);
 `threadHands = true` (#629) says the script
@@ -144,6 +143,12 @@ write (the gate), so the released program never carries one.
   power-on height) reads an unstated `safe_retract` as "not homed" and
   lifts in the work offset to the section's `ClearancePlane` instead,
   refused by name when that height is unknown or not above `StockZTop`.
+- **A length word carries its decimal point (#1836).** A Fanuc-family
+  control with parameter 3401#0 DPI=0 reads a word with no point in least
+  increments (`Z14` is 0.014 mm). The Fanuc, Fanuc Lathe, Haas, Mazak and
+  Doosan posts write every length, angle, lead and feed-per-rev word with
+  its point (`Z14.`); only the words the control documents as "no decimal
+  point" (lathe G76 P Q, G83 Q) stay in whole least increments.
 - **Refuse, never lie.** A record you cannot honor in this dialect
   gets a counted `message()` naming why (Fanuc's `tilt()` returns null
   after one refusal per program — a per-line refusal is noise, a

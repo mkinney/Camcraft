@@ -4,7 +4,7 @@
 //! clearance plane, else its retract plane - instead of rapiding X/Y at
 //! whatever height the tool change left the tip. A long tool on a high
 //! work offset can stand below the part top there. A stream stating
-//! neither plane is refused by name.
+//! neither plane is refused by name, and no X/Y motion follows it (#1682).
 //! The Carvera states Z first right after its `M6` too: its firmware's
 //! public source ends every M6 at the top of Z travel over the machine X/Y
 //! it stood at before the change, not over the tool rack
@@ -142,6 +142,45 @@ fn a_first_traverse_with_no_stated_plane_is_refused_by_name() {
             "{cps}: no X/Y traverse at an unknown height\n{}",
             out.program
         );
+        // #1682: nor any other motion carrying X or Y - the combined
+        // `G0 X20 Y10 Z2` the refused rapid asked for, or a feed after it.
+        let xy: Vec<&str> = out
+            .program
+            .lines()
+            .filter(|l| is_motion(l) && l.split_whitespace().any(|w| w.starts_with('X') || w.starts_with('Y')))
+            .collect();
+        assert!(xy.is_empty(), "{cps}: no X/Y motion after the refusal: {xy:?}\n{}", out.program);
+    }
+}
+
+/// #1682: whatever the section's first move is - a feed, an arc or a
+/// canned cycle - a stream stating no plane is refused by name and none of
+/// its X/Y motion reaches the program: the refused move is not written,
+/// nor any later one while X/Y stay unknown.
+#[test]
+fn no_xy_motion_follows_the_refusal_whatever_the_first_move() {
+    let firsts = [
+        ("feed", "Feed 20000 10000 -1000 F500000\nFeed 30000 10000 -1000 F500000\n"),
+        ("arc", "Arc CW X 8000 Y 0 Z -1000 F 500000 I 4000 J 0\nFeed 30000 10000 -1000 F500000\n"),
+        ("cycle", "CYCLE DRILL X20000 Y10000 Z-5000 R2000 F200000\nFeed 30000 10000 -1000 F500000\n"),
+    ];
+    for (cps, mch) in POSTS {
+        for (what, moves) in firsts {
+            let s = format!("PARAM SpindleSpeed 6000\nPARAM Coolant off\nTOOL 1 6MM END MILL\nSECTION\n{moves}ENDSECTION\n");
+            let out = post(cps, mch, &s);
+            assert!(
+                out.warnings.iter().any(|w| w.contains("first X/Y traverse") && w.contains("no clearance height")),
+                "{cps} ({what} first): {:?}\n{}",
+                out.warnings,
+                out.program
+            );
+            let xy: Vec<&str> = out
+                .program
+                .lines()
+                .filter(|l| l.split_whitespace().any(|w| w.starts_with('X') || w.starts_with('Y')))
+                .collect();
+            assert!(xy.is_empty(), "{cps} ({what} first): no X/Y word after the refusal: {xy:?}\n{}", out.program);
+        }
     }
 }
 

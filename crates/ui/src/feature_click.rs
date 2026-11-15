@@ -92,6 +92,9 @@ pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
             GeoPick::Vertex => PickKinds::POINTS,
             _ => PickKinds { points: true, ..mode },
         }
+    } else if state.wire_sync.armed {
+        // #1171: wire sync points are vertices.
+        PickKinds::POINTS
     } else if state.points_pick.is_some() {
         // #555: three points (it arms Vertex mode). A face or an edge
         // picked in another mode still reaches `points_pick::take`,
@@ -112,6 +115,11 @@ pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
         // #701: the role draft takes faces, edges, corners and walls alike -
         // the toolbar's pick mode stays the user's own.
         PickKinds { faces: true, edges: true, points: true, centres: false }
+    } else if state.boundary_pick.is_some() {
+        // #1727: an armed boundary row takes faces AND edges whatever the
+        // toolbar's pick mode - in Faces mode it took faces only, so no
+        // edge could ever bound the cut.
+        PickKinds { faces: true, edges: true, points: false, centres: false }
     } else {
         mode
     };
@@ -181,6 +189,10 @@ pub(crate) fn click(state: &mut State, p: [f32; 2], mods: Mods) {
     let pick = GeoSel { entity: found.entity, feature };
     if state.locate_pick.is_some() {
         crate::locate_pick::take(state, pick); // #561: the locate mates; refuses an edge by name
+        return;
+    }
+    if state.wire_sync.armed {
+        crate::wire_sync_pick::take(state, pick); // #1171: refuses a face or an edge by name
         return;
     }
     if state.points_pick.is_some() {

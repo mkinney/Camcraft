@@ -1,5 +1,4 @@
-//! The Bore ride's core law (#1556): how wide a hole the centre dive and
-//! one ring clear at the floor, for a flat, bull-nose or ball cutter.
+//! Bore floor reach and the bounded concentric-ring plan (#1566).
 //!
 //! Provenance: plain torus geometry of a corner-radiused end mill (a
 //! cutter of radius `r` whose corner of radius `cr` rounds into a flat
@@ -7,9 +6,7 @@
 //! ride's bands are those of `bore.rs`. Our own derivation, written
 //! down in `docs/decisions/1556-bore-core-door.md`.
 
-/// How far the ring's inner edge may stand past the dive's disc before
-/// the gap counts as material (a float-noise allowance, not a cusp
-/// budget: at the limit the two bands meet edge to edge).
+/// Float allowance for the cutter corner fit and minimum radial step.
 pub(super) const CORE_TOL: f64 = 1e-6;
 
 /// The radius a cutter cuts at `height` above its tip: the flat bottom
@@ -32,19 +29,18 @@ pub fn cutting_radius_at(tool_radius: f64, corner_radius: f64, height: f64) -> f
 /// A through hole (`through_allowance = Some(a)`, the tip `a` under the
 /// floor) is judged at the floor plane, where the cutter cuts at
 /// height `a`: a core left there has no floor under it and comes loose.
-/// A blind hole (`None`) keeps the full radius: its floor stays under
-/// the corner, so what the corner leaves is a ridge standing on it
-/// (the usual bull-nose cusp), never a free piece.
+/// A blind hole (`None`) uses the flat bottom radius. Rings overlap at
+/// the floor plane, so no unwarned ridge remains between them.
 #[must_use]
 pub fn bore_floor_reach(tool_diameter: f64, corner_radius: f64, through_allowance: Option<f64>) -> f64 {
     let r = tool_diameter * 0.5;
     match through_allowance {
         Some(a) => cutting_radius_at(r, corner_radius, a),
-        None => r.max(0.0),
+        None => cutting_radius_at(r, corner_radius, 0.0),
     }
 }
 
-/// The core the ride leaves across a hole of `hole_radius`, as the gap
+/// Historical single-ring gap across a hole of `hole_radius`: the gap
 /// between the dive's disc (radius `reach`) and the ring's inner edge
 /// (`rc - reach`, `rc = R - r - leave`): `rc - 2 reach`. Positive is
 /// material no pass touches.
@@ -54,18 +50,48 @@ pub fn bore_core_gap(hole_radius: f64, tool_diameter: f64, corner_radius: f64, l
     rc - 2.0 * bore_floor_reach(tool_diameter, corner_radius, through_allowance)
 }
 
-/// The one verdict the kernel's door and Detect holes both read: does
-/// the ride leave a core in this hole? Non-finite input reads as no -
-/// the kernel's finite door refuses it by name before this is asked.
-#[must_use]
-pub fn bore_leaves_core(hole_radius: f64, tool_diameter: f64, corner_radius: f64, leave: f64, through_allowance: Option<f64>) -> bool {
-    bore_core_gap(hole_radius, tool_diameter, corner_radius, leave, through_allowance) > CORE_TOL
+/// Maximum rings per hole. Refuse a pathological radial plan before allocation.
+pub(super) const MAX_BORE_RINGS: usize = 4096;
+
+/// Radial expansion stays below one cutter diameter and overlaps the
+/// floor bands. Blind holes use the flat bottom, through holes the
+/// corner reach at the model floor. A ball at a blind floor has no band.
+pub(super) fn bore_step(tool_diameter: f64, corner_radius: f64, through: Option<f64>) -> f64 {
+    0.8 * bore_floor_reach(tool_diameter, corner_radius, through)
 }
 
-/// The widest hole the ride clears without a core: the dive and the
-/// ring meet when `rc = 2 reach`, i.e. `D = d + 4 reach + 2 leave` -
-/// `3d + 2 leave` for a square end mill (and any blind hole).
+/// Keep the old single ring when its floor band meets the centre disc.
+/// Otherwise walk outward at bounded stepover, ending exactly on the wall.
+/// None names an unresolvable floor band or an excessive ring count.
+pub(super) fn bore_ring_count(hole_radius: f64, tool_diameter: f64, corner_radius: f64, leave: f64, through: Option<f64>) -> Option<usize> {
+    let rc = hole_radius - (tool_diameter * 0.5 + leave);
+    let step = bore_step(tool_diameter, corner_radius, through);
+    if !rc.is_finite() || rc <= 0.0 || !step.is_finite() || step <= CORE_TOL {
+        return None;
+    }
+    if rc <= 2.0 * bore_floor_reach(tool_diameter, corner_radius, through) {
+        return Some(1);
+    }
+    let count = (rc / step).ceil();
+    if !count.is_finite() || count > MAX_BORE_RINGS as f64 {
+        return None;
+    }
+    Some(count as usize)
+}
+
+/// The generator and Detect holes share the bounded floor-coverage verdict.
+#[must_use]
+pub fn bore_leaves_core(hole_radius: f64, tool_diameter: f64, corner_radius: f64, leave: f64, through_allowance: Option<f64>) -> bool {
+    bore_ring_count(hole_radius, tool_diameter, corner_radius, leave, through_allowance).is_none()
+}
+
+/// Largest hole allowed by the bounded radial plan. A zero floor band
+/// cannot clear a flat floor at any width and reports no capacity.
 #[must_use]
 pub fn max_bore_diameter(tool_diameter: f64, corner_radius: f64, stock_to_leave: f64, through_allowance: Option<f64>) -> f64 {
-    tool_diameter + 4.0 * bore_floor_reach(tool_diameter, corner_radius, through_allowance) + 2.0 * stock_to_leave
+    let step = bore_step(tool_diameter, corner_radius, through_allowance);
+    if !step.is_finite() || step <= CORE_TOL {
+        return 0.0;
+    }
+    tool_diameter + 2.0 * stock_to_leave + 2.0 * MAX_BORE_RINGS as f64 * step
 }

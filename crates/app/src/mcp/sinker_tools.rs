@@ -1,7 +1,7 @@
 //! The MCP tool for a sinker EDM electrode generated from a cavity's
 //! picked faces (#547): `electrode_from_faces`. It runs the app's
 //! undoable `ElectrodeFromFaces`, so one `undo` removes the tool, and
-//! every refusal - a face set that is no single rectangular cavity, a
+//! every refusal - a face set that is no single cavity, a
 //! garbled number, a taken name - comes back as its text.
 //!
 //! Provenance: our own tool surface over this repo's command layer.
@@ -17,7 +17,7 @@ use crate::sinker_electrode::ElectrodeSpec;
 use serde_json::{json, Map, Value};
 
 pub(super) const TOOLS: &[Tool] = &[
-    Tool { name: "electrode_from_faces", description: "Generate a sinker EDM electrode from the picked faces of a part's cavity - its level floor and every vertical wall standing on it (list_features ids) - and add it as a document tool. The electrode is the cavity's outline offset inward by the undersize (stated in mm, or read from a machine EDM condition by id) plus an optional orbit radius, and stands a stated stub above the cavity's mouth. Answers with the electrode and the burn point, cavity size and heights a Sinker Burn of this cavity states. Only an axis-aligned rectangular cavity yields an electrode yet; any other face set is refused by name. One undo step.", schema: s_electrode, run: electrode_from_faces },
+    Tool { name: "electrode_from_faces", description: "Generate a sinker EDM electrode from the picked faces of a part's cavity - its level floor and every vertical wall standing on it (list_features ids) - and add it as a document tool. The electrode is the cavity's outline offset inward by the undersize (stated in mm, or read from a machine EDM condition by id) plus an optional orbit radius, and stands a stated stub above the cavity's mouth. Answers with the electrode and the burn point, cavity size and heights a Sinker Burn of this cavity states. An axis-aligned rectangular cavity yields a rectangular electrode (shape \"rectangle\"); any other outline of planar vertical walls yields a body electrode (shape \"outline\") whose record carries its section, as [x, y] points in mm about the burn point. A face set that is no single cavity is refused by name. One undo step.", schema: s_electrode, run: electrode_from_faces },
 ];
 
 /// A required finite number of mm.
@@ -63,7 +63,12 @@ fn electrode_from_faces(env: &mut Env, a: &Map<String, Value>) -> Result<Value, 
     env.history.execute(&env.world, cmd);
     Ok(json!({
         "tool": name,
-        "electrode": { "x": fnum(e.face.0), "y": fnum(e.face.1), "length": fnum(e.length), "pickup": fnum(e.pickup) },
+        "electrode": {
+            "x": fnum(e.face.0), "y": fnum(e.face.1), "length": fnum(e.length), "pickup": fnum(e.pickup),
+            // #1152: a body electrode states its section about the burn point.
+            "shape": if e.body { "outline" } else { "rectangle" },
+            "outline": e.body.then(|| e.tool().outline.iter().map(|p| json!([fnum(p[0]), fnum(p[1])])).collect::<Vec<_>>()),
+        },
         "undersize": fnum(undersize),
         "condition": condition,
         "orbit": fnum(e.orbit),

@@ -14,7 +14,8 @@ pub fn stitched_rings(world: &World, items: &[GeoSel]) -> Vec<Option<usize>> {
     // A walk that refuses (a cross-entity fork or plane mismatch,
     // M13.11) owns no ring: every chip reads "stitched nothing", and
     // the refusal itself is the account's to quote.
-    let Ok((_, consumed)) = stitch_open_runs(world, items, None) else {
+    let setup = crate::setup::active(world);
+    let Ok((_, consumed)) = stitch_open_runs(world, setup.as_deref(), items, None) else {
         return vec![None; items.len()];
     };
     let mut out: Vec<Option<usize>> = vec![None; items.len()];
@@ -45,6 +46,12 @@ pub fn selection_notes(
 ) -> Vec<String> {
     selection_account(world, setup, items, params).0
 }
+
+/// How every ring the stitcher composes is named, per entity and across
+/// entities. The pick door reads it ([`selection_refusal`], #1726):
+/// a collapse of a ring that only the stitcher closed is an edge pick in
+/// progress, not a wall pick.
+pub(super) const STITCHED_RIM: &str = "the stitched rim of";
 
 /// The stable core of the "collapses to a line seen from above" refusal
 /// (`push_loop`): what [`selection_refusal`] keys on, so the pick and
@@ -103,6 +110,18 @@ pub fn selection_refusal(
     selection_geometry_impl(world, setup, items, params, None)
         .err()
         .and_then(|err| door_refusal(params, err))
+        .filter(|msg| !stitched_collapse(msg))
+}
+
+/// #1726: whether a door refusal is the collapse of a ring that only the
+/// stitcher closed. Edges are picked one at a time, and the stitcher
+/// welds open runs where their ends meet seen from above: one vertical
+/// edge, or an edge and the edge under it, is such a "ring" with no
+/// area. Refusing it at the door made Ctrl+click add nothing, so the
+/// door lets it in. Generate keeps the refusal, and the page's account
+/// ([`selection_account`]) still says it under the picks.
+fn stitched_collapse(msg: &str) -> bool {
+    msg.starts_with(STITCHED_RIM) && msg.contains(LINE_FROM_ABOVE)
 }
 
 fn pocket_family(params: &OpParams) -> bool {

@@ -222,7 +222,7 @@ pub fn sinker_params(
 
 /// Generate the burn. A rough or finish (#543) is first judged by the
 /// undersize law (`sinker_undersize::judge`), which also places the tip
-/// one undersize above the finished floor; a finish whose undersize is
+/// one undersize minus XY orbit radius above the finished floor; a finish whose undersize is
 /// not smaller than the rough's it follows is warned by name.
 /// The burn is then wear-compensated in Z when a rate is stated (#546:
 /// measured on the op, else the condition's `cond_wear`), from the
@@ -257,6 +257,9 @@ pub(super) fn generate_sinker(
             electrode: (tool.diameter, tool.width),
             gap,
             undersize: r.undersize,
+            orbit: op.orbit,
+            // #1152: a body electrode is judged on its outline's extents.
+            outline: camcraft_tools::electrode::outline(tool).is_some(),
         };
         p.stand = Some(judge(&u, op.condition.trim())?);
     }

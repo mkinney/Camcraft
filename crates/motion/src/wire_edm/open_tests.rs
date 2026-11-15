@@ -139,7 +139,7 @@ fn a_tapered_open_run_is_refused_by_name_not_closed_across_the_part() {
     let chains = run(&semi);
     let p = params(WireSide::Left);
     assert!(wire_contour(&[], &chains, &p).is_ok(), "the vertical run cuts");
-    let taper = WireTaper { angle_deg: 3.0, top_z: 0.0, max_deg: Some(15.0), machine: "M".into() };
+    let taper = WireTaper { angle_deg: 3.0, top_z: 0.0, max_deg: Some(15.0), machine: "M".into(), corner: WireCorner::Mitre };
     for side in [WireSide::Left, WireSide::Right] {
         let p = params(side);
         let why = wire_contour_tapered(&[], &chains, &p, &taper).expect_err("refused").to_string();

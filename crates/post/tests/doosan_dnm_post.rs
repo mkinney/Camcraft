@@ -53,7 +53,7 @@ fn doosan_dnm_posts_basic_milling_clean() {
     assert!(p.contains("G90 G17 G54 G40 G49 G80"));
 
     // Linear motion & feed
-    assert!(p.contains("G01 X45 Y5 Z-2 F500"));
+    assert!(p.contains("G01 X45. Y5. Z-2. F500"));
 
     // Coolant and spindle stop
     assert!(p.contains("M9"));
@@ -383,7 +383,7 @@ fn doosan_dnm_absent_rotary_takes_no_angle_word() {
     let out = engine::run_with(&cps, &mch, stream, &options).expect("post");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     assert!(out.program.contains("G43.4"), "{}", out.program);
-    assert!(out.program.lines().any(|l| l.contains("X0 Y0 Z20 A30 B0") && !l.contains(" C")), "{}", out.program);
+    assert!(out.program.lines().any(|l| l.contains("X0. Y0. Z20. A30. B0.") && !l.contains(" C")), "{}", out.program);
     let c_word = |l: &str| l.split(' ').any(|w| w.len() > 1 && w.starts_with('C') && w[1..].parse::<f64>().is_ok());
     assert!(!out.program.lines().any(c_word), "no C word on a machine with no C: {}", out.program);
 }
@@ -410,5 +410,5 @@ fn doosan_dnm_index_names_only_a_stated_rotary() {
     let moves: Vec<&str> = out.program.lines().filter(|l| l.starts_with("G00") || l.starts_with("G01") || *l == "M10" || *l == "M11").collect();
     // #1633: the first traverse's height is stated with the table still
     // clamped; the index turns on the record itself.
-    assert_eq!(moves, vec!["G00 Z10", "M11", "G00 X0 Y0 Z10 A90", "M10", "G01 X50 Y0 Z-1 F400"], "{}", out.program);
+    assert_eq!(moves, vec!["G00 Z10.", "M11", "G00 X0. Y0. Z10. A90.", "M10", "G01 X50. Y0. Z-1. F400"], "{}", out.program);
 }

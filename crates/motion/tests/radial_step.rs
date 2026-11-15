@@ -28,6 +28,7 @@ fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Region {
 
 fn pp(strategy: PocketStrategy, stepover: f64, optimal_load: f64) -> PocketParams {
     PocketParams {
+        blend_radius: None,
         links: camcraft_motion::links::Links::PLANAR,
         tool_diameter: 10.0,
         stepover,

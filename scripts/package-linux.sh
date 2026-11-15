@@ -121,6 +121,7 @@ cp -a "%{camcraft_package_root}/usr/." "%{buildroot}/usr/"
 /usr/lib/camcraft
 /usr/share/applications/camcraft.desktop
 /usr/share/pixmaps/camcraft.png
+/usr/share/icons/hicolor/*/apps/camcraft.png
 EOF
 rpmbuild -bb --define "_topdir $rpm_dir" \
     --define "camcraft_package_root $pkg_root" "$rpm_dir/SPECS/camcraft.spec"

@@ -23,6 +23,11 @@ workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets are an option not 
 millSpindleReverse = true; // reads PARAM MillSpindle (#988): M4 for a left-hand-cut mill; the engine refuses a reverse mill spindle for a post without it
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 
+// #1388: optional explanations; conservative house budgets, not control maxima.
+explains = "paren";
+commentMax = 60;
+explainBlockMax = 80;
+
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
 
@@ -74,12 +79,19 @@ function trimNum(s) {
   if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
   return s === "-0" ? "0" : s;
 }
-function fu(v) {  // a length: mm at three decimals, or inch at four
+// #1836: a length or angle word always carries its decimal point (`Z14.`,
+// never `Z14`). Fanuc parameter 3401 bit 0 (DPI, Series 0i parameter
+// manual) decides how the control reads a word with no point: DPI=0 reads
+// it in least increments (Z14 is 0.014 mm under IS-B), DPI=1 in mm or
+// inch. With the point, both settings read the same value.
+function pt(s) { return s.indexOf(".") >= 0 ? s : s + "."; }
+function fn(v) {  // a length as text (comments): mm at three decimals, or inch at four
   if (!has(v)) return "0";
   return trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
 }
-function fa(v) {  // an angle (degrees) at three decimals - no unit to convert
-  return has(v) ? trimNum(Number(v).toFixed(3)) : "0";
+function fu(v) { return pt(fn(v)); }  // a length word, with its point
+function fa(v) {  // an angle (degrees) at three decimals, with its point
+  return pt(has(v) ? trimNum(Number(v).toFixed(3)) : "0");
 }
 // #377: `expr - v` as a macro-B expression with v's sign folded into the
 // operator, so a negative v never writes a doubled sign (`#100--15`).
@@ -87,7 +99,7 @@ function fa(v) {  // an angle (degrees) at three decimals - no unit to convert
 // macro B, published operator documentation); a value that formats to 0
 // (including -0 and anything under half a micron) adds no term.
 function minusU(expr, v) {
-  var s = fu(v);
+  var s = fn(v);  // macro-B text: a constant is not scaled by DPI (#1836)
   if (s === "0") return expr;
   return s.charAt(0) === "-" ? expr + "+" + s.substring(1) : expr + "-" + s;
 }
@@ -105,7 +117,12 @@ function block(words) {  // join the non-empty words onto one line
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var line = a.join(" "), c = explain(a);
+    // Omit an explanation that does not fit; never cut executable words.
+    if (c && line.length + 1 + c.length <= explainBlockMax) line += " " + c;
+    writeln(line);
+  }
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative
@@ -408,8 +425,8 @@ function opNotes() {  // at the section's preamble: the setup once, the op each 
 function toolNote() {  // just before the tool change it describes
   var desc = [];
   if (toolKind) desc.push(toolKind);
-  if (toolDia > 0) desc.push("D" + fu(toolDia));
-  if (toolCr > 0) desc.push("R" + fu(toolCr));
+  if (toolDia > 0) desc.push("D" + fn(toolDia));
+  if (toolCr > 0) desc.push("R" + fn(toolCr));
   note(joinDash(["T" + pad2(tNo) + (toolName ? " " + toolName : ""), desc.join(" ")]));
   toolKind = ""; toolCr = 0;
 }
@@ -941,7 +958,7 @@ function onProbeResult() {
     for (var k = 0; k < a.Measures.length; k++) sum.push("#" + (probeBase + 3 * a.Measures[k] + ai));
     var mean = a.Measures.length > 1 ? "[[" + sum.join("+") + "]/" + a.Measures.length + "]" : sum[0];
     block(["#" + (dev + i) + "=" + minusU(mean, a.Expected - org[ai])]);
-    block(["IF[ABS[#" + (dev + i) + "]GT" + fu(p.Tolerance) + "]THEN#3000=1(PROBE " + a.Axis + " OUT OF TOLERANCE)"]);
+    block(["IF[ABS[#" + (dev + i) + "]GT" + fn(p.Tolerance) + "]THEN#3000=1(PROBE " + a.Axis + " OUT OF TOLERANCE)"]);
   }
   if (has(p.SetWorkOffset) && p.SetWorkOffset >= 0) {
     var act = 5221 + 20 * (wcsIndex - 1);

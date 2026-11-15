@@ -43,7 +43,7 @@ concurrency:
 
 jobs:
   gate:
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, camcraft-post-merge]
     timeout-minutes: 90
     permissions:
       contents: read
@@ -109,7 +109,7 @@ jobs:
     # Red or green only: a cancelled run (a newer merge) or a skipped one says nothing.
     needs: gate
     if: ${{ (needs.gate.result == 'success' || needs.gate.result == 'failure') && needs.gate.outputs.skipped != 'true' && (github.event_name == 'push' || inputs.ref == '' || inputs.ref == 'main') }}
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, camcraft-post-merge]
     timeout-minutes: 10
     permissions:
       contents: read

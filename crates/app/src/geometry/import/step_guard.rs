@@ -1,6 +1,6 @@
-//! A metered wrapper around the STEP importer's surfaces, so one face whose
+//! Metered STEP surfaces and edge curves, so a subdivision whose
 //! tessellation never converges ends in a refusal by name instead of a
-//! hang (#1536).
+//! hang (#1536, #1545).
 //!
 //! Provenance: our own design (an evaluation budget on a parametric
 //! surface); the subdivision it meters is truck's published
@@ -119,7 +119,7 @@ impl Meter {
     }
     /// Spend the whole budget at once: the face's division did not
     /// converge (#1602), so the pass is refused as for a runaway.
-    fn exhaust(&self) {
+    pub(super) fn exhaust(&self) {
         self.used.fetch_max(self.cap.saturating_add(1), Ordering::Relaxed);
     }
     /// A new pass: the whole budget again. `outside` stays set.
@@ -252,6 +252,7 @@ impl ParameterDivision2D for Metered {
                     }
                 }
             }
+            Surface::SweptCurve(s) => super::step_division::swept_division(s, &self.meter, range, tol),
             // Other kinds are never stretched (`Stretch::of`).
             other => other.parameter_division(range, tol),
         }
@@ -277,7 +278,7 @@ type StepShell<S> = CompressedShell<Point3, truck_stepio::r#in::alias::Curve3D, 
 
 /// A shell with every face metered, and the meters in face order.
 pub(super) struct Guarded {
-    pub shell: StepShell<Metered>,
+    pub shell: CompressedShell<Point3, super::step_division::CurveGuard, Metered>,
     meters: Vec<Arc<Meter>>,
     kinds: Vec<&'static str>,
     continuous: Vec<bool>,
@@ -311,12 +312,16 @@ impl Guarded {
                 CompressedFace { boundaries: f.boundaries, orientation: f.orientation, surface }
             })
             .collect();
-        Self { shell: CompressedShell { vertices: shell.vertices, edges: shell.edges, faces }, meters, kinds, continuous }
+        let edges = shell.edges.into_iter().map(|e| truck_topology::compress::CompressedEdge {
+            vertices: e.vertices, curve: super::step_division::CurveGuard::new(e.curve, cap),
+        }).collect();
+        Self { shell: CompressedShell { vertices: shell.vertices, edges, faces }, meters, kinds, continuous }
     }
 
     /// Start a new pass: every face gets its whole budget again.
     pub(super) fn reset(&self) {
         self.meters.iter().for_each(|m| m.reset());
+        self.shell.edges.iter().for_each(|e| e.curve.meter.reset());
     }
 
     /// The face to report for a pass in which faces ran past the cap. The

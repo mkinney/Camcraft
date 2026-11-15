@@ -180,14 +180,17 @@ fn the_g_word_posts_state_the_plane_modally() {
     ] {
         let out = post(stem, &s);
         // Sinumerik numbers its blocks; read past the N word.
-        let lines: Vec<&str> = out
+        // #1836: the Fanuc family writes a whole length with its point
+        // (`Z0.`); the lines are read with it dropped, as the 840D writes.
+        let lines: Vec<String> = out
             .lines()
             .map(|l| match l.split_once(' ') {
                 Some((n, rest)) if n.starts_with('N') && n[1..].bytes().all(|b| b.is_ascii_digit()) => rest,
                 _ => l,
             })
+            .map(|l| l.split(' ').map(|w| w.strip_suffix('.').filter(|s| s.len() > 1).unwrap_or(w)).collect::<Vec<_>>().join(" "))
             .collect();
-        let has = |want: &str| lines.contains(&want);
+        let has = |want: &str| lines.iter().any(|l| l == want);
         assert!(has(&format!("G18 {g3} X15 Y0 Z0 I-5 K0 F600")), "{stem}:\n{out}");
         assert!(has(&format!("G17 {g2} X-5 Y5 Z0 I0 J5 F800")), "{stem}: G17 returns:\n{out}");
         assert!(has(&format!("G19 {g2} X-5 Y10 Z5 J5 K0 F600")), "{stem}:\n{out}");

@@ -978,6 +978,7 @@ fn contour_is_deterministic() {
 
 fn pp() -> PocketParams {
     PocketParams {
+        blend_radius: None,
         links: camcraft_motion::links::Links::PLANAR,
         tool_diameter: 10.0,
         stepover: 5.0,

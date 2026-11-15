@@ -146,7 +146,7 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State, pal: &Tokens) {
     let mut open: Option<Result<MachineDraft, String>> = None;
     if p.editor.is_none() {
         ui.horizontal_wrapped(|ui| {
-            egui::ComboBox::from_id_salt("machines-new-kind")
+            let cb = egui::ComboBox::from_id_salt("machines-new-kind")
                 .selected_text(want.map_or(ALL_KINDS, |k| k.word()))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut p.kind_filter, None, ALL_KINDS);
@@ -154,6 +154,7 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State, pal: &Tokens) {
                         ui.selectable_value(&mut p.kind_filter, Some(i), k.word());
                     }
                 });
+            super::fields::named(cb.response, "Filter machines by kind");
             // A blank file needs a kind: shut under "All", accent-filled
             // once a kind is picked.
             let mut blank = egui::Button::new("New blank");

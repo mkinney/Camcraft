@@ -15,7 +15,11 @@
 //! EDM practice, cited in `motion::wire_edm`); no vendor text.
 
 use super::fields::*;
-use camcraft_app::operation::{WireContourOp, WireFourAxis, WirePairingRule, WireSide, WireSyncPair};
+use camcraft_app::operation::{WireContourOp, WireFourAxis, WirePairingRule, WireSide, WireSkim, WireSyncPair, WireTabs, SKIMS_MAX};
+
+#[cfg(test)]
+#[path = "wire_page_tests.rs"]
+mod tests;
 
 const SIDES: [&str; 4] = [
     "Die - the wire runs inside the profile",
@@ -26,8 +30,104 @@ const SIDES: [&str; 4] = [
 const SIDE_OF: [WireSide; 4] = [WireSide::Die, WireSide::Punch, WireSide::Left, WireSide::Right];
 const PAIRINGS: [&str; 2] = ["By arc length from the start hole", "By sync points"];
 
+/// Keep a removed machine condition visible until the user chooses another.
+fn condition_field(ui: &mut Ui, label: &str, condition: &mut String, ids: &[String]) {
+    let mut names = vec!["(none chosen)".to_owned()];
+    names.extend(ids.iter().cloned());
+    let mut idx = ids.iter().position(|i| i == condition).map_or(0, |i| i + 1);
+    if idx == 0 && !condition.is_empty() {
+        names.push(format!("{condition} (not stated by the machine)"));
+        idx = names.len() - 1;
+    }
+    let was = idx;
+    prop_row(ui, label, |ui| combo_owned(ui, label, &mut idx, &names));
+    if idx != was {
+        *condition = idx.checked_sub(1).and_then(|i| ids.get(i)).cloned().unwrap_or_default();
+    }
+}
+
+fn skim_fields(ui: &mut Ui, skims: &mut Vec<WireSkim>, ids: &[String]) {
+    let len = skims.len();
+    let mut remove = None;
+    let mut swap = None;
+    for (i, skim) in skims.iter_mut().enumerate() {
+        let n = i + 1;
+        condition_field(ui, &format!("Skim {n} condition"), &mut skim.condition, ids);
+        check_row(ui, &format!("Skim {n} reverse"), &mut skim.reverse);
+        prop_row(ui, &format!("Skim {n} order"), |ui| {
+            ui.vertical(|ui| {
+                if ui.add_enabled(i > 0, egui::Button::new(format!("Move skim {n} up"))).clicked() {
+                    swap = Some((i, i.saturating_sub(1)));
+                }
+                if ui.add_enabled(n < len, egui::Button::new(format!("Move skim {n} down"))).clicked() {
+                    swap = Some((i, n));
+                }
+                if ui.button(format!("Remove skim {n}")).clicked() {
+                    remove = Some(i);
+                }
+            });
+        });
+    }
+    if let Some(i) = remove {
+        skims.remove(i);
+    } else if let Some((a, b)) = swap {
+        skims.swap(a, b);
+    }
+    prop_row(ui, "Skim passes", |ui| {
+        if ui.add_enabled(skims.len() < SKIMS_MAX, egui::Button::new("Add skim")).clicked() {
+            skims.push(WireSkim { condition: String::new(), reverse: false });
+        }
+    });
+    hint(ui, "skims run in list order after the rough cut; choose each pass's condition from the machine, and reverse its travel if required");
+}
+
+fn tab_fields(ui: &mut Ui, u: Unit, tabs: &mut Option<WireTabs>, ids: &[String]) {
+    let mut on = tabs.is_some();
+    check_row(ui, "Hold with tabs", &mut on);
+    if !on {
+        *tabs = None;
+        return;
+    }
+    let t = tabs.get_or_insert_with(WireTabs::default);
+    let mut stated = t.count.is_some();
+    check_row(ui, "Tab count stated", &mut stated);
+    if stated {
+        let count = t.count.get_or_insert(1);
+        prop_row(ui, "Tab count", |ui| { ui.add(DragValue::new(count)); });
+    } else {
+        t.count = None;
+    }
+    let mut stated = t.width.is_some();
+    check_row(ui, "Tab width stated", &mut stated);
+    if stated {
+        prop_row(ui, "Tab width", |ui| num(ui, u, t.width.get_or_insert(1.0)));
+    } else {
+        t.width = None;
+    }
+    let mut remove = None;
+    for (i, xy) in t.at.iter_mut().enumerate() {
+        prop_row(ui, &format!("Tab {} X", i + 1), |ui| num(ui, u, &mut xy[0]));
+        prop_row(ui, &format!("Tab {} Y", i + 1), |ui| num(ui, u, &mut xy[1]));
+        prop_row(ui, "Tab position", |ui| {
+            if ui.button(format!("Remove tab position {}", i + 1)).clicked() {
+                remove = Some(i);
+            }
+        });
+    }
+    if let Some(i) = remove {
+        t.at.remove(i);
+    }
+    prop_row(ui, "Tab positions", |ui| {
+        if ui.add_enabled(t.at.len() < 1024, egui::Button::new("Add tab position")).clicked() {
+            t.at.push([0.0, 0.0]);
+        }
+    });
+    hint(ui, "state one world XY position on the profile per tab; the count, width and cut-off condition must be stated before generation");
+    condition_field(ui, "Tab cut-off condition", &mut t.cutoff_condition, ids);
+}
+
 /// The 4-axis block (#537): the rule, the tolerance and the sync pairs.
-fn four_axis_fields(ui: &mut Ui, u: Unit, f: &mut WireFourAxis) {
+fn four_axis_fields(ui: &mut Ui, u: Unit, f: &mut WireFourAxis, cx: &mut Cx<'_>) {
     let mut pi = usize::from(f.pairing == WirePairingRule::SyncPoints);
     prop_row(ui, "Pairing", |ui| combo(ui, "wire.pairing", &mut pi, &PAIRINGS));
     f.pairing = if pi == 1 { WirePairingRule::SyncPoints } else { WirePairingRule::ArcLength };
@@ -61,6 +161,17 @@ fn four_axis_fields(ui: &mut Ui, u: Unit, f: &mut WireFourAxis) {
     if ui.button("Add sync pair").clicked() {
         f.sync.push(WireSyncPair { upper: Some([0.0, 0.0]), lower: Some([0.0, 0.0]) });
     }
+    // #1171: state the pairs by two vertex clicks in the viewport.
+    let label = if cx.sync_armed { "Stop picking sync points" } else { "Pick sync points in the viewport" };
+    prop_row(ui, "Sync pick", |ui| {
+        if ui.button(label).clicked() {
+            cx.sync_toggle = true;
+        }
+    });
+    if cx.sync_armed {
+        ui.label(format!("Next: {}", crate::wire_sync_pick::next_click(&f.sync)));
+    }
+    hint(ui, "the first click of a pair is a vertex of the upper profile (the higher one), the second a vertex of the lower profile; Apply stores the pairs");
     hint(ui, "each sync pair is one point of the upper profile and the point of the lower profile the wire passes through with it; between pairs the profiles are walked at the same share of their length");
 }
 
@@ -97,7 +208,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         let mut on = four_axis.is_some();
         check_row(ui, "4-axis (upper and lower profiles)", &mut on);
         match (on, four_axis.as_mut()) {
-            (true, Some(f)) => four_axis_fields(ui, u, f),
+            (true, Some(f)) => four_axis_fields(ui, u, f, cx),
             (true, None) => *four_axis = Some(WireFourAxis::default()),
             (false, _) => *four_axis = None,
         }
@@ -111,19 +222,12 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         // The conditions the op's machine states; one it no longer
         // states stays visible, named as such, until another is picked.
         let ids = operation::wire_op::conditions_of(world, op_ctx.as_deref());
-        let mut names: Vec<String> = vec!["(none chosen)".into()];
-        names.extend(ids.iter().cloned());
-        let mut idx = ids.iter().position(|i| i == condition).map_or(0, |i| i + 1);
-        if idx == 0 && !condition.is_empty() {
-            names.push(format!("{condition} (not stated by the machine)"));
-            idx = names.len() - 1;
-        }
-        let was = idx;
-        prop_row(ui, "Condition", |ui| combo_owned(ui, "wire.condition", &mut idx, &names));
-        if idx != was {
-            *condition = idx.checked_sub(1).and_then(|i| ids.get(i)).cloned().unwrap_or_default();
-        }
+        condition_field(ui, "Condition", condition, &ids);
         hint(ui, "the machine's EDM condition states the wire diameter and the spark gap; the path stands wire radius + gap off the profile");
+        skim_fields(ui, &mut p.skims, &ids);
+        check_row(ui, "Freed piece captured", &mut p.capture);
+        hint(ui, "state that the freed piece is caught by a slug catcher, magnet or the machine's slug retention before allowing it to drop");
+        tab_fields(ui, u, &mut p.tabs, &ids);
         // #540: no-core burnout - the pocket's interior burnt out by
         // offset rings, the wire at least the clearance from the walls.
         let mut on = burnout.is_some();

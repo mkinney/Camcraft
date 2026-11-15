@@ -106,6 +106,7 @@ fn second_dive(t: &Toolpath) -> bool {
 
 fn pp(entry: Entry3D, strategy: PocketStrategy, links: Links) -> PocketParams {
     PocketParams {
+        blend_radius: None,
         tool_diameter: 6.0,
         stepover: 2.5,
         stock_to_leave: 0.0,

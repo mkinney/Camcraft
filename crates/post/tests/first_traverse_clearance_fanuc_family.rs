@@ -63,6 +63,12 @@ fn norm(line: &str) -> String {
                 _ => w.to_string(),
             },
         };
+        // #1836: the Fanuc family writes a whole length with its point
+        // (`Z25.`); the neutral spelling drops it, as the 840D writes it.
+        let w = match w.strip_suffix('.') {
+            Some(s) if s.len() > 1 && s[1..].trim_start_matches('-').chars().all(|c| c.is_ascii_digit()) => s.to_string(),
+            _ => w,
+        };
         words.push(w);
     }
     let motion = words.iter().any(|w| matches!(w.as_str(), "G00" | "G01" | "G02" | "G03"));

@@ -8,7 +8,7 @@ In continuous 4-axis work the rotary turns while the tool cuts. In CamCraft
 this is the three **Rotary** operations (Rotary Contour, Rotary Parallel and
 Rotary Offset), which machine a shape of revolution such as a shaft or a
 cam blank. Their settings, defaults and refusals are in the
-[Multi-axis operations](@/guide/operations-multiaxis.md) reference; this page
+[Multi-axis operations](@/guide/multi-axis/operations-multiaxis.md) reference; this page
 covers what the reference does not: how the axis meets the machine, feed, posts
 and a worked recipe.
 

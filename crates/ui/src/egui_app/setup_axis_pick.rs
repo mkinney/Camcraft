@@ -129,8 +129,7 @@ fn axis_row(ui: &mut Ui, state: &mut State, setup: &str, axis: InPlaneAxis) {
             AxisBy::Points => "points",
         };
         let text = if armed { format!("Stop picking {name}") } else { format!("Pick {name} {what}") };
-        if ui
-            .selectable_label(armed, text)
+        if super::pick_button::pick_button(ui, armed, text)
             .on_hover_text(format!("Click {} in the viewport; it runs along {name}.", by.noun()))
             .clicked()
         {

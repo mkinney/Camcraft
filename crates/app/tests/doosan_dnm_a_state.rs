@@ -63,7 +63,7 @@ ENDSECTION
         let t2 = lines.iter().position(|l| l.starts_with("T02")).expect("second tool change");
         let a30 = lines.iter().position(|l| l.contains("G00") && l.contains("A30")).expect("A30 written");
         assert!(a30 < t2, "{}", out.program);
-        let a0 = lines[t2..].iter().position(|l| l.contains("G00") && l.split(' ').any(|w| w == "A0"));
+        let a0 = lines[t2..].iter().position(|l| l.contains("G00") && l.split(' ').any(|w| w == "A0."));
         let a0 = t2 + a0.unwrap_or_else(|| panic!("second tool writes no A0:\n{}", out.program));
         assert_eq!(lines[a0 - 1].trim(), "M11", "{}", out.program);
         assert_eq!(lines[a0 + 1].trim(), "M10", "{}", out.program);
@@ -89,5 +89,5 @@ ENDSECTION
     let out = engine::run_with(&dnm_post(), &plain_fourth(), stream, &options).expect("posts");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     assert!(!out.program.contains("G43.4"), "{}", out.program);
-    assert!(out.program.contains("M11\nG00 X0 Y0 Z5 A0\nM10"), "{}", out.program);
+    assert!(out.program.contains("M11\nG00 X0. Y0. Z5. A0.\nM10"), "{}", out.program);
 }

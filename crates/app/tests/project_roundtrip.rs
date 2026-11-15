@@ -966,7 +966,7 @@ fn v5_roundtrips_retract_and_auto() {
             "Pocket1",
             "EM-0400-2FL",
             SrcRef::Stock,
-            OpParams::Pocket { tilt: None,
+            OpParams::Pocket { blend_radius: None, tilt: None,
                 links: camcraft_app::links::Links::PLANAR,
                 stepover: 1.0,
                 stock_to_leave: 0.0,

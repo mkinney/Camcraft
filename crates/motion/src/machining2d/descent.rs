@@ -149,11 +149,11 @@ pub(super) fn plan_core(arm: Entry3D, zig: bool, l: &Lvl, leg: Point2, z: f64, p
 }
 
 /// The ramp fallback: the zig-zag along the first cut at the entry's
-/// ramp angle (the transition's when the entry sets none) - every point
+/// ramp angle (3 deg when the entry sets none) - every point
 /// on the proved cut.
 pub(super) fn ramp_fallback(l: &Lvl, z: f64, prev_z: f64, m: &Motion) -> Option<Descent> {
     let a = &m.links.approach;
-    let angle = if a.ramp_zigs() { a.ramp_angle } else { m.links.ramp_angle };
+    let angle = if a.ramp_zigs() { a.ramp_angle } else { crate::links::DEFAULT_RAMP_ANGLE };
     let zf = descent_from(m, prev_z, true);
     plan_zig_capped(l.pass, zf - z, angle, a.ramp_max_len).map(|(pre, n)| Descent::Zig(pre, n, zf))
 }
@@ -225,9 +225,10 @@ pub(super) fn plan_arm(arm: Entry3D, zig: bool, l: &Lvl, leg: Point2, z: f64, pr
         // tool's XY is a steep dive or no move at all - the ring
         // returns to its own start, so a level change's chord has no
         // length. The ramp rides the ring at the ramp angle instead
-        // (the transition's, 3 deg by default), as the helix's stand-
+        // (the entry's, 3 deg by default), as the helix's stand-
         // down does; a ring too short for it dives at the plunge feed,
-        // named.
+        // named. #1665: the bore's chord runs from the last ring start
+        // to the centre, one ring radius - the same steep dive.
         Entry3D::Ramp if m.ring_zig => ramp_fallback(l, z, prev_z, m)
             .unwrap_or(Descent::Sub("the ring is too short to ramp at the angle")),
         Entry3D::Ramp if l.cen.chord_ok(leg, e) => {

@@ -26,6 +26,7 @@ fn square() -> Region {
 
 fn pp(predrilled: bool, center_cutting: bool, strategy: PocketStrategy) -> PocketParams {
     PocketParams {
+        blend_radius: None,
         tool_diameter: 6.0,
         stepover: 2.5,
         stock_to_leave: 0.0,

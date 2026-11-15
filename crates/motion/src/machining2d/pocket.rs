@@ -15,7 +15,7 @@ use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
 use super::arc_cross::post_crossing_free;
 use super::arc_proof::{ProofTally, fit_proved};
 use super::fillet::{Legal, fillet_corners};
-use super::fillet_tally::{FilletTally, fillet_floor};
+use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
 use super::waterscan::{scan_row, waterline_passes};
 use super::slots::chord_clears;
 use super::pocket_hsm::adaptive_passes;
@@ -74,6 +74,11 @@ pub struct PocketParams {
     /// path's notes, with the worst corner rest. `false` - every
     /// pre-M11.1 file - is the sharp walk, unchanged to the byte.
     pub blend_turns: bool,
+    /// The corner arc's radius (#1733), read only with `blend_turns`:
+    /// `None` is the tool radius every earlier file blends at; a smaller
+    /// one leaves less corner rest. The law still shrinks a corner that
+    /// has no room; `corner_arc_radius` is the door.
+    pub blend_radius: Option<f64>,
     /// Level transitions and links (M11.2 C/D); [`Links::PLANAR`] is
     /// the ladder every earlier pocket posted.
     pub links: Links,
@@ -152,6 +157,9 @@ impl PocketParams {
             return Err(GenError::Invalid("retract plane sits inside the material".into()));
         }
         self.links.validate().map_err(|e| GenError::Invalid(e.into()))?;
+        if self.blend_turns {
+            corner_arc_radius(self.blend_radius, self.tool_diameter).map_err(GenError::Invalid)?;
+        }
         if self.entry == Entry3D::Helix || self.links.transition == Some(Entry3D::Helix) {
             let r = self.tool_diameter * 0.5;
             if self.helix_radius <= 0.0 || self.helix_radius > r {
@@ -234,7 +242,6 @@ pub(super) fn pocket_over(
     hold_crossings: bool,
     holes: &[PreHole],
 ) -> Result<Toolpath, GenError> {
-    let r = p.tool_diameter * 0.5;
     // Auto commits to a shape here, from the region's own outline - the
     // outermost loop (largest area; holes and islands never decide the
     // pocket's strategy). The panel quotes the same law on the same
@@ -298,6 +305,7 @@ pub(super) fn pocket_over(
     // one plan at every level, so the plan's refusals are said once.
     let runs: Option<Vec<Vec<Seg>>> = if p.blend_turns {
         let legal = Legal { region: center, inside: true, air_left: None };
+        let rho = corner_arc_radius(p.blend_radius, p.tool_diameter).map_err(GenError::Invalid)?;
         let mut tally = FilletTally::default();
         let runs = passes
             .iter()
@@ -309,7 +317,7 @@ pub(super) fn pocket_over(
                     Some(tol) => fit_pass(pass, tol),
                     None => vec![Seg::Line(rest.to_vec())],
                 };
-                let (walk, t) = fillet_corners(&walk, *first, r, ARC_FIT_TOL, &legal);
+                let (walk, t) = fillet_corners(&walk, *first, rho, ARC_FIT_TOL, &legal);
                 tally.add(t);
                 walk
             })

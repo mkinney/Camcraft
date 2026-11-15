@@ -4,7 +4,8 @@
 //! edited, generated, undone and redone; a tool named on the kind, an
 //! unknown condition and an unnamed one come back as tool errors in the
 //! command's own words, and `list_operation_types` says the kind
-//! mounts no tool.
+//! mounts no tool. A taper the machine cannot post is refused by the
+//! edit door (#1800).
 //!
 //! Gate map (#1108): covers app::mcp (edit, job, tools, setup_tools),
 //! app::commands (CreateOperation, EditOperationParams tool and wire
@@ -192,4 +193,18 @@ fn a_wire_contour_cannot_post_over_mcp_and_writes_no_file() {
     let low = why.to_lowercase();
     assert!(low.contains("wire") || low.contains("edm"), "refusal names the wire cut: {why}");
     assert!(!out.exists(), "a refused post writes no file");
+}
+
+/// #1800: a taper the mounted machine cannot post is refused over MCP by
+/// the same command door the GUI page passes - this machine file states
+/// no edm.max_taper_deg - and the op keeps its vertical cut.
+#[test]
+fn a_taper_edit_the_machine_cannot_post_is_a_tool_error() {
+    let mut c = wire_job("taper");
+    c.ok("add_operation", wire_args("C110"));
+    let why = c.refused("edit_operation", json!({ "name": "W", "params": { "taper_deg": 3.0 } }));
+    assert!(why.contains("3.000 degree taper is asked") && why.contains("states no edm.max_taper_deg"), "{why}");
+    let job = c.ok("get_job", json!({}));
+    let op = job["operations"][0].to_string();
+    assert!(!op.contains("\"taper_deg\":3"), "the refused taper never lands: {op}");
 }

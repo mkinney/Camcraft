@@ -24,6 +24,10 @@ pub struct ImportModel {
     /// the caller to say: the MCP result and the status line. Not part of
     /// the document; empty for a mesh handed in.
     pub notes: Vec<String>,
+    /// The hole of a STEP closed shell that meshes open (#1610,
+    /// `import::Graded::open`): the model lands incomplete, every
+    /// operation on it refused at the post by name. `None` for a whole mesh.
+    pub hole: Option<String>,
 }
 
 impl ImportModel {
@@ -39,7 +43,7 @@ impl ImportModel {
     /// it), is refused by name here, before any parsing.
     pub fn within(path: &Path, facet_budget: Option<u64>) -> Result<Self, CommandError> {
         let budget = checked_budget(path, facet_budget)?;
-        let graded = import::load_model_graded_within(path, budget)?;
+        let graded = import::load_model_open_within(path, budget)?;
         Ok(Self::graded(path, graded, facet_budget))
     }
 
@@ -56,7 +60,7 @@ impl ImportModel {
         if u64::try_from(data.len()).unwrap_or(u64::MAX) > import::MAX_FILE_BYTES {
             return Err(import::ImportError::TooLarge.into());
         }
-        let graded = import::parse_model_graded_within(data, format, budget)?;
+        let graded = import::parse_model_open_within(data, format, budget)?;
         Ok(Self::graded(path, graded, facet_budget))
     }
 
@@ -67,9 +71,13 @@ impl ImportModel {
             .and_then(|s| s.to_str())
             .unwrap_or("model")
             .to_string();
-        let mut cmd = Self::from_mesh(&name, graded.mesh).with_fidelity(graded.coarse_mm);
+        // #1610: a mesh with a hole is of unknown fidelity, on every path
+        // its chord rides (an update, a fixture, a stock copy).
+        let coarse = if graded.open.is_some() { Some(crate::model_fidelity::UNKNOWN_MM) } else { graded.coarse_mm };
+        let mut cmd = Self::from_mesh(&name, graded.mesh).with_fidelity(coarse);
         cmd.facet_budget = step_budget::recorded(facet_budget);
         cmd.notes = graded.notes;
+        cmd.hole = graded.open;
         cmd
     }
 
@@ -80,6 +88,7 @@ impl ImportModel {
             coarse_mm: None,
             facet_budget: None,
             notes: Vec::new(),
+            hole: None,
         }
     }
 
@@ -142,6 +151,7 @@ impl Command for ImportModel {
         model::set_rev(world, &entity, 1);
         crate::model_fidelity::set(world, &entity, self.coarse_mm);
         crate::model_fidelity::set_budget(world, &entity, self.facet_budget);
+        crate::mesh_open::set(world, &entity, self.hole.as_deref());
     }
 
     fn invert(&self, world: &World) {

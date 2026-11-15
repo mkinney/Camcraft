@@ -23,6 +23,7 @@ const R: f64 = 5.0;
 
 fn params() -> PocketParams {
     PocketParams {
+        blend_radius: None,
         tool_diameter: 2.0 * R,
         stepover: 4.0,
         stock_to_leave: 0.0,

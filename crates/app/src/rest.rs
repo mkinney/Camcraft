@@ -222,7 +222,7 @@ pub struct PriorPlan {
     /// #318: the setups the body is carried through after `ahead` is
     /// cut - each turn and the cut operations of that setup. Empty for a
     /// same-setup plan.
-    carried: Vec<(crate::stock_sim::LatticeTurn, Vec<Ahead>)>,
+    carried: Vec<(crate::stock_sim::CarryTurn, Vec<Ahead>)>,
 }
 
 impl PriorPlan {
@@ -234,7 +234,7 @@ impl PriorPlan {
         sweep(&mut held, &self.ahead)?;
         for (turn, ops) in &self.carried {
             held = match held {
-                Held::Carried(c) => Held::Carried(c.carry(turn)?),
+                Held::Carried(c) => Held::Carried(c.carry_through(turn)?),
                 // `prior_plan` builds every crossing plan carried.
                 Held::Plain(_) => return Err("a plain prior stock cannot be carried between setups".into()),
             };
@@ -290,7 +290,7 @@ pub fn prior_plan(world: &World, name: &str, setup: Option<&str>, tool_r: f64) -
     let origin = crate::setup::effective(world, chain.origin());
     let mut segs = chain.segments.into_iter();
     let first: Vec<Ahead> = segs.next().map(|s| s.ops).unwrap_or_default().into_iter().filter(|a| a.cut).collect();
-    let carried: Vec<(crate::stock_sim::LatticeTurn, Vec<Ahead>)> = segs
+    let carried: Vec<(crate::stock_sim::CarryTurn, Vec<Ahead>)> = segs
         .filter_map(|s| s.turn.map(|t| (t, s.ops.into_iter().filter(|a| a.cut).collect())))
         .collect();
     let every = || first.iter().chain(carried.iter().flat_map(|(_, o)| o.iter()));

@@ -101,7 +101,13 @@ pub(super) fn wire_gate(world: &World, setup: Option<&str>, params: &OpParams) -
             if let Some(why) = operation::wire_op::tabs_taper_refusal(w) {
                 return Err(CommandError::Invalid(why));
             }
-            operation::wire_op::condition_of(world, setup, w).map(|_| ()).map_err(CommandError::Invalid)
+            operation::wire_op::condition_of(world, setup, w).map_err(CommandError::Invalid)?;
+            // #1800: a taper the mounted machine cannot post is refused
+            // here, by the machine check's own words, not first at the post.
+            if let Some(m) = crate::machine::of_setup(world, setup).1 {
+                crate::machine::wire_edm::taper_door(&m, w.taper_deg).map_err(CommandError::Invalid)?;
+            }
+            Ok(())
         }
         _ => Ok(()),
     }

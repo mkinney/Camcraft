@@ -15,8 +15,10 @@ use crate::operation::GeoSel;
 use crate::sinker_electrode::{ElectrodeBox, ElectrodeSpec};
 
 /// Generate the electrode a picked cavity calls for and add it as the
-/// tool `name`. Every refusal - a face set that is no single
-/// rectangular cavity, a garbled undersize or stub, a taken name - is
+/// tool `name` - a rectangular electrode for an axis-aligned rectangular
+/// cavity, a body electrode (#1152) for any other outline. Every
+/// refusal - a face set that is no single cavity, a garbled undersize
+/// or stub, a taken name - is
 /// made here, by name, before anything enters the history.
 pub struct ElectrodeFromFaces {
     add: AddTool,

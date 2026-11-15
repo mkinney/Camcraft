@@ -147,7 +147,7 @@ The server exposes tools across three modules in `crates/app/src/mcp/` (see `cra
 - `set_operation_geometry { "operation": string, "picks": [id1, id2, ...] }`: Bind specific geometric feature IDs to an operation.
 - `pick_in_box { "operation": string, "box": { "x0", "y0", "x1", "y1" }, "mode"?: "window" | "crossing", "kind"?: "chains" | "faces", "replace"?: bool, "through"?: bool }`: The viewport's box select headless (#979): seen from straight above (+Z, like the Top view), adds every feature edge chain (default) or face whose outline lies inside the world X/Y box (`window`, default) or touches it (`crossing`) to the operation's picks; `replace: true` replaces them. Without `through` (default false) the box is visible-only - hidden edges and faces under the top face stay out; `through: true` takes them too, like the Pick through toggle. Mesh triangulation edges are never taken. One undo step. Refused by name: a box with no area, a non-finite corner, a box that holds nothing new.
 - `set_operation_area { "operation": string, "area": { "containment"?, "offset"?, "corner"?, "extension"?, "extra"?, "open"? } }`: Configure the area controls (containment `"inside"` | `"outside"` | `"center"`, offset, corner, ...); omitted fields take their defaults.
-- `detect_holes { "name": string }`: Automatically detect and populate hole coordinates for Drill, Bore, or Thread operations from the source model (a Thread operation with `external: true` gets upright round bosses instead; Drill on a lathe or mill-turn also fills radial cross holes). Returns `{ operation, holes, radial_holes, skipped, status }`. On a Bore operation (#1556), holes wider than its tool's ring clears without leaving a core (`d + 4 * reach + 2 * stock_to_leave` — `3d + 2 * stock_to_leave` for a square end mill or blind hole, less for a bull-nose or ball cutter on a through hole) are left out and named (one sentence each) in `skipped`. If every detected hole is too wide for a Bore operation, `detect_holes` is refused by name (`no hole this Bore op can make: ...`) and stores nothing. One undo step.
+- `detect_holes { "name": string }`: Automatically detect and populate hole coordinates for Drill, Bore, or Thread operations from the source model (a Thread operation with `external: true` gets upright round bosses instead; Drill on a lathe or mill-turn also fills radial cross holes). Returns `{ operation, holes, radial_holes, skipped, status }`. A Bore operation clears wide holes with concentric rings (#1566). Holes whose plan needs more than 4096 rings, or whose floor band is zero or too small (for example, a ball cutter at a flat blind floor), are left out and named (one sentence each) in `skipped`. If every detected hole is skipped for a Bore operation, `detect_holes` is refused by name (`no hole this Bore op can make: ...`) and stores nothing. One undo step.
 - `detect_pockets { "model": string, "create"?: integer, "tool"?: string, "name"?: string }`: A model's recognised pockets and slots (closed or open pockets, straight slots with open, round or square ends): boundary, floor and top Z, depth, tightest inside corner, slot width and open sides. With `create` (the index of a listed feature) it adds the Pocket, or a Slot for a round or open-ended slot, that machines it, with its area and depths taken from the feature; `tool` is then required and `name` defaults to Pocket1, Slot1, and so on. One undo step.
 - `set_part_axes { "y"?: picks, "x"?: picks, "flip_y"?: boolean, "flip_x"?: boolean, "primary"?: "y" | "x", "setup"?: string }`: Align the part from picked axes, as the Setups page's "Part axes" rows do (`AlignPartToSetup::align_from_axes`). Picks are `list_features` ids: one edge chain, or two points (first to second) - a point is a vertex id, or (#692) the chain id of a circular edge (a hole rim, a boss edge), read as its centre through the same picking service the GUI's centre snap uses; `flip_y` and `flip_x` reverse a pick. One axis: the part turns in the work plane so the pick runs along it (`frame: "in_plane"`, `turn_deg` reported). Both axes (#1329): their 3D directions define the full frame (`frame: "full_3d"`, `turn_deg` null) - `primary` (default `"y"`) lands exactly, the other is made square to it, and +Z lands on the right-hand cross of the picks, so a vertical edge as +Y lays the part on its side and a left-handed pair is honoured literally (the part lands on its head), not refused. Turns about the part's bounds centre, composed onto the setup's current part alignment; the work offset is untouched; one undo step. Refused by name: a face, a curved edge as the one pick, an edge in a point pair that is not circular (straight, or no circle within tolerance), coincident points, a single pick along Z, X and Y picks running (nearly) along each other.
 - `align_part_cylinder { "pick": { "model": string, "id": string }, "setup"?: string, "target"?: "x" | "y" | "z", "angle_deg"?: number, "flip"?: boolean }` (#1586): Align the part from one picked cylinder wall (`list_features` patch id) through `AlignPartToSetup::align_from_cylinder`, as the Setups page does. The cylinder axis lands on `target` (default `"z"`); `angle_deg` (default 0) turns about that axis and `flip` (default false) reverses it. Defaults to the active setup. Returns the setup, stored alignment and its description. One undo step. Refuses unknown models or setups, a pick that is not a cylinder wall, a non-finite angle, an axis that cannot land on the target, and an unchanged alignment by name.
@@ -203,3 +203,33 @@ The following capabilities exist in the GUI or app command layer but do not yet 
 
 Per `AGENTS.md` ("Everything Is a Command"):
 > A PR that adds a user-facing command also adds its MCP tool (and script verb where it fits) in `crates/app/src/mcp/`, or files a `source:agent` follow-up issue `MCP: <command>` (labels `P5`, `area:mcp`) and names it in the PR body.
+
+## Plasma Profile workflow (#1871)
+
+The built-in `Tormach 1300PL` uses a `Torch` tool and the `Tormach PathPilot Plasma` post. The catalog tool `PT-KERF-150` has a 1.5 mm kerf and zero rpm. For a plate model spanning Z = 0 to 5 mm, call these MCP tools in order (arguments shown below):
+
+```text
+load_machine { "builtin": "Tormach 1300PL" }
+add_tool { "catalog": "PT-KERF-150" }
+import_model { "path": "plate.stl", "name": "plate" }
+add_operation { "kind": "Plasma Profile", "name": "Plasma1", "tool": "PT-KERF-150", "source": "plate", "params": { "clearance_z": 25, "top_z": 5, "bottom_z": 0, "lead_in": 4, "lead_out": 3, "overburn": 1 } }
+edit_operation { "name": "Plasma1", "params": { "pierce_delay": 0.5 } }
+undo {}
+redo {}
+generate { "name": "Plasma1" }
+verify {}
+```
+
+The edit, undo and redo above set, remove and restore the pierce delay. Adapt the heights and leads to the actual plate. Use `list_operation_types` for the complete parameter fields and defaults. `kerf: null` uses the torch's diameter; `comp` is `"computer"` (default) or `"control"`. Optional `feed` (mm/min), `pierce_height` and `cut_height` (mm above the plate), and `pierce_delay` (seconds) leave the controller's AutoFS in charge when unset; an `edit_operation` patch with `null` clears one.
+
+Inspect `verify`'s `ok`, `gate.problems`, and `gate.not_judged`. The latter says that the 3D stock simulation does not run for plasma and reports the 2D plasma laws instead: cut order, cut crossing, kerf crossing and tip-up. Cut-order and cut-crossing failures block posting; kerf-crossing and tip-up warnings remain visible in that line. A clean report does not mean that a 3D stock simulation ran.
+
+After verification, post with the explicit plasma post:
+
+```text
+post { "output": "plate.nc", "post": "Tormach PathPilot Plasma" }
+```
+
+This `post` argument applies to this call; it does not change the stored post selection. For a declared setup, `set_setup_post` can store the plasma post for later calls that omit `post`.
+
+Refusals return `isError: true` with a named reason. Assigning an end mill with `set_tool` is refused because Plasma Profile requires a plasma torch. `edit_tool { "name": "PT-KERF-150", "patch": { "rpm": 3000 } }` is refused because a torch turns no spindle. A milling post such as `Fanuc` refuses the plasma machine. A cached path that cuts an outline before its hole produces a `plasma cut order` problem in `verify` and blocks `post`; a refused post writes no NC file. These cases are pinned by `crates/app/tests/mcp_plasma.rs`. The tests run headlessly, not on a physical plasma table.

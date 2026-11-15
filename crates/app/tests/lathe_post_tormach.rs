@@ -37,7 +37,7 @@ use camcraft_app::post::{cnc, engine};
 use camcraft_app::posting;
 use camcraft_app::schema::{PostOptions, PostRef};
 use camcraft_app::world::new_world;
-use tormach_lathe_support::{create, gated, lathe_mch, linuxcnc_sane, program_with, revolve, world_with, CPS, NAME};
+use tormach_lathe_support::{create, gated, lathe_mch, linuxcnc_sane, program_with, revolve, stock_params, world_with, CPS, NAME};
 
 // ------------------------------------------------------------ fixtures
 
@@ -149,14 +149,21 @@ fn mv(kind: MoveKind, x: f64, y: f64, z: f64, feed: Option<f64>) -> cnc::Record 
     cnc::Record::Move(cnc::MoveRec { kind, x, y, z, feed, center: None, ccw: false, plane: Default::default(), abc: None })
 }
 
+/// A Ø8 bar, its face at Z0, the ClearancePlane at Z30 (#1604).
+fn bar() -> Vec<cnc::Record> {
+    stock_params(4.0, 0.0, 30.0)
+}
+
 fn preface() -> Vec<cnc::Record> {
-    vec![
+    let mut r = vec![
         cnc::Record::Param { name: "SpindleSpeed".into(), value: json!(1000.0) },
         cnc::Record::Param { name: "WorkOffset".into(), value: json!("G54") },
         cnc::Record::Param { name: "OperationName".into(), value: json!("OP1") },
-        cnc::Record::Tool { number: 1, name: "TN-1600-0R8".into() },
-        cnc::Record::Section { begin: true },
-    ]
+    ];
+    r.extend(bar());
+    r.push(cnc::Record::Tool { number: 1, name: "TN-1600-0R8".into() });
+    r.push(cnc::Record::Section { begin: true });
+    r
 }
 
 fn run(records: Vec<cnc::Record>) -> engine::PostOutput {
@@ -233,6 +240,7 @@ fn a_section_without_surface_speed_posts_g97_after_one_with_it() {
     r.push(mv(MoveKind::Feed, 0.0, 6.0, 0.0, Some(100.0)));
     r.push(cnc::Record::Section { begin: false });
     r.push(cnc::Record::Param { name: "SpindleSpeed".into(), value: json!(500.0) });
+    r.extend(bar());
     r.push(cnc::Record::Tool { number: 2, name: "DRILL-6".into() });
     r.push(cnc::Record::Section { begin: true });
     r.push(cycle(CycleKind::Drill, 0.0, 0.0));

@@ -147,3 +147,21 @@ fn min_arc_chord_outlasts_four_decimal_inch() {
     assert!(MIN_ARC_CHORD >= 2f64.sqrt() * 0.00254);
     assert!((arc_chord(2.0, PI) - 4.0).abs() < 1e-12);
 }
+
+/// Ring vertices alone do not prove a long flat follows the ring.
+#[test]
+fn a_d_shaped_prefix_posts_its_chords() {
+    for ccw in [true, false] {
+        let sense = if ccw { 1.0 } else { -1.0 };
+        let angle: f64 = sense * 0.98;
+        let flat = vec![Point2::new(C.x + 1.0, C.y), Point2::new(C.x + angle.cos(), C.y + angle.sin())];
+        let mut followed_flat = flat.clone();
+        let end = angle + sense * 0.05;
+        followed_flat.push(Point2::new(C.x + end.cos(), C.y + end.sin()));
+        for pre in [flat, followed_flat] {
+            let moves = ring_ramp(&pre, ccw, 1, 0.1);
+            assert!(moves.iter().all(|m| m.arc.is_none()), "ccw {ccw}: the 0.98 rad flat must stay chords");
+            assert_eq!(moves, chord_ramp(&pre, 1, 0.1), "ccw {ccw}: preserve the planned flat exactly");
+        }
+    }
+}

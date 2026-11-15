@@ -73,6 +73,39 @@ fn heavy_steps_skip_only_binaries_without_ignored_tests() {
 }
 
 #[test]
+fn kernel_ignored_binaries_have_release_heavy_steps() {
+    let root = root();
+    let tests = root.join("crates/kernel/tests");
+    let bins = scan::binaries(&root, "kernel");
+    let mut ignored = BTreeSet::new();
+    for file in scan::rs_files_recursive(&tests) {
+        let text = std::fs::read_to_string(&file).expect("read kernel test source");
+        if !text.contains("#[ignore") {
+            continue;
+        }
+        let rel = file.strip_prefix(&tests).expect("kernel test path");
+        let first = rel.components().next().expect("test source name");
+        let bin = first.as_os_str().to_string_lossy().trim_end_matches(".rs").to_string();
+        if bins.contains(&bin) {
+            ignored.insert(bin);
+        }
+    }
+    assert!(!ignored.is_empty(), "kernel ignored-test fixture must exercise the planner");
+    let release = plan::release(&root);
+    for bin in ignored {
+        let name = format!("kernel heavy: {bin}");
+        let steps: Vec<&Step> = release.steps.iter().filter(|s| s.name == name).collect();
+        assert_eq!(steps.len(), 1, "{name} must have exactly one release step");
+        assert_eq!(steps[0].args, [
+            "test", "--release", "-j", plan::J, "-p", "camcraft-kernel", "--no-fail-fast",
+            "--test", &bin, "--", plan::T, "--ignored",
+        ]);
+    }
+    let build = release.steps.iter().find(|s| s.name == "heavy build (release --no-run)").expect("heavy prebuild");
+    assert!(build.args.windows(2).any(|w| w == ["-p", "camcraft-kernel"]), "kernel needs the release prebuild");
+}
+
+#[test]
 fn heavy_only_selects_one_binary_and_the_failed_log_picks_it_back() {
     let p = plan::release(&root());
     let one = select::apply(p, &["app heavy: pocket3d_hsm".to_string()], None).expect("one binary");

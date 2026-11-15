@@ -7,7 +7,8 @@
 //! side flip; the spring-pass count; the verdict silent on the modeled
 //! thread for every method (and convicting a pass shifted past the
 //! insert's half-angle - it reads the laid geometry); the refusals by
-//! name.
+//! name; the repeat of each roughing depth (issue #418) - the pass
+//! count, the depths, and every repeat the very same moves.
 //!
 //! Gate map (M4.4): covers camcraft_motion::turning (infeed plan,
 //! thread kernel's pass layout and attach_cycle, thread_warnings).
@@ -239,8 +240,8 @@ fn alternating_infeed_flips_the_side_every_pass() {
         let want = if j % 2 == 0 { 14.0 + back } else { 14.0 - back };
         assert!((s - want).abs() < 1e-9, "pass {j}: s {s}, want {want}");
     }
-    assert!(path.threads.is_empty(), "alternating has no single compound angle: no record");
-    assert!(path.notes.iter().any(|n| n.contains("alternating")), "{:?}", path.notes);
+    let t = path.threads.first().copied().expect("a record, flagged");
+    assert!(t.alternating && (t.infeed_angle - 2.0 * ang).abs() < 1e-9, "{t:?}");
     let warns = thread_warnings(&threaded(), &path, width(), 60.0, TOL);
     assert!(warns.is_empty(), "alternating infeed reported: {warns:?}");
 }
@@ -306,4 +307,70 @@ fn plans_that_cannot_cut_refuse_by_name() {
     assert!(ok.refusal(p.depth, p.infeed, p.form_angle).is_none());
     let nan = ThreadInfeed { finish_allowance: f64::INFINITY, ..ThreadInfeed::default() };
     assert!(nan.refusal(p.depth, p.infeed, p.form_angle).is_some() && !nan.is_sane());
+}
+
+/// The move span of each pass: from its plunge up to (not including)
+/// the next pass's approach rapid.
+fn pass_spans(path: &Toolpath) -> Vec<&[camcraft_motion::cl::Move]> {
+    let at: Vec<usize> = path
+        .moves
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.kind == MoveKind::Feed && m.arc.is_none())
+        .map(|(i, _)| i)
+        .collect();
+    let len = match at.as_slice() {
+        [a, b, ..] => b - a - 1,
+        _ => 0,
+    };
+    at.iter().filter_map(|&i| path.moves.get(i..i + len)).collect()
+}
+
+#[test]
+fn repeat_each_depth_cuts_every_roughing_depth_twice() {
+    // 0.4, 0.8, the floor 1.1 each twice; the finishing pass 1.2 and
+    // the one spring pass are not repeated.
+    let pl = ThreadInfeed { finish_allowance: 0.1, spring_passes: 1, repeat_each_depth: true, ..ThreadInfeed::default() };
+    let path = run(&th(), &pl);
+    let depths: Vec<f64> = plunges(&path).iter().map(|&(_, r)| MAJOR - r).collect();
+    let want = [0.4, 0.4, 0.8, 0.8, 1.1, 1.1, 1.2, 1.2];
+    assert_eq!(depths.len(), want.len(), "{depths:?}");
+    for (d, w) in depths.iter().zip(want) {
+        assert!((d - w).abs() < 1e-9, "{depths:?}");
+    }
+    assert!(depths.iter().all(|&d| d <= DEPTH + 1e-9), "a repeat went deeper: {depths:?}");
+    let t = path.threads.first().copied().expect("the record, flagged");
+    assert!(t.repeat_each_depth, "{t:?}");
+    // No allowance: the last rung is the root, the finishing pass, cut
+    // once - 0.4, 0.4, 0.8, 0.8, 1.2.
+    let pl = ThreadInfeed { repeat_each_depth: true, ..ThreadInfeed::default() };
+    let depths: Vec<f64> = plunges(&run(&th(), &pl)).iter().map(|&(_, r)| MAJOR - r).collect();
+    assert_eq!(depths.len(), 5, "{depths:?}");
+    // Off is the plan without the flag, move for move.
+    let off = run(&th(), &ThreadInfeed::default());
+    assert!(!off.threads[0].repeat_each_depth);
+    assert_eq!(off.moves, thread_in(&threaded(), &th(), None).expect("cuts").moves);
+}
+
+#[test]
+fn a_repeat_is_the_same_pass_on_every_method_and_the_judge_stays_silent() {
+    for method in [InfeedMethod::Radial, InfeedMethod::Flank, InfeedMethod::Alternating] {
+        for schedule in [DepthSchedule::ConstantDepth, DepthSchedule::ConstantArea] {
+            let base = ThreadInfeed { min_depth: 0.1, finish_allowance: 0.05, spring_passes: 1, ..plan(method, schedule) };
+            let once = pass_spans(&run(&th(), &base)).len();
+            let pl = ThreadInfeed { repeat_each_depth: true, ..base };
+            let path = run(&th(), &pl);
+            let spans = pass_spans(&path);
+            // Every roughing pass doubles; the finishing and spring
+            // passes (2) do not.
+            assert_eq!(spans.len(), 2 * (once - 2) + 2, "{method:?} {schedule:?}");
+            for j in (0..2 * (once - 2)).step_by(2) {
+                // Same plunge, same arcs, same retract: same station,
+                // same depth, same helix phase - never deeper, never moved.
+                assert_eq!(spans[j], spans[j + 1], "{method:?} {schedule:?}: repeat {j} differs");
+            }
+            let warns = thread_warnings(&threaded(), &path, width(), 60.0, TOL);
+            assert!(warns.is_empty(), "{method:?} {schedule:?}: {warns:?}");
+        }
+    }
 }

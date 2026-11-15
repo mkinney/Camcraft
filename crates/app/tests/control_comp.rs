@@ -127,7 +127,7 @@ fn in_control_posts_the_part_contour_under_g41_through_fanuc_to_the_golden() {
     assert_eq!(out.program.matches("G41 ").count(), levels.len(), "{}", out.program);
     assert!(out.program.contains(" D01 "), "the tool's register: {}", out.program);
     assert_eq!(out.program.matches("G01 G40 ").count(), levels.len(), "{}", out.program);
-    assert!(out.program.contains("X10 Y10 "), "the part corner: {}", out.program);
+    assert!(out.program.contains("X10. Y10. "), "the part corner: {}", out.program);
     common::write_golden("nc/contour_control_comp.nc", &out.program);
     // The in-app gate releases it: no warning, the file written.
     let mut path = std::env::temp_dir();
@@ -169,7 +169,9 @@ fn haas_mazak_and_840d_post_the_part_contour_under_their_own_comp_words_to_the_g
                 "{stem}: the tool call's D selects the edge: {p}"
             ),
         }
-        assert!(p.contains("X10 Y10 "), "{stem}: the part corner: {p}");
+        // #1836: the Fanuc family writes a whole length with its point.
+        let corner = if *stem == "sinumerik" { "X10 Y10 " } else { "X10. Y10. " };
+        assert!(p.contains(corner), "{stem}: the part corner: {p}");
         assert!(!p.contains("WEAR COMP"), "{stem}: no wear note under control: {p}");
         common::write_golden(&format!("nc/{stem}/contour_control_comp.nc"), p);
         let mut path = std::env::temp_dir();

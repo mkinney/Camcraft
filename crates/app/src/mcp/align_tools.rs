@@ -11,18 +11,30 @@
 //! Provenance: our own tool surface over this repo's setup alignment
 //! command; no vendor material consulted.
 
-use super::pick::{pick_list_schema, picks_of};
+use super::pick::{pick_list_schema, pick_of, picks_of};
 use super::setup_tools::{cmd_err, loc_view, obj, setup_or_active};
-use super::tools::{Tool, opt_str};
-use crate::commands::AlignPartToSetup;
+use super::tools::{Tool, opt_str, req_str};
+use crate::commands::{AlignPartToSetup, BoxPoint, OriginAt, SetWcsOrigin};
 use crate::cl::ArcPlane;
-use crate::pick::{AxisPick, InPlaneAxes, InPlaneAxis, PlaneLay, PointsLay, in_plane_turn_deg, plane_side, points_side};
+use crate::pick::{AxisPick, InPlaneAxes, InPlaneAxis, PlaneLay, PointsLay, TargetAxis, in_plane_turn_deg, plane_side, points_side};
 use crate::script::{Env, fnum};
 use crate::setup_align;
 
 use serde_json::{Map, Value, json};
 
 pub(super) const TOOLS: &[Tool] = &[
+    Tool {
+        name: "align_part_cylinder",
+        description: "Align a picked cylinder or bore wall (a list_features patch id) to target x, y or z (default z), then turn angle_deg (default 0) about that axis. flip reverses the wall axis. Uses the GUI's checked alignment command, including its axis landing proof; one undo step. Refuses unknown setups or models, non-cylinder picks, unusable frames and unchanged poses by name.",
+        schema: s_align_part_cylinder,
+        run: align_part_cylinder,
+    },
+    Tool {
+        name: "place_setup_origin",
+        description: "Place a named setup's WCS origin (default active setup) from source model_box, stock_box or vertex. Boxes take point corner (default) or centre; vertex takes one list_features pick. Keeps the WCS rotation and uses the GUI's undoable command. Refuses missing geometry, invalid picks and unchanged origins by name; one undo step.",
+        schema: s_place_setup_origin,
+        run: place_setup_origin,
+    },
     Tool {
         name: "set_part_axes",
         description: "Align the part from picked axes, as the Setups page's \"Part axes\" rows do. Picks are list_features ids: one edge chain, or two points (first to second) - a point is a vertex id, or the chain id of a circular edge (a hole rim, a boss edge) for its centre; flip_y / flip_x reverse a pick. One axis (+Y or +X): the part turns in the setup's work plane (its XY) so the pick, projected into the plane, runs along that axis (turn_deg reports the turn). Both axes: their 3D directions define the full frame (frame \"full_3d\") - primary (default \"y\") lands exactly, the other is made square to it, and +Z lands on the right-hand cross of the picks, so a left-handed pair is honoured literally (the part lands on its head), not refused. The part turns about its bounds' centre, composed onto the setup's current part alignment; the work offset is untouched; one undo step. Refused by name: a face, a curved edge as the one pick, an edge in a point pair that is not circular (straight, or no circle within tolerance), coincident points, a single pick along Z, X and Y picks running (nearly) along each other.",
@@ -42,6 +54,80 @@ pub(super) const TOOLS: &[Tool] = &[
         run: lay_part_on_face,
     },
 ];
+
+fn align_part_cylinder(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
+    let setup = setup_or_active(env, a)?.ok_or("no setup is declared - add_setup first")?;
+    let pick = pick_of(env, a.get("pick").ok_or("\"pick\" is required")?)?;
+    let target = match opt_str(a, "target")? {
+        Some("x") => TargetAxis::X,
+        Some("y") => TargetAxis::Y,
+        None | Some("z") => TargetAxis::Z,
+        Some(other) => return Err(format!("\"target\" must be x, y or z, got \"{other}\"")),
+    };
+    let angle = match a.get("angle_deg") {
+        None => 0.0,
+        Some(v) => v.as_f64().filter(|n| n.is_finite()).ok_or("\"angle_deg\" must be a finite number")?,
+    };
+    let cmd = AlignPartToSetup::align_from_cylinder(&env.world, &setup, &pick, target, angle, flag(a, "flip")?)
+        .map_err(cmd_err)?;
+    env.history.execute(&env.world, cmd);
+    let held = setup_align::stored(&env.world, &setup);
+    Ok(json!({ "setup": setup, "alignment": held.as_ref().map(loc_view), "description": setup_align::describe(held) }))
+}
+
+fn place_setup_origin(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
+    let setup = setup_or_active(env, a)?.ok_or("no setup is declared - add_setup first")?;
+    let at = match req_str(a, "source")? {
+        "vertex" => {
+            if a.contains_key("point") {
+                return Err("\"point\" belongs to a box source, not vertex".into());
+            }
+            OriginAt::Vertex(pick_of(env, a.get("pick").ok_or("\"pick\" is required for vertex")?)?)
+        }
+        source @ ("model_box" | "stock_box") => {
+            if a.contains_key("pick") {
+                return Err("\"pick\" belongs to vertex, not a box source".into());
+            }
+            let point = match opt_str(a, "point")? {
+                None | Some("corner") => BoxPoint::Corner,
+                Some("centre") => BoxPoint::Centre,
+                Some(other) => return Err(format!("\"point\" must be corner or centre, got \"{other}\"")),
+            };
+            if source == "model_box" { OriginAt::ModelBox(point) } else { OriginAt::StockBox(point) }
+        }
+        other => return Err(format!("\"source\" must be model_box, stock_box or vertex, got \"{other}\"")),
+    };
+    let location = crate::commands::place_setup_origin(&env.world, &setup, &at).map_err(cmd_err)?;
+    let previous = crate::setup::wcs_entity(&env.world, Some(&setup))
+        .and_then(|e| crate::model::transform_of(&env.world, &e));
+    if previous == Some(location) {
+        return Err(format!("setup '{setup}' already holds that origin"));
+    }
+    let cmd = SetWcsOrigin::for_setup(&env.world, Some(&setup), location).map_err(cmd_err)?;
+    env.history.execute(&env.world, cmd);
+    let mut out = loc_view(&location);
+    out["setup"] = json!(setup);
+    Ok(out)
+}
+
+fn s_align_part_cylinder() -> Value {
+    obj(json!({
+        "setup": { "type": "string", "description": "Declared setup; defaults to the active one." },
+        "pick": pick_list_schema("One cylinder wall.")["items"].clone(),
+        "target": { "type": "string", "enum": ["x", "y", "z"], "default": "z" },
+        "angle_deg": { "type": "number", "default": 0 },
+        "flip": { "type": "boolean", "default": false }
+    }), &["pick"])
+}
+
+fn s_place_setup_origin() -> Value {
+    obj(json!({
+        "setup": { "type": "string", "description": "Declared setup; defaults to the active one." },
+        "source": { "type": "string", "enum": ["model_box", "stock_box", "vertex"] },
+        "point": { "type": "string", "enum": ["corner", "centre"], "default": "corner" },
+        "pick": pick_list_schema("One vertex.")["items"].clone()
+    }), &["source"])
+}
 
 fn flag(a: &Map<String, Value>, key: &str) -> Result<bool, String> {
     match a.get(key) {

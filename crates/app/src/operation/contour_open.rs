@@ -80,6 +80,12 @@ pub(super) fn open_run(base: &Region, ctx: &AreaCtx, stock_to_leave: f64) -> Res
     if ctx.family != Family::Contour {
         return Err(unreached("contour open boundary family"));
     }
+    if let OpenGeom::Chains(cs) = geom {
+        return Err(GenError::Invalid(format!(
+            "a Contour rides one open chain - its open boundary spells {} separate chains; pick the edges between them or use a clearing kind to cut between them",
+            cs.len()
+        )));
+    }
     let OpenGeom::Chain(raw) = geom else {
         return Err(GenError::Invalid(
             "a Contour's open boundary must be an open chain - a closed ring is ridden by picking it as the selection".into(),
@@ -177,7 +183,7 @@ fn cross(o: Point2, a: Point2, b: Point2) -> f64 {
 }
 
 /// Closest distance between segments ab and cd (zero when they cross).
-fn seg_seg(a: Point2, b: Point2, c: Point2, d: Point2) -> f64 {
+pub(super) fn seg_seg(a: Point2, b: Point2, c: Point2, d: Point2) -> f64 {
     let (d1, d2) = (cross(a, b, c), cross(a, b, d));
     let (d3, d4) = (cross(c, d, a), cross(c, d, b));
     if d1 * d2 < 0.0 && d3 * d4 < 0.0 {

@@ -173,7 +173,7 @@ fn cylinder_panel(ui: &mut Ui, state: &mut State, setup: &str) {
     let armed = mine && crate::cylinder_pick::collecting(state);
     ui.horizontal(|ui| {
         let pick = if armed { "Pick wall (picking...)" } else { "Pick wall" };
-        if ui.button(pick).clicked() {
+        if super::pick_button::pick_button(ui, armed, pick).clicked() {
             if armed {
                 crate::cylinder_pick::disarm(state);
             } else {
@@ -292,7 +292,7 @@ fn vertex_panel(ui: &mut Ui, state: &mut State, setup: &str) {
     let armed = mine && crate::origin_pick::collecting(state);
     ui.horizontal(|ui| {
         let pick = if armed { "Pick point (picking...)" } else { "Pick point" };
-        if ui.button(pick).clicked() {
+        if super::pick_button::pick_button(ui, armed, pick).clicked() {
             if armed {
                 crate::origin_pick::disarm(state);
             } else {

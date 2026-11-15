@@ -46,6 +46,10 @@ pub mod sinker_undersize;
 // #547: a cavity read from picked faces, and the electrode it calls for.
 pub mod sinker_cavity;
 pub mod sinker_electrode;
+// #1152: the body electrode of a non-rectangular cavity.
+mod sinker_electrode_body;
+#[cfg(test)]
+mod sinker_electrode_body_tests;
 #[cfg(test)]
 mod sinker_electrode_tests;
 #[cfg(test)]

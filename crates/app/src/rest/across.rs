@@ -27,7 +27,7 @@
 use super::ahead::{all_ahead, Ahead};
 use crate::stock_sim::carry::{self, Entry};
 use crate::geometry::Point3;
-use crate::stock_sim::{Body, Dexel, LatticeTurn, SimOp};
+use crate::stock_sim::{Body, CarryTurn, Dexel, SimOp};
 use std::sync::Arc;
 use flecs_ecs::prelude::World;
 
@@ -41,7 +41,7 @@ pub const REST_CARRY_REFUSAL: &str = "this operation reads the stock earlier set
 /// entering it (`None` for the setup the chain starts on).
 pub(super) struct Segment {
     pub(super) setup: Option<String>,
-    pub(super) turn: Option<LatticeTurn>,
+    pub(super) turn: Option<CarryTurn>,
     pub(super) ops: Vec<Ahead>,
 }
 
@@ -150,7 +150,7 @@ fn sweep(world: &World, chain: &Chain, min_r: f64, through_consumer: bool) -> Re
     let last = chain.segments.len().saturating_sub(1);
     for (i, s) in chain.segments.iter().enumerate() {
         if let Some(t) = &s.turn {
-            body = body.carry(t)?;
+            body = body.carry_through(t)?;
         }
         if i == last && !through_consumer {
             break;

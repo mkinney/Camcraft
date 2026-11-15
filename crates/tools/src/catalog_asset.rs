@@ -103,6 +103,9 @@ struct Def {
     /// Turning cutting data (#891); the starter catalog states none.
     #[serde(default)]
     turning: Option<crate::turning_data::TurningData>,
+    /// A sinker electrode's section (#1152); the starter catalog states none.
+    #[serde(default)]
+    outline: Vec<[f64; 2]>,
 }
 
 fn yes() -> bool {
@@ -154,6 +157,7 @@ impl Def {
             orientation: self.orientation,
             catalog: crate::catalog_fields::ToolCatalog::default(),
             cutting: Vec::new(),
+            outline: self.outline,
             turning: self.turning,
         }
     }

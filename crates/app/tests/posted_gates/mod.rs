@@ -121,6 +121,8 @@ fn slot_op(a: Point2, b: Point2, width: f64) -> OpParams {
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: None,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 

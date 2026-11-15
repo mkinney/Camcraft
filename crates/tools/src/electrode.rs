@@ -1,5 +1,6 @@
 //! The sinker EDM electrode as a tool record (#541): a rectangular
-//! solid burned straight down Z, held at a pickup.
+//! solid burned straight down Z, held at a pickup - or, with an outline
+//! (#1152, `electrode_outline`), a body of that section.
 //!
 //! Provenance: general die-sink EDM practice from public machine-tool
 //! handbooks (the electrode is a shaped solid fed into the work, the
@@ -14,7 +15,10 @@
 //! - `flute_len` - the electrode's length below the holder: the deepest
 //!   burn it can make without burying its pickup,
 //! - `shank_len` - the pickup offset: from the electrode's top face up
-//!   to the pickup reference the control measures the electrode from.
+//!   to the pickup reference the control measures the electrode from,
+//! - `outline` - the body's section about the burn point (#1152); empty
+//!   for a rectangular face. `diameter` and `width` are then its X and
+//!   Y extents.
 
 use crate::tools::{Tool, ToolKind};
 
@@ -26,7 +30,11 @@ const MAX_SIDE: f64 = 500.0;
 /// stated Y size within the diameter's bound, and a sharp-cornered face.
 #[must_use]
 pub fn is_sane(t: &Tool) -> bool {
-    t.width.is_finite() && t.width > 0.0 && t.width <= MAX_SIDE && t.corner_r == 0.0
+    t.width.is_finite()
+        && t.width > 0.0
+        && t.width <= MAX_SIDE
+        && t.corner_r == 0.0
+        && crate::electrode_outline::record_refusal(t).is_none()
 }
 
 /// The electrode's refusal, by name: what the commands and the library
@@ -55,7 +63,15 @@ pub fn refusal(t: &Tool) -> Option<String> {
             t.corner_r
         ));
     }
-    None
+    crate::electrode_outline::record_refusal(t)
+}
+
+/// The body's section about the burn point (#1152): `Some` for an
+/// electrode that states an outline, `None` for a rectangular face and
+/// for every other kind.
+#[must_use]
+pub fn outline(t: &Tool) -> Option<&[[f64; 2]]> {
+    (t.kind == ToolKind::Electrode && !t.outline.is_empty()).then_some(t.outline.as_slice())
 }
 
 /// The face's half sizes `(x, y)`, mm: the box the stock sim sweeps.
@@ -95,7 +111,18 @@ pub fn electrode_tool(x: f64, y: f64, length: f64, pickup: f64) -> Tool {
         turning: None,
         catalog: crate::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
     }
+}
+
+/// A body electrode of section `outline` (mm about the burn point),
+/// `length` long below the holder, held `pickup` above its top face
+/// (#1152). Its two sizes are the outline's extents; an outline that is
+/// no section, or is not centred, makes a record its own door refuses.
+#[must_use]
+pub fn electrode_outline_tool(outline: &[[f64; 2]], length: f64, pickup: f64) -> Tool {
+    let (x, y) = crate::electrode_outline::bounds(outline).map_or((0.0, 0.0), |(lo, hi)| (hi[0] - lo[0], hi[1] - lo[1]));
+    Tool { outline: outline.to_vec(), ..electrode_tool(x, y, length, pickup) }
 }
 
 #[cfg(test)]

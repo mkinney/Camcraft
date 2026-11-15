@@ -412,6 +412,13 @@ pub struct ToolDto {
     /// reads as unstated - the turning ops post the tool's rpm (G97).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turning: Option<camcraft_tools::turning_data::TurningData>,
+    /// #1152 addition, additive (no version step): a sinker body
+    /// electrode's section, mm about the burn point. Absent from every
+    /// older file and written only when stated. An older build skips
+    /// the key and reads the electrode as the rectangle of its two
+    /// sizes - the outline's bounds, so never a smaller electrode.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outline: Vec<[f64; 2]>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -537,6 +544,7 @@ impl ToolDto {
             notes: t.catalog.notes.clone(),
             cutting_data: t.cutting.iter().map(super::CuttingRowDto::from_row).collect(),
             turning: t.turning,
+            outline: t.outline.clone(),
         }
     }
 
@@ -593,6 +601,7 @@ impl ToolDto {
             .normalized(),
             cutting: self.cutting_data.iter().map(|r| r.to_row()).collect(),
             turning: self.turning,
+            outline: self.outline.clone(),
         }
     }
 }

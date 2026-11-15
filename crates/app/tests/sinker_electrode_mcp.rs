@@ -2,10 +2,13 @@
 //! faces, picked by their `list_features` ids, yield an electrode tool
 //! through the app's undoable `ElectrodeFromFaces`; its answer seeds the
 //! Sinker Burn that burns the pocket; one `undo` removes the tool; and
-//! every bad argument is a tool error by name, never a panic.
+//! every bad argument is a tool error by name, never a panic. A
+//! rounded pocket yields a body electrode (#1152) whose section rides
+//! the reply, `get_job`, `add_tool` and `edit_tool`.
 //!
 //! Gate map (#547): covers app::mcp::sinker_tools (electrode_from_faces),
-//! app::mcp::tools (the tool table), app::commands::electrode,
+//! app::mcp::tools (the tool table), app::mcp::tool_edit (the outline
+//! key), app::commands::electrode,
 //! app::operation::sinker_faces.
 //! Provenance: our own SYNTHETIC fixtures - the sinker template of #530
 //! with invented conditions (no machine's manual) and a block built in
@@ -94,6 +97,8 @@ fn the_electrode_is_generated_and_burned_over_mcp_with_the_gui_commands() {
     let num = |v: &Value| v.as_f64().unwrap_or(f64::NAN);
     assert!(near(num(&got["electrode"]["x"]), 19.96) && near(num(&got["electrode"]["y"]), 11.96), "{got}");
     assert_eq!((got["electrode"]["length"].clone(), got["electrode"]["pickup"].clone()), (json!(16.0), json!(15.0)));
+    // #1152: a rectangular cavity's electrode says so and states no section.
+    assert_eq!((got["electrode"]["shape"].clone(), got["electrode"]["outline"].clone()), (json!("rectangle"), Value::Null));
     assert_eq!(got["cavity"]["center"], json!([6.0, -4.0]));
     assert_eq!((got["undersize"].clone(), got["condition"].clone(), got["note"].clone()), (json!(0.02), json!("F1"), Value::Null));
     assert_eq!(got["warning"], Value::Null, "an undersize equal to the gap burns to size: {got}");
@@ -145,4 +150,82 @@ fn the_electrode_is_generated_and_burned_over_mcp_with_the_gui_commands() {
     assert!(bad(with("depth", json!(3))).contains("unknown argument"));
     let no_such = json!({ "name": "E-X", "picks": picks, "condition": "ZZ", "stub": 10, "pickup": 15 });
     assert!(bad(no_such).contains("states no EDM condition"));
+}
+
+/// #1152: a rounded-corner pocket's faces yield a body electrode over
+/// MCP. Its answer names the shape and the section; `get_job` shows the
+/// section in the tool's definition; `add_tool` takes that definition
+/// back; and `edit_tool` holds the record's door (sizes off the outline
+/// are refused by name, an emptied outline is a rectangular face).
+#[test]
+fn a_rounded_pocket_yields_a_body_electrode_over_mcp() {
+    use camcraft_app::mcp::Server;
+    use pocket_support::{block_with_pocket, rounded_rect};
+    use serde_json::{json, Value};
+    fn call(s: &mut Server, id: &mut i64, name: &str, args: Value) -> Result<Value, String> {
+        *id += 1;
+        let msg = json!({ "jsonrpc": "2.0", "id": *id, "method": "tools/call", "params": { "name": name, "arguments": args } });
+        let reply = s.handle(&msg).expect("a request gets a response");
+        let result = &reply["result"];
+        if result["isError"] == json!(true) {
+            Err(result["content"][0]["text"].as_str().unwrap_or_default().to_owned())
+        } else {
+            Ok(result["structuredContent"].clone())
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("camcraft-1152-mcp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let (stl, mch) = (dir.join("part.stl"), dir.join("sinker.mch"));
+    pocket_support::write_stl(&block_with_pocket(30.0, 30.0, &rounded_rect(10.0, 6.0, 2.0, 4), FLOOR, TOP), &stl);
+    std::fs::write(&mch, sinker_machine()).expect("write the machine");
+    let (mut s, mut id) = (Server::new(), 0);
+    let _ = s.handle(&json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {} }));
+    let mut ok = |s: &mut Server, name: &str, args: Value| call(s, &mut id, name, args).unwrap_or_else(|e| panic!("{name} refused: {e}"));
+    ok(&mut s, "import_model", json!({ "path": stl.display().to_string() }));
+    ok(&mut s, "set_stock", json!({ "box": { "dx": 60, "dy": 60, "dz": 20 } }));
+    ok(&mut s, "load_machine", json!({ "path": mch.display().to_string() }));
+    let _ = std::fs::remove_dir_all(&dir);
+    let rows = ok(&mut s, "list_features", json!({ "model": "part", "kinds": ["faces"] }));
+    let inside = |b: &Value| {
+        let n = |k: &str, i: usize| b[k][i].as_f64().unwrap_or(f64::NAN);
+        n("min", 0) >= -10.0 - 1e-6 && n("max", 0) <= 10.0 + 1e-6 && n("min", 1) >= -6.0 - 1e-6 && n("max", 1) <= 6.0 + 1e-6 && n("min", 2) >= FLOOR - 1e-6
+    };
+    let picks: Vec<Value> =
+        rows["faces"].as_array().expect("faces").iter().filter(|f| inside(&f["bounds"])).map(|f| json!({ "model": "part", "id": f["id"] })).collect();
+    assert_eq!(picks.len(), 21, "the floor, four flat walls and sixteen corner strips");
+
+    let got = ok(&mut s, "electrode_from_faces", json!({ "name": "E-F", "picks": picks, "condition": "F1", "stub": 10, "pickup": 15 }));
+    let num = |v: &Value| v.as_f64().unwrap_or(f64::NAN);
+    assert_eq!(got["electrode"]["shape"], json!("outline"), "{got}");
+    let section = got["electrode"]["outline"].as_array().expect("the section").clone();
+    assert!(section.len() >= 20 && section.iter().all(|p| p.as_array().is_some_and(|xy| xy.len() == 2)), "{got}");
+    assert!((num(&got["electrode"]["x"]) - 19.96).abs() < 1e-5 && (num(&got["electrode"]["y"]) - 11.96).abs() < 1e-5, "{got}");
+    // The section is about the burn point: inside the two sizes.
+    assert!(section.iter().all(|p| num(&p[0]).abs() <= 9.98 + 1e-5 && num(&p[1]).abs() <= 5.98 + 1e-5), "{section:?}");
+
+    // get_job shows the section in the tool's definition, and add_tool
+    // takes the definition back as it stands.
+    let job = ok(&mut s, "get_job", json!({}));
+    let def = job["tools"].as_array().expect("tools").iter().find(|t| t["name"] == json!("E-F")).expect("the electrode")["definition"].clone();
+    assert_eq!(def["outline"].as_array().map(Vec::len), Some(section.len()), "{def}");
+    ok(&mut s, "add_tool", json!({ "name": "E-copy", "definition": def, "holder": "none" }));
+
+    // The burn it seeds is judged clean by the program verdict.
+    let mut params = got["burn"].clone();
+    params["condition"] = json!("F1");
+    params["pass"] = json!("finish");
+    ok(&mut s, "add_operation", json!({ "kind": "Sinker Burn", "tool": "E-F", "source": "stock", "name": "Finish", "params": params }));
+    let generated = ok(&mut s, "generate", json!({ "name": "Finish" }));
+    assert!(generated["generated"].as_array().is_some_and(|g| !g.is_empty()), "{generated}");
+
+    // edit_tool: a size edited off the outline is refused by name; an
+    // emptied outline makes the copy a rectangular face.
+    let why = call(&mut s, &mut id, "edit_tool", json!({ "name": "E-copy", "patch": { "diameter": 25 } })).expect_err("refused");
+    assert!(why.contains("the outline's X and Y extents"), "{why}");
+    let why = call(&mut s, &mut id, "edit_tool", json!({ "name": "E-copy", "patch": { "outline": [[0, 0], [1, 0]] } })).expect_err("refused");
+    assert!(why.contains("at least 3 points"), "{why}");
+    let flat = call(&mut s, &mut id, "edit_tool", json!({ "name": "E-copy", "patch": { "outline": [] } })).expect("an emptied outline");
+    assert!(flat["definition"].get("outline").is_none(), "{flat}");
+    assert_eq!(got["cavity"]["center"], json!([0.0, 0.0]), "{got}");
 }

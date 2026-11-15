@@ -318,3 +318,14 @@ fn use_for_this_setup_replaces_an_own_machine_and_leaves_the_document_alone() {
     assert_eq!(camcraft_app::machine::of(world), own_before, "undo restores the setup's machine");
     assert_eq!(camcraft_app::machine::document_of(world), doc_before);
 }
+
+/// #1119: the Machines pane's kind filter combo carries an accessible name.
+#[test]
+fn the_machines_pane_names_every_input() {
+    let mut h = blank_harness();
+    h.run();
+    open_machines(&mut h);
+    let (bad, seen) = super::super::fixture_plate_tests::unnamed_inputs(&h);
+    assert!(seen >= 1, "only {seen} inputs found in the machines pane");
+    assert!(bad.is_empty(), "unnamed inputs in machines pane: {bad:?}");
+}

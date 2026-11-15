@@ -170,6 +170,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     .filter(|c| !crate::model_fidelity::is_unknown(*c)),
                 fidelity_unknown: crate::model_fidelity::chord_of(world, &entity)
                     .is_some_and(crate::model_fidelity::is_unknown),
+                mesh_open: crate::mesh_open::hole_of(world, &entity),
                 facet_budget: crate::model_fidelity::budget_of(world, &entity),
                 kind,
                 raw_stock_only: mark.is_some(),

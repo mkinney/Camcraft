@@ -140,7 +140,7 @@ fn haas_mazak_and_840d_post_wear_over_the_centre_path_to_the_goldens() {
         let p = &out.program;
         assert_eq!(p.matches(engage).count(), spans, "{stem}: {p}");
         assert_eq!(p.matches(note).count(), 1, "{stem}: one note per section: {p}");
-        assert!(!p.contains("X10 Y10 "), "{stem}: the centre path, never the part corner: {p}");
+        assert!(!p.contains("X10 Y10 ") && !p.contains("X10. Y10. "), "{stem}: the centre path, never the part corner: {p}");
         common::write_golden(&format!("nc/{stem}/contour_wear_comp.nc"), p);
         let mut path = std::env::temp_dir();
         path.push(format!("camcraft_wear_comp_ok_{stem}_{}.nc", std::process::id()));

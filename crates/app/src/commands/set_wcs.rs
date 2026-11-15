@@ -154,8 +154,9 @@ pub fn place_setup_origin(world: &World, setup: &str, at: &OriginAt) -> Result<L
         .map(|l| l.rot)
         .unwrap_or_else(|| Location::default().rot);
     let pos = match at {
-        OriginAt::Vertex(g) => crate::pick::align::vertex(world, g)
-            .map_err(CommandError::Invalid),
+        OriginAt::Vertex(g) => crate::pick::align::vertex_with_pose(world, g, |world, entity| {
+            crate::setup_align::pose_in(world, entity, Some(setup))
+        }).map_err(CommandError::Invalid),
         OriginAt::ModelBox(point) => box_point(
             crate::setup_align::solid_aabb_in(world, Some(setup)),
             *point,

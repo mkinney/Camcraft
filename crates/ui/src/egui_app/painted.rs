@@ -43,6 +43,10 @@ use super::theme::Tokens;
 /// The full-texel uv of an uploaded image.
 const UV_FULL: Rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
 
+/// A calm steel-blue ink for the ribbon's command glyphs - picked for
+/// the light workbench ground, ours in colour and line weight.
+const RIBBON_ICON_INK: Color32 = Color32::from_rgb(0x1F, 0x4E, 0x79);
+
 /// One painted ribbon cell: fixed-size, the bundled glyph centered over a
 /// short caption, tinted background by state, dimmed ink when disabled
 /// (the imgui rule: a disabled cell stays hoverable and greys, it never
@@ -60,8 +64,9 @@ pub fn cell(
     enabled: bool,
     toggled: bool,
     icon: Option<&TextureHandle>,
+    icon_tint: Option<egui::Color32>,
 ) -> Response {
-    let resp = ui.interact(rect, id, Sense::click());
+    let resp = ui.interact(rect, id, Sense::click_and_drag());
     let bg = if !enabled {
         None
     } else if resp.clicked() || resp.is_pointer_button_down_on() {
@@ -88,7 +93,13 @@ pub fn cell(
             Pos2::new(rect.left() + (rect.width() - pal.glyph_px) * 0.5, rect.top()),
             Vec2::splat(pal.glyph_px),
         );
-        let ink = super::contrast::on_fill(bg.unwrap_or(pal.strip_fill()));
+        let ink = match bg {
+            // Hover/active/selected cells wear the family hue poorly -
+            // fall back to the on-fill ink there. Plain command glyphs
+            // carry our steel-blue tint, picked against the light strip.
+            Some(bg) => super::contrast::on_fill(bg),
+            None => icon_tint.unwrap_or(RIBBON_ICON_INK),
+        };
         let tint = if enabled { ink } else { Color32::from_rgba_unmultiplied(ink.r(), ink.g(), ink.b(), 115) };
         painter.image(tex.id(), r, UV_FULL, tint);
     }
@@ -154,12 +165,16 @@ pub fn caption(
     pal: &Tokens,
     cell_bottom: f32,
 ) -> bool {
-    let ink = pal.text_faint;
+    let ink = pal.text_dim;
     let mut job = LayoutJob {
         wrap: TextWrapping::no_max_width(),
         ..LayoutJob::default()
     };
-    job.append(title, 0.0, TextFormat::simple(FontId::proportional(MIN_LABEL_PX), ink));
+    job.append(
+        &title.to_uppercase(),
+        0.0,
+        TextFormat::simple(FontId::proportional(MIN_LABEL_PX), ink),
+    );
     let galley = ui.painter().layout_job(job);
     if galley.size().x > width {
         return false;
@@ -288,10 +303,9 @@ pub fn tree(
             break; // scrolled past the pane: no row, no input, no ink
         }
         let rr = Rect::from_min_size(Pos2::new(rect.left(), top), Vec2::new(rect.width(), row_h));
-        // Row first, eye after: egui's last-wins interaction order plus the
-        // clicked() guard below means an eye pixel is one action, never
-        // row+eye (browser.rs reaches the same law by submitting the eye's
-        // invisible button before the Selectable).
+        // Row first, eye after: egui allocates topmost right-first by
+        // creation order; the eye pixel is created later so the eye
+        // claims the click, not the row.
         let row_resp = ui.interact(rr, ui.id().with(("tree-row", ix)), Sense::click_and_drag());
         let eye_rect = if has_eye(row.kind) {
             let er = Rect::from_center_size(
@@ -308,12 +322,26 @@ pub fn tree(
             None
         };
         let painter = ui.painter();
-        if row.selected {
-            painter.add(Shape::rect_filled(rr.shrink(1.0), pal.radius_widget, pal.selection_bg));
-        } else if row_resp.hovered() {
-            painter.add(Shape::rect_filled(rr.shrink(1.0), pal.radius_widget, pal.field_hover));
+        let is_header = row.depth == 0 && matches!(row.kind, Kind::Section | Kind::Parent(_));
+        if is_header && !row.selected {
+            painter.add(Shape::rect_filled(rr.shrink2(Vec2::new(0.0, 1.0)), 0.0, pal.ink_alt));
+            if top > rect.top() + 0.5 {
+                painter.line_segment(
+                    [Pos2::new(rr.left(), rr.top()), Pos2::new(rr.right(), rr.top())],
+                    Stroke::new(1.0, pal.border),
+                );
+            }
+            painter.line_segment(
+                [Pos2::new(rr.left(), rr.bottom() - 0.5), Pos2::new(rr.right(), rr.bottom() - 0.5)],
+                Stroke::new(1.0, pal.border),
+            );
         }
-        let gx = rr.left() + 10.0 + row.depth as f32 * 14.0;
+        if row.selected {
+            painter.add(Shape::rect_filled(rr.shrink2(Vec2::new(1.0, 1.0)), pal.radius_widget, pal.selection_bg));
+        } else if row_resp.hovered() {
+            painter.add(Shape::rect_filled(rr.shrink2(Vec2::new(1.0, 1.0)), pal.radius_widget, pal.field_hover));
+        }
+        let gx = rr.left() + 12.0 + row.depth as f32 * 16.0;
         if matches!(row.kind, Kind::Setup(_)) {
             let rr = Rect::from_center_size(Pos2::new(gx, rr.center().y), Vec2::splat(TREE_INK));
             if ui.interact(rr, ui.id().with(("tree-radio", ix)), Sense::click()).clicked() {
@@ -359,6 +387,12 @@ pub fn tree(
         // text column - everything right of it belongs to the eye, never
         // to overflowing ink (divergence 1's fix).
         let (ink, suffix_ink) = row_inks(pal, row.hidden, row.selected);
+        let label_ink = match row.kind {
+            // Section and parent rows are the tree's structure: keep them
+            // readable even when dimming would make the hierarchy muddy.
+            Kind::Section | Kind::Parent(_) if !row.hidden && !row.selected => pal.text,
+            _ => ink,
+        };
         let reserve = if has_eye(row.kind) { EYE_RESERVE } else { 6.0 };
         let max_w = (rr.right() - reserve - (gx + 12.0)).max(0.0);
         let mut job = LayoutJob {
@@ -368,7 +402,10 @@ pub fn tree(
         job.append(
             &row.label,
             0.0,
-            TextFormat::simple(FontId::proportional(pal.font_row), ink),
+            TextFormat::simple(
+                FontId::proportional(pal.font_row + if is_header { 0.5 } else { 0.0 }),
+                label_ink,
+            ),
         );
         if !row.suffix.is_empty() {
             job.append(

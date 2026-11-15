@@ -29,7 +29,7 @@ use camcraft_app::world::new_world;
 use camcraft_app::{model, posting, project, recognize};
 use common::{gen_to_cltext, write_golden};
 use flecs_ecs::prelude::World;
-use pocket_support::{block_with_pocket, rounded_rect, write_stl};
+use pocket_support::{block_with_pocket, height_field, rounded_rect, write_stl};
 use serde_json::{json, Value};
 
 const TOOL: &str = "EM-0600-4FL";
@@ -41,6 +41,7 @@ fn part(a: f64, b: f64) -> camcraft_app::geometry::Mesh {
 
 fn adaptive(method: AdaptiveMethod) -> OpParams {
     OpParams::Adaptive2D {
+        blend_radius: None, blend_turns: false,
         links: Links::PLANAR,
         stepover: 1.0,
         stock_to_leave: 0.0,
@@ -56,23 +57,53 @@ fn adaptive(method: AdaptiveMethod) -> OpParams {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         method,
+        troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         tilt: None,
     }
 }
 
-/// The part, a stock box round it, the 6 mm end mill and "A1" on the
-/// pocket's floor face.
-fn job(a: f64, b: f64, method: AdaptiveMethod) -> (World, History) {
+fn job_mesh(mesh: camcraft_app::geometry::Mesh, dx: f64, dy: f64, method: AdaptiveMethod) -> (World, History) {
     let world = new_world();
     let mut h = History::default();
-    h.execute(&world, ImportModel::from_mesh("part", part(a, b)));
-    h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 70.0, dy: 50.0, dz: 20.0 }, Default::default()).expect("stock"));
+    h.execute(&world, ImportModel::from_mesh("part", mesh));
+    h.execute(&world, SetStock::new(&world, StockShape::Box { dx, dy, dz: 20.0 }, Default::default()).expect("stock"));
     let t = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, TOOL, t).expect("tool"));
     let p = recognize::pockets_of(&world, "part").expect("recognised").into_iter().next().expect("the pocket");
     let src = SrcRef::Selection(vec![GeoSel { entity: "part".into(), feature: FeatureSel::Face(p.floor) }]);
     h.execute(&world, CreateOperation::new(&world, "A1", TOOL, src, adaptive(method)).expect("create"));
     (world, h)
+}
+
+/// The part, a stock box round it, the 6 mm end mill and "A1" on the
+/// pocket's floor face.
+fn job(a: f64, b: f64, method: AdaptiveMethod) -> (World, History) {
+    job_mesh(part(a, b), 70.0, 50.0, method)
+}
+
+fn check_troch_job(mesh: camcraft_app::geometry::Mesh, dx: f64, dy: f64, golden: &str) {
+    let (world, mut h) = job_mesh(mesh, dx, dy, AdaptiveMethod::Trochoidal);
+    h.execute(&world, GenerateOperation::new(&world, "A1").expect("generates"));
+    let e = model::find_by_name(&world, "A1").expect("op");
+    let c = model::toolpath_of(&world, &e).expect("cached path");
+    let min_z = c
+        .path
+        .moves
+        .iter()
+        .filter(|m| m.kind != MoveKind::Rapid)
+        .flat_map(|m| [m.from.z, m.to.z])
+        .fold(f64::INFINITY, f64::min);
+    assert!(min_z >= 17.0 - 1e-6, "never under pocket floor: z={min_z:.4}");
+    assert!(c.path.has_arcs(), "the loops post as arcs");
+    assert!(c.path.notes.iter().any(|n| n.contains("2D Adaptive (Trochoidal)") && n.contains("engagement")), "{:?}", c.path.notes);
+    let bad: Vec<_> = c.warnings.iter().filter(|w| w.blocks_post()).collect();
+    assert!(bad.is_empty(), "{bad:?}");
+    let rep = posting::verification_report(&world);
+    assert!(rep.problems.is_empty(), "{:?}", rep.problems);
+    let out = std::env::temp_dir().join(format!("camcraft-1587-{golden}-{}.nc", std::process::id()));
+    posting::post_setup(&world, &out).expect("the trochoidal 2D Adaptive posts");
+    let _ = std::fs::remove_file(&out);
+    write_golden(golden, &gen_to_cltext(&c.path));
 }
 
 fn method_of(world: &World) -> AdaptiveMethod {
@@ -122,6 +153,32 @@ fn the_trochoidal_method_stays_in_the_picked_face_posts_clean_and_matches_its_go
     assert_ne!(stamp(AdaptiveMethod::Spiral), stamp(AdaptiveMethod::Trochoidal), "the method moves the stamp");
     h.execute(&world, EditOperationParams::new(&world, "A1", adaptive(AdaptiveMethod::Spiral)).expect("edit"));
     assert_eq!(operation::status_of(&world, &e), OpStatus::Stale, "a method change makes the cached path stale");
+}
+
+#[test]
+fn wide_rectangular_pocket_posts_clean_and_matches_golden() {
+    let mesh = block_with_pocket(40.0, 30.0, &rounded_rect(30.0, 20.0, 0.0, 1), 17.0, 20.0);
+    check_troch_job(mesh, 90.0, 70.0, "adaptive2d_trochoidal_wide.cl");
+}
+
+#[test]
+fn l_shaped_pocket_posts_clean_and_matches_golden() {
+    let mesh = height_field(
+        &[-40.0, -30.0, 0.0, 30.0, 40.0],
+        &[-40.0, -30.0, 0.0, 30.0, 40.0],
+        |i, j| if (1..=2).contains(&i) && (1..=2).contains(&j) && !(i == 2 && j == 2) { 17.0 } else { 20.0 },
+    );
+    check_troch_job(mesh, 90.0, 90.0, "adaptive2d_trochoidal_l_shape.cl");
+}
+
+#[test]
+fn pocket_with_island_posts_clean_and_matches_golden() {
+    let mesh = height_field(
+        &[-40.0, -33.0, -6.0, 6.0, 33.0, 40.0],
+        &[-30.0, -23.0, -6.0, 6.0, 23.0, 30.0],
+        |i, j| if (1..=3).contains(&i) && (1..=3).contains(&j) && !(i == 2 && j == 2) { 17.0 } else { 20.0 },
+    );
+    check_troch_job(mesh, 90.0, 70.0, "adaptive2d_trochoidal_island.cl");
 }
 
 #[test]
@@ -206,4 +263,173 @@ fn mcp_sets_the_method_generates_inside_the_face_and_refuses_an_unknown_word() {
     let ops = call(&mut s, 13, "get_job", json!({})).to_string();
     assert!(ops.contains("trochoidal"), "undo restores the method: {ops}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_edits_trochoidal_parameters_generates_refuses_limits_and_round_trips() {
+    let dir = std::env::temp_dir().join(format!("camcraft-1588-mcp-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let stl = dir.join("part.stl");
+    write_stl(&part(17.0, 8.0), &stl);
+    let mut s = Server::new();
+    let ok = |r: &Value| r["isError"] != json!(true);
+    assert!(ok(&call(&mut s, 1, "import_model", json!({ "path": stl.display().to_string() }))));
+    assert!(ok(&call(&mut s, 2, "set_stock", json!({ "box": { "dx": 70.0, "dy": 50.0, "dz": 20.0 } }))));
+    assert!(ok(&call(&mut s, 3, "add_tool", json!({ "catalog": TOOL }))));
+    let floor = call(&mut s, 4, "detect_pockets", json!({ "model": "part" }))["structuredContent"]["features"][0]["floor"].clone();
+    assert!(ok(&call(
+        &mut s,
+        5,
+        "add_operation",
+        json!({
+            "kind": "2D Adaptive",
+            "tool": TOOL,
+            "name": "A1",
+            "source": "part",
+            "params": {
+                "top_z": { "reference": "fixed", "offset": 20.0 },
+                "bottom_z": { "reference": "fixed", "offset": 17.0 },
+                "stepdown": 3.0
+            }
+        })
+    )));
+    assert!(ok(&call(&mut s, 6, "set_operation_geometry", json!({ "operation": "A1", "picks": [{ "model": "part", "id": floor }] }))));
+
+    let edit = call(
+        &mut s,
+        7,
+        "edit_operation",
+        json!({
+            "name": "A1",
+            "params": {
+                "method": "trochoidal",
+                "max_engagement": 60.0,
+                "return": "retract",
+                "return_feed": 1800.0,
+                "loop_width": 4.0
+            }
+        }),
+    );
+    assert!(ok(&edit), "edit_operation should accept the trochoidal parameters: {edit}");
+    let p = &edit["structuredContent"]["params"]["adaptive2_d"];
+    assert_eq!(p["max_engagement"], json!(60.0), "{p}");
+    assert_eq!(p["return"], json!("retract"), "{p}");
+    assert_eq!(p["return_feed"], json!(1800.0), "{p}");
+    assert_eq!(p["loop_width"], json!(4.0), "{p}");
+
+    let generated = call(&mut s, 8, "generate", json!({ "name": "A1" }));
+    assert!(ok(&generated), "{generated}");
+    let verify = call(&mut s, 9, "verify", json!({}));
+    assert_eq!(verify["structuredContent"]["ok"], json!(true), "{verify}");
+
+    let tall_lift = call(
+        &mut s,
+        10,
+        "edit_operation",
+        json!({ "name": "A1", "params": { "return": "microlift", "lift": 50.0 } }),
+    );
+    assert_eq!(tall_lift["isError"], json!(true), "tall microlift must be refused: {tall_lift}");
+    assert!(tall_lift.to_string().contains("microlift"), "{tall_lift}");
+
+    let good_lift = call(
+        &mut s,
+        11,
+        "edit_operation",
+        json!({
+            "name": "A1",
+            "params": { "max_engagement": 90.0, "return": "microlift", "lift": 0.4, "return_feed": null, "loop_width": null }
+        }),
+    );
+    assert!(ok(&good_lift), "{good_lift}");
+    let good_lift_gen = call(&mut s, 12, "generate", json!({ "name": "A1" }));
+    assert!(ok(&good_lift_gen), "{good_lift_gen}");
+
+    let tight = call(&mut s, 13, "edit_operation", json!({ "name": "A1", "params": { "max_engagement": 10.0 } }));
+    assert!(ok(&tight), "{tight}");
+    let refused = call(&mut s, 14, "generate", json!({ "name": "A1" }));
+    assert_eq!(refused["isError"], json!(true), "unachievable engagement limit must be refused: {refused}");
+    let err_text = refused.to_string();
+    assert!(err_text.contains("2D Adaptive (Trochoidal)") && err_text.contains("engagement limit"), "{err_text}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn trochoidal_parameters_undo_redo_and_round_trip_with_older_files_defaulting() {
+    let (world, mut h) = job(17.0, 8.0, AdaptiveMethod::Trochoidal);
+    let base = adaptive(AdaptiveMethod::Trochoidal);
+    let mut edited = base.clone();
+    if let OpParams::Adaptive2D { troch, .. } = &mut edited {
+        troch.max_engagement = 65.0;
+        troch.ret = Some(camcraft_app::machining2d::TrochoidReturn::Microlift { height: 0.5 });
+        troch.return_feed = Some(1500.0);
+        troch.loop_width = Some(3.5);
+    }
+    h.execute(&world, EditOperationParams::new(&world, "A1", edited.clone()).expect("edit"));
+    let e = model::find_by_name(&world, "A1").expect("op");
+    assert_eq!(model::operation_of(&world, &e).expect("op").params, edited);
+    assert!(h.undo(&world));
+    assert_eq!(model::operation_of(&world, &e).expect("op").params, base, "undo restores defaults");
+    assert!(h.redo(&world));
+    assert_eq!(model::operation_of(&world, &e).expect("op").params, edited, "redo applies trochoidal params");
+
+    let saved = project::params_to_json(&edited);
+    assert_eq!(project::params_from_json(&saved).expect("roundtrip"), edited);
+
+    let mut legacy = project::params_to_json(&base);
+    let obj = legacy.get_mut("adaptive2_d").and_then(Value::as_object_mut).expect("obj");
+    for k in ["max_engagement", "return", "lift", "return_feed", "loop_width"] {
+        obj.remove(k);
+    }
+    assert_eq!(project::params_from_json(&legacy).expect("older file"), base);
+}
+
+#[test]
+fn trochoidal_doors_refuse_out_of_range_and_over_clearance_values_by_name() {
+    let (world, _h) = job(17.0, 8.0, AdaptiveMethod::Trochoidal);
+    let mut bad_eng = adaptive(AdaptiveMethod::Trochoidal);
+    if let OpParams::Adaptive2D { troch, .. } = &mut bad_eng {
+        troch.max_engagement = 181.0;
+    }
+    let err = EditOperationParams::new(&world, "A1", bad_eng).map(|_| ()).expect_err("bad max_engagement").to_string();
+    assert!(err.contains("max engagement"), "{err}");
+
+    let mut tall = adaptive(AdaptiveMethod::Trochoidal);
+    if let OpParams::Adaptive2D { troch, .. } = &mut tall {
+        // clearance is 30, top is 20 -> 10 mm room.
+        troch.ret = Some(camcraft_app::machining2d::TrochoidReturn::Microlift { height: 10.5 });
+    }
+    let err = EditOperationParams::new(&world, "A1", tall).map(|_| ()).expect_err("tall microlift").to_string();
+    assert!(err.contains("microlift") && err.contains("clearance plane") && err.contains("10.000"), "{err}");
+}
+
+#[test]
+fn merged_arc_and_trochoidal_parameters_round_trip_and_keep_the_arc_refusal() {
+    let (world, _h) = job(17.0, 8.0, AdaptiveMethod::Trochoidal);
+    let e = model::find_by_name(&world, "A1").expect("op");
+    let mut op = model::operation_of(&world, &e).expect("operation");
+    if let OpParams::Adaptive2D { blend_turns, blend_radius, troch, .. } = &mut op.params {
+        *blend_turns = true;
+        *blend_radius = Some(0.75);
+        troch.max_engagement = 65.0;
+        troch.ret = Some(camcraft_app::machining2d::TrochoidReturn::Microlift { height: 0.4 });
+        troch.return_feed = Some(1500.0);
+        troch.loop_width = Some(3.5);
+    }
+    let saved = project::params_to_json(&op.params);
+    let fields = &saved["adaptive2_d"];
+    assert_eq!(fields["blend_turns"], json!(true));
+    assert_eq!(fields["blend_radius"], json!(0.75));
+    assert_eq!(fields["max_engagement"], json!(65.0));
+    assert_eq!(fields["return"], json!("microlift"));
+    assert_eq!(fields["lift"], json!(0.4));
+    assert_eq!(fields["return_feed"], json!(1500.0));
+    assert_eq!(fields["loop_width"], json!(3.5));
+    assert_eq!(project::params_from_json(&saved).expect("both parameter sets read back"), op.params);
+    let err = EditOperationParams::new(&world, "A1", op.params.clone()).map(|_| ()).expect_err("edit refuses arc turns").to_string();
+    assert!(err.contains("arc turns") && err.contains("Trochoidal"), "{err}");
+    // Bypass command validation: the generation arm must independently
+    // refuse main's unsupported option rather than silently dropping it.
+    let err = operation::generate(&world, &op, "A1").map(|_| ()).expect_err("generation refuses arc turns").to_string();
+    assert!(err.contains("arc turns") && err.contains("Trochoidal"), "{err}");
 }

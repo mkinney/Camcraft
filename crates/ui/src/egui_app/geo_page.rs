@@ -179,6 +179,13 @@ fn chips(ui: &mut Ui, state: &mut State, target: &str) {
                 }
                 x.clicked()
             });
+        // #1519: the viewport pointer over this pick's face, chain or vertex
+        // marks its row (an outline in the hover ink); gone with the pointer.
+        if state.hover.as_ref().is_some_and(|h| h.entity == sel.entity && h.feature == Some(sel.feature)) {
+            let ink = ui.visuals().selection.stroke.color;
+            ui.painter().rect_stroke(row.response.rect, 2.0, egui::Stroke::new(2.0, ink), egui::StrokeKind::Inside);
+            state.geo_row_marked.push(sel.clone());
+        }
         if row.response.hovered() || ui.rect_contains_pointer(row.response.rect) {
             state.geo_hover = Some(sel);
         }

@@ -168,18 +168,41 @@ impl SetToolBody {
         Ok(SetToolBody { name: name.to_string(), prev: tool_body::body_of(world, &entity), next })
     }
 
-    /// Read a STEP / STL / OBJ through the model importer and place it.
+    /// Read a STEP / STL / OBJ through the model importer and place it,
+    /// preserving any named STEP coordinate systems on piece 0.
     pub fn from_file(world: &World, name: &str, path: &Path, axis: [f64; 3], offset: f64) -> Result<Self, CommandError> {
         let file = body_file(path)?;
-        Self::new(world, name, Some(ToolBodySpec { source: file.source, facets: file.facets, axis, offset }))
+        let raw_csys = crate::tool_body_assembly::read_csys_if_step(path).map_err(CommandError::Invalid)?;
+        Self::new_with_csys(world, name, ToolBodySpec { source: file.source, facets: file.facets, axis, offset }, raw_csys)
     }
 
     /// Read a STEP file, align it automatically by its ISO 13399
     /// coordinate systems (#370), and place it on tool `name` with no
-    /// manual offsets.
+    /// manual offsets, preserving its STEP coordinate systems on piece 0.
     pub fn from_step_auto(world: &World, name: &str, path: &Path) -> Result<Self, CommandError> {
         let spec = ToolBodySpec::from_step_auto(path).map_err(CommandError::Invalid)?;
-        Self::new(world, name, Some(spec))
+        let raw_csys = crate::tool_body_assembly::read_csys_if_step(path).map_err(CommandError::Invalid)?;
+        Self::new_with_csys(world, name, spec, raw_csys)
+    }
+
+    /// Variant of [`Self::new`] that also transforms model-frame CSYS onto piece 0.
+    pub fn new_with_csys(
+        world: &World,
+        name: &str,
+        spec: ToolBodySpec,
+        raw_csys: Vec<crate::tool_body_assembly::BodyCsys>,
+    ) -> Result<Self, CommandError> {
+        let axis = spec.axis;
+        let offset = spec.offset;
+        let mut cmd = Self::new(world, name, Some(spec))?;
+        if !raw_csys.is_empty()
+            && let Some(ref mut body) = cmd.next
+            && let Some(p0) = body.pieces.first_mut()
+        {
+            p0.csys = crate::tool_body_assembly::transform_csys_spindle(&raw_csys, axis, offset)
+                .map_err(CommandError::Invalid)?;
+        }
+        Ok(cmd)
     }
 
     /// Place and judge a lathe body (#369) against tool `name` now;
@@ -206,10 +229,88 @@ impl SetToolBody {
     }
 
     /// Read a STEP / STL / OBJ through the model importer and place it
-    /// as a lathe body.
+    /// as a lathe body, preserving any named STEP coordinate systems.
     pub fn lathe_from_file(world: &World, name: &str, path: &Path, place: LathePlacement) -> Result<Self, CommandError> {
         let file = body_file(path)?;
-        Self::lathe(world, name, Some(LatheBodySpec { source: file.source, facets: file.facets, place, zone: None }))
+        let raw_csys = crate::tool_body_assembly::read_csys_if_step(path).map_err(CommandError::Invalid)?;
+        Self::lathe_with_csys(world, name, LatheBodySpec { source: file.source, facets: file.facets, place, zone: None }, raw_csys)
+    }
+
+    /// Variant of [`Self::lathe`] that also transforms model-frame CSYS onto piece 0.
+    pub fn lathe_with_csys(
+        world: &World,
+        name: &str,
+        spec: LatheBodySpec,
+        raw_csys: Vec<crate::tool_body_assembly::BodyCsys>,
+    ) -> Result<Self, CommandError> {
+        let place = spec.place;
+        let mut cmd = Self::lathe(world, name, Some(spec))?;
+        if !raw_csys.is_empty()
+            && let Some(ref mut body) = cmd.next
+            && let Some(p0) = body.pieces.first_mut()
+        {
+            p0.csys = crate::tool_body_assembly::transform_csys_lathe(&raw_csys, &place)
+                .map_err(|e| CommandError::Invalid(format!("tool '{name}': {e}")))?;
+        }
+        Ok(cmd)
+    }
+
+    /// Attach a modular piece (adapter, clamping unit, extension) onto
+    /// `name`'s existing body by ISO 13399 CSYS or explicit placement, as
+    /// one undoable command (#361 / #1040).
+    pub fn attach_piece(
+        world: &World,
+        name: &str,
+        path: &Path,
+        place: crate::tool_body_assembly::PiecePlace,
+    ) -> Result<Self, CommandError> {
+        // Ensure body_file door handles any import vs body refusal consistently.
+        let file = body_file(path)?;
+        let csys = crate::tool_body_assembly::read_csys_if_step(path).map_err(CommandError::Invalid)?;
+        let piece = crate::tool_body_assembly::LoadedPiece { source: file.source, facets: file.facets, csys };
+        Self::attach_loaded_piece(world, name, piece, place)
+    }
+
+    /// Attach a pre-loaded modular piece onto `name`'s existing body.
+    pub fn attach_loaded_piece(
+        world: &World,
+        name: &str,
+        piece: crate::tool_body_assembly::LoadedPiece,
+        place: crate::tool_body_assembly::PiecePlace,
+    ) -> Result<Self, CommandError> {
+        let Some(entity) = model::find_by_name(world, name) else {
+            return Err(CommandError::NotFound(name.to_string()));
+        };
+        let tool = model::tool_of(world, &entity)
+            .ok_or_else(|| CommandError::Invalid(format!("'{name}' is not a tool")))?;
+        let prev = tool_body::body_of(world, &entity);
+        let Some(ref cur) = prev else {
+            return Err(CommandError::Invalid(format!(
+                "tool '{name}' has no body yet - place piece 0 first before attaching modular pieces"
+            )));
+        };
+        let invalid = |e: String| CommandError::Invalid(format!("tool '{name}': {e}"));
+        let next = crate::tool_body_assembly::attach_piece(name, cur, piece, &place).map_err(invalid)?;
+        tool_body::fits(&tool, &next).map_err(invalid)?;
+        Ok(SetToolBody { name: name.to_string(), prev, next: Some(next) })
+    }
+
+    /// Remove modular piece `index` from `name`'s multi-piece body as one
+    /// undoable command (#361 / #1040).
+    pub fn remove_piece(world: &World, name: &str, index: usize) -> Result<Self, CommandError> {
+        let Some(entity) = model::find_by_name(world, name) else {
+            return Err(CommandError::NotFound(name.to_string()));
+        };
+        let tool = model::tool_of(world, &entity)
+            .ok_or_else(|| CommandError::Invalid(format!("'{name}' is not a tool")))?;
+        let prev = tool_body::body_of(world, &entity);
+        let Some(ref cur) = prev else {
+            return Err(CommandError::Invalid(format!("tool '{name}' has no body to remove a piece from")));
+        };
+        let invalid = |e: String| CommandError::Invalid(format!("tool '{name}': {e}"));
+        let next = crate::tool_body_assembly::remove_piece(name, cur, index).map_err(invalid)?;
+        tool_body::fits(&tool, &next).map_err(invalid)?;
+        Ok(SetToolBody { name: name.to_string(), prev, next: Some(next) })
     }
 
     /// Set (`Some`) or clear (`None`) the insert zone (#396) of tool
@@ -231,7 +332,12 @@ impl SetToolBody {
             return Err(invalid("it carries no lathe body - an insert zone is part of one".to_owned()));
         };
         crate::tool_body_lathe::fits(&tool, zone.as_ref()).map_err(invalid)?;
-        let body = crate::tool_body_lathe::build(&source, place, zone, facets).map_err(invalid)?;
+        let mut body = crate::tool_body_lathe::build(&source, place, zone, facets).map_err(invalid)?;
+        if let Some(ref p) = prev
+            && !p.pieces.is_empty()
+        {
+            body.pieces = p.pieces.clone();
+        }
         Ok(SetToolBody { name: name.to_string(), prev, next: Some(body) })
     }
 }
@@ -249,3 +355,6 @@ impl Command for SetToolBody {
         }
     }
 }
+
+#[path = "tool_body_reapply.rs"]
+mod reapply;

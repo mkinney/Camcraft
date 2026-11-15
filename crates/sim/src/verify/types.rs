@@ -307,6 +307,10 @@ pub enum Warning {
     /// Advisory: the finish's own size law already holds the cavity to
     /// size, so the post is not held.
     SinkerFinishOrder { at: usize, finish_mm: f64, rough_mm: f64 },
+    /// A stock-source 2D Chamfer whose solid-law check breaks into a
+    /// part (#1637): choosing the part as source instead of the stock
+    /// avoids cutting into the part edge. Blocking like `Gouge`.
+    StockChamferGouge { at: usize },
 }
 
 impl Warning {
@@ -341,6 +345,12 @@ impl core::fmt::Display for Warning {
             ),
             Warning::Gouge { at } => {
                 write!(f, "move {at} cuts past the finish surface")
+            }
+            Warning::StockChamferGouge { at } => {
+                write!(
+                    f,
+                    "move {at} cuts past the finish surface (stock-source chamfer breaks into a part; chamfer with the part as source)"
+                )
             }
             Warning::HolderHit { at, part, short_mm } => write!(
                 f,

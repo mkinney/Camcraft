@@ -132,9 +132,12 @@ fn the_inch_thread_words_are_pinned() {
     let mch = posting::machine_value(&world);
     let out = engine::run_with(CPS, &mch, &cnc::serialize(&records), &units(options, "inch")).expect("posts");
     let p = &out.program;
-    // mm: G00 X12.1 Z14 / G76 P010000 Q400 R0 / G76 X9.6 Z8 P1200 Q400 F2.
+    // mm: G00 X12.1 Z14 / G76 P010000 Q400 R0.4 / G76 X9.6 Z8 P1200 Q400 F2.
     // 0.4 mm = 157 ten-thousandths, 1.2 mm = 472, lead 2 mm = 0.07874 in.
-    assert!(p.contains("G00 X0.4764 Z0.5512\nG76 P010000 Q157 R0\n"), "{p}");
+    // R is 0.0158, not 0.4 mm's 0.0157: the control reads the rounded
+    // words, and 472 - 157 = 315 would sit one past the second rung 314
+    // and cut a fourth pass (PR #517 review; lathe_post_g76_schedule).
+    assert!(p.contains("G00 X0.4764 Z0.5512\nG76 P010000 Q157 R0.0158\n"), "{p}");
     assert!(p.contains("G76 X0.378 Z0.315 P472 Q157 F0.07874\n"), "{p}");
     assert!(p.contains("G20 G18 G40 G80 G99\n"), "{p}");
     // The G32 passes carry the lead at six decimals.
@@ -198,7 +201,7 @@ fn surface_speed_is_feet_per_minute_and_rpm_never_scales() {
     assert!(inch.program.contains("G96 S656 M03\n"), "200 m/min is 656 ft/min: {}", inch.program);
     assert!(inch.program.contains("G50 S12000\n"), "{}", inch.program);
     // 100 mm/min at 1000 rpm: 0.1 mm/rev = 0.0039 in/rev; X12 -> X0.4724.
-    assert!(inch.program.contains("G01 X0.4724 Z0 F0.0039\n"), "{}", inch.program);
+    assert!(inch.program.contains("G01 X0.4724 Z0. F0.0039\n"), "{}", inch.program);
     let s = section(vec![], vec![mv(MoveKind::Feed, 0.0, 6.0, 0.0, Some(100.0))]);
     assert!(run(&s, "inch").program.contains("G97 S1000 M03\n"));
 }
@@ -213,7 +216,7 @@ fn a_peck_counts_the_inch_increment() {
     // cannot be seated (#1026) and is refused.
     let s = section(vec![], vec![mv(MoveKind::Rapid, 0.0, 0.0, 22.0, None), peck, mv(MoveKind::Rapid, 0.0, 0.0, 22.0, None)]);
     let (mm, inch) = (run(&s, "mm"), run(&s, "inch"));
-    assert!(mm.program.contains("G83 Z10 Q1000 P500 F0.1\n"), "{}", mm.program);
+    assert!(mm.program.contains("G83 Z10. Q1000 P500 F0.1\n"), "{}", mm.program);
     // 1 mm = 394 ten-thousandths; the 500 ms dwell is unchanged.
     assert!(inch.program.contains("G83 Z0.3937 Q394 P500 F0.0039\n"), "{}", inch.program);
 }

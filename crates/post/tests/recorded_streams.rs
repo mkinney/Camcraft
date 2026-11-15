@@ -118,6 +118,8 @@ fn tool_change() -> String {
         infeed_angle: 0.0,
         spring_passes: 0,
         pull_out: 0.0,
+        alternating: false,
+        repeat_each_depth: false,
         first: 0,
         last,
         hand,

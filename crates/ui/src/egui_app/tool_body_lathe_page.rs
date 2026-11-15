@@ -66,7 +66,7 @@ pub(super) fn section(ui: &mut Ui, state: &mut State, u: Unit) {
             (BodyPickMode::Along, "Pick spindle", "click a face that looks along the lathe's +Z (toward the free end): its normal becomes the spindle direction"),
         ];
         for (mode, label, hover) in modes {
-            if ui.selectable_label(pick == mode, label).on_hover_text(hover).clicked() {
+            if super::pick_button::pick_button(ui, pick == mode, label).on_hover_text(hover).clicked() {
                 state.tool_body_ui.pick = if pick == mode { BodyPickMode::Off } else { mode };
             }
         }

@@ -72,6 +72,7 @@ fn refusals() -> Vec<GenError> {
             }
             for strategy in [PocketStrategy::Zigzag, PocketStrategy::Waterline] {
                 let p = PocketParams {
+                    blend_radius: None,
                     tool_diameter: 6.0,
                     stepover: 2.5,
                     stock_to_leave: 0.0,

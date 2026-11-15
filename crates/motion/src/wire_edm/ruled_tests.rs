@@ -138,7 +138,7 @@ fn a_constant_taper_through_the_ruled_path_is_the_tapered_cut() {
     let d = H * 3.0f64.to_radians().tan();
     let (up, lo) = (rect(20.0, 10.0), rect(20.0 + d, 10.0 + d));
     let four = cut(&up, &lo, &ruled(corners((20.0, 10.0), (20.0 + d, 10.0 + d)))).expect("ruled");
-    let t = WireTaper { angle_deg: 3.0, top_z: H, max_deg: Some(30.0), machine: "M".into() };
+    let t = WireTaper { angle_deg: 3.0, top_z: H, max_deg: Some(30.0), machine: "M".into(), corner: WireCorner::Mitre };
     let taper = wire_contour_tapered(std::slice::from_ref(&up), &[], &params(), &t).expect("tapered");
     assert_eq!(four.moves.len(), taper.moves.len());
     for (a, b) in four.moves.iter().zip(&taper.moves) {

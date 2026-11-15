@@ -58,14 +58,21 @@ fn job(rotated: bool) -> (World, History) {
     let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("tool");
     h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
     h.execute(&world, ImportModel::from_mesh("part", pocket_block()));
-    let at = if rotated {
-        // (x, y) -> (-y, x), then +(20, -20): the box [0, 40]^2 lands
-        // on [-20, 20]^2 again.
-        Location { pos: Point3::new(20.0, -20.0, 0.0), rot: quat_from_yaw(std::f64::consts::FRAC_PI_2) }
-    } else {
-        Location { pos: Point3::new(-20.0, -20.0, 0.0), ..Location::default() }
-    };
+    // A box stock stands centred on its place, so pos at the origin
+    // puts [-20, 20]^2 over the part and a quarter turn about Z keeps
+    // the footprint.
+    let rot = if rotated { quat_from_yaw(std::f64::consts::FRAC_PI_2) } else { Location::default().rot };
+    let at = Location { pos: Point3::new(0.0, 0.0, 0.0), rot };
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 40.0, dy: 40.0, dz: 8.0 }, at).expect("stock"));
+    let b = model::stock_world_aabb_for(&world, None).expect("stock box");
+    let on = |v: f64, want: f64| (v - want).abs() < 1e-9;
+    assert!(
+        on(b.min.x, -20.0) && on(b.min.y, -20.0) && on(b.min.z, 0.0)
+            && on(b.max.x, 20.0) && on(b.max.y, 20.0) && on(b.max.z, 8.0),
+        "stock at {:?}..{:?}",
+        b.min,
+        b.max
+    );
     (world, h)
 }
 
@@ -231,4 +238,24 @@ fn over_mcp_the_picked_circle_below_its_floor_is_judged_the_same() {
     let good = mcp_verify("floor", FLOOR);
     assert_eq!(op_gouges(&good), 0, "{good}");
     assert_eq!(good["ok"], json!(true), "a legal picked circle verifies ok: {good}");
+}
+
+#[test]
+fn fixture_stock_covers_the_part_in_both_cases() {
+    for rotated in [false, true] {
+        let (world, _) = job(rotated);
+        let b = model::stock_world_aabb_for(&world, None).expect("stock box");
+        let on = |v: f64, want: f64| (v - want).abs() < 1e-9;
+        assert!(
+            on(b.min.x, -20.0)
+                && on(b.min.y, -20.0)
+                && on(b.min.z, 0.0)
+                && on(b.max.x, 20.0)
+                && on(b.max.y, 20.0)
+                && on(b.max.z, 8.0),
+            "rotated {rotated}: stock at {:?}..{:?}",
+            b.min,
+            b.max
+        );
+    }
 }

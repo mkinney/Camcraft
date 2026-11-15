@@ -30,13 +30,13 @@ cannot see a clamp you forgot to enter or a wrong tool length.
   operation is generated and current, none carries a warning, and the whole
   program passes: no gouge into the part, no move strikes a fixture, no rapid
   runs through stock, and no move exceeds a limit the mounted machine states.
-  See [Posting](@/guide/posting.md).
+  See [Posting](@/guide/check-and-post/posting.md).
 - **What a refusal means.** The message names the operation and the
   problem. A gouge refusal means the simulated cutter removed model
   material; a warning refusal names the flagged moves, which are marked in
   the viewport. The table of common messages is in
-  [Reading a refusal](@/guide/refusals.md) and
-  [Troubleshooting](@/guide/troubleshooting.md).
+  [Reading a refusal](@/guide/reference/refusals.md) and
+  [Troubleshooting](@/guide/reference/troubleshooting.md).
 - **Why refuse rather than warn.** A warning on a dialog gets clicked
   through and the program is posted anyway. Where the output could drive
   the tool into the part or a fixture, CamCraft writes nothing, and leaves any

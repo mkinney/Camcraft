@@ -7,7 +7,7 @@
 
 use egui::Vec2;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 use camcraft_app::machine::{self, parse_mch};
 use camcraft_app::operation::{OpParams, SinkerPass};
@@ -95,7 +95,7 @@ fn add_condition_then_apply_is_one_undo_step() {
     assert_eq!(conditions(&h), 1, "nothing is a command before Apply");
     // The fields scroll and Apply stands below them (#535): bring it in reach.
     h.get_by_label("Apply").scroll_to_me();
-    h.run_steps(4);
+    h.run_steps(10);
     h.get_by_label("Apply").click();
     h.run_steps(3);
     h.state_mut().drain_actions();
@@ -115,7 +115,7 @@ fn a_draft_the_loader_refuses_is_named_and_refused_at_apply() {
     assert!(h.query_all_by_label_contains("Apply will refuse: orbit 2 states no control word").count() >= 1);
     // The fields scroll and Apply stands below them (#535): bring it in reach.
     h.get_by_label("Apply").scroll_to_me();
-    h.run_steps(4);
+    h.run_steps(10);
     h.get_by_label("Apply").click();
     h.run_steps(3);
     h.state_mut().drain_actions();
@@ -210,4 +210,86 @@ fn the_burn_page_reads_the_conditions_gap_and_undersize() {
     assert!(h.query_by_label("Condition gap").is_some() && h.query_by_label("Condition undersize").is_some());
     assert!(h.query_all_by_label_contains("0.050 mm").count() >= 1, "the stated gap reads");
     assert!(h.query_all_by_label("not stated").count() >= 1, "the unstated undersize says so");
+}
+
+#[test]
+fn the_condition_row_edits_wear_rate_and_notes_through_one_undoable_apply() {
+    let mut h = open_editor();
+    for l in ["Condition 1 wear rate", "Condition 1 notes"] {
+        assert!(h.query_by_label(l).is_some(), "the condition row shows {l}");
+    }
+    // Tick the wear rate in and type a note; both stay in the draft until Apply.
+    h.get_by_label("Condition 1 wear rate").scroll_to_me();
+    h.run_steps(10);
+    h.get_by_label("Condition 1 wear rate").click();
+    h.run_steps(3);
+    assert_eq!(
+        h.get_by_label("Condition 1 wear rate").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True),
+        "the click ticks the wear rate in"
+    );
+    h.get_by_label("Condition 1 notes").click();
+    h.run_steps(2);
+    h.get_by_label("Condition 1 notes").type_text("graphite, 3 A");
+    h.run_steps(3);
+    let wear = |h: &Harness<'static, State>| machine::of(&h.state().world).1.and_then(|m| m.edm).and_then(|e| e.conditions[0].wear);
+    assert_eq!(wear(&h), None, "nothing is a command before Apply");
+    h.get_by_label("Apply").scroll_to_me();
+    h.run_steps(10);
+    h.get_by_label("Apply").click();
+    h.run_steps(3);
+    h.state_mut().drain_actions();
+    h.run();
+    let c = machine::of(&h.state().world).1.and_then(|m| m.edm).map(|e| e.conditions[0].clone()).expect("edm");
+    assert_eq!(c.wear, Some(0.1), "Apply mounts the seeded wear rate: {:?}", h.state().status);
+    assert_eq!(c.notes, "graphite, 3 A", "Apply mounts the note");
+    h.state_mut().pending.push_back(CommandKind::Undo);
+    h.state_mut().drain_actions();
+    h.run();
+    assert_eq!(wear(&h), None, "undo restores the machine without the wear rate");
+}
+
+#[test]
+fn a_bad_wear_rate_is_named_and_refused_like_the_loader_does() {
+    let none = std::collections::BTreeMap::new();
+    for bad in [-0.1, 1.0, 2.5, f64::NAN, f64::INFINITY] {
+        let mut m = sinker();
+        if let Some(e) = m.edm.as_mut() {
+            e.conditions[0].wear = Some(bad);
+            let p = super::machine_edm_editor::problems(e, &none).join(" | ");
+            assert!(p.contains("condition 1 wear"), "the page names wear {bad}: {p}");
+        }
+        assert!(!m.is_sane(), "the loader refuses wear {bad}");
+    }
+    let mut ok = sinker();
+    if let Some(e) = ok.edm.as_mut() {
+        e.conditions[0].wear = Some(0.0);
+        e.conditions[0].notes = "kept".into();
+        assert!(super::machine_edm_editor::problems(e, &none).is_empty());
+    }
+    assert!(ok.is_sane(), "a wear of 0 and a note pass");
+}
+
+/// #1119: every input in the Sinker EDM machine editor carries an accessible name.
+#[test]
+fn the_sinker_machine_editor_names_every_input() {
+    let mut state = State::new();
+    let mut m = sinker();
+    if let Some(edm) = m.edm.as_mut() {
+        edm.max_orbit_radius.get_or_insert(1.0);
+        edm.pickup.get_or_insert_with(|| "ER-32".to_owned());
+        if let Some(c) = edm.conditions.first_mut() {
+            c.gap.get_or_insert(0.01);
+            c.undersize.get_or_insert(0.1);
+        }
+    }
+    state.pending.push_back(CommandKind::EditMachineApply { path: "synth.mch".into(), machine: Box::new(m) });
+    state.drain_actions();
+    state.pending.push_back(CommandKind::EditMachineDialog);
+    state.drain_actions();
+    let mut h = window(state);
+    h.run();
+    let (bad, seen) = super::fixture_plate_tests::unnamed_inputs(&h);
+    assert!(seen >= 10, "only {seen} inputs found in sinker machine editor");
+    assert!(bad.is_empty(), "unnamed inputs in sinker machine editor: {bad:?}");
 }

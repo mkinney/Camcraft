@@ -316,3 +316,37 @@ pub(super) fn solid(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // Provenance: analytic lattice wall and trace fixtures for issue #1669.
+    use super::*;
+    use crate::geo2d::Region;
+
+    #[test]
+    fn rim_vertex_wall_wobble_still_answers_to_walls() {
+        // The lattice keeps these three vertices distinct, while each
+        // neighbour is less than CROSSING_TOUCH off the trace line.
+        let wall = Loop::new(vec![
+            Point2::new(-1e-6, -10000.0),
+            Point2::new(0.0, 0.0),
+            Point2::new(1e-6, 9999.0),
+            Point2::new(10.0, 9999.0),
+            Point2::new(10.0, -10000.0),
+        ])
+        .unwrap();
+        let region = Region::new(vec![wall]).unwrap();
+        assert!(
+            region
+                .loops()
+                .iter()
+                .any(|l| l.points().contains(&Point2::new(0.0, 0.0)))
+        );
+        let trace = Trace::Seg(Point2::new(-0.5e-6, -5000.5), Point2::new(0.5e-6, 5000.5));
+        assert!(
+            !crosses_rim(&trace, &region),
+            "sub-band wobble is no rim crossing"
+        );
+        assert!(wall_gouge(&trace, &region, None, false, &|_| 0.1));
+    }
+}

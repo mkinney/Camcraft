@@ -29,6 +29,7 @@ fn the_names_checkbox_flips_view_state_not_a_command_and_persists() {
     let mut h = shell_harness();
     h.state_mut().state.view_store = Some(file.clone());
     assert!(h.state().state.show_gizmo_names, "on by default, the #727 decision");
+    open_view_menu(&mut h);
     h.get_by_label("Show origin names").click();
     h.run();
     assert!(!h.state().state.show_gizmo_names, "the checkbox flips the flag");
@@ -36,6 +37,7 @@ fn the_names_checkbox_flips_view_state_not_a_command_and_persists() {
     let (prefs, note) = view::load(&file);
     assert!(!prefs.show_gizmo_names, "the choice goes out to the file at once");
     assert_eq!(note, None, "and a good file says nothing");
+    open_view_menu(&mut h);
     h.get_by_label("Show origin names").click();
     h.run();
     assert!(h.state().state.show_gizmo_names, "off again flips back on");

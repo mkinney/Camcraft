@@ -5,8 +5,8 @@
 //! proves the wall stands where stated and the next column out is
 //! untouched; a lateral move past the allowance (undersize less the
 //! condition's spark gap) is refused by name at creation and at
-//! generation; the CL is golden. A wear rate or layer step (#546) is
-//! refused by name at every door until the side move is compensated.
+//! generation; the CL is golden. A measured wear and a layer step (#546)
+//! compensate the plunge in Z (#1340); a half-stated one is refused by name.
 //!
 //! Gate map (#545): covers motion::sinker_side, motion::sinker (check),
 //! app::operation (sinker_side_op, kinds row, params digest, sane),
@@ -322,12 +322,13 @@ fn the_side_burn_round_trips_the_file_and_rides_the_mcp_params_door() {
     ok(&call(&mut s, &mut id, "generate", json!({ "name": "Side1" })), "generate after undo");
 }
 
-/// #546 meets #545: electrode wear compensation is not supported on a
-/// Side Burn yet - a measured wear (or a layer step) is refused by name
-/// at create, edit, paste and the project reader, never ignored.
+/// #1340: a measured wear and a layer step compensate the side burn's
+/// plunge in Z - admitted at create, edit, paste and the file; the lateral
+/// move rides the deepest compensated tip, no move goes below it, and the
+/// stock sim (reading the worn electrode) finds no gouge. A half-stated
+/// wear is refused by name; a condition's own wear does not apply.
 #[test]
-fn a_side_burn_with_a_wear_rate_is_refused_by_name() {
-    const WEAR: &str = "electrode wear compensation is not supported on a Sinker Side Burn yet - clear the wear rate";
+fn a_worn_side_burn_is_compensated_in_z_and_judged_clean() {
     let worn = |lost: Option<f64>, over: Option<f64>, layer: Option<f64>| {
         let mut p = side(SinkerSideDirection::PlusX, AMOUNT, UNDER, "S1");
         if let OpParams::SinkerSideBurn(s) = &mut p {
@@ -337,45 +338,51 @@ fn a_side_burn_with_a_wear_rate_is_refused_by_name() {
     };
     let (world, mut h) = finished_doc();
     let create = |p: OpParams| CreateOperation::new(&world, "Side9", ELECTRODE, SrcRef::Stock, p).map(|_| ());
-    for (lost, over) in [(Some(0.1), Some(5.0)), (Some(0.1), None), (None, Some(5.0))] {
-        let err = create(worn(lost, over, None)).expect_err("a worn side burn");
-        assert!(err.to_string().contains(WEAR), "{lost:?}/{over:?}: {err}");
+    for (lost, over) in [(Some(0.1), None), (None, Some(5.0))] {
+        let err = create(worn(lost, over, None)).expect_err("a half-stated wear");
+        assert!(err.to_string().contains("needs both the length lost and the depth burned"), "{lost:?}/{over:?}: {err}");
     }
-    let err = create(worn(None, None, Some(1.0))).expect_err("a layered side burn");
-    assert!(err.to_string().contains("burning in layers is not supported on a Sinker Side Burn yet"), "{err}");
+    let err = create(worn(None, None, Some(0.0))).expect_err("a nonsense layer step");
+    assert!(err.to_string().contains("layer step 0 must be a positive depth"), "{err}");
 
-    let plain = side(SinkerSideDirection::PlusX, AMOUNT, UNDER, "S1");
-    h.execute(&world, CreateOperation::new(&world, "Side1", ELECTRODE, SrcRef::Stock, plain.clone()).expect("plain"));
-    let err = EditOperationParams::new(&world, "Side1", worn(Some(0.1), Some(5.0), None)).map(|_| ()).expect_err("edit");
-    assert!(err.to_string().contains(WEAR), "{err}");
+    // 0.12 lost over 6 burned: a rate of 0.02, in 2 mm layers.
+    let p = worn(Some(0.12), Some(6.0), Some(2.0));
+    let path = generated(&world, &mut h, p.clone());
+    let feeds: Vec<_> = path.iter().filter(|m| m.kind == MoveKind::Feed).collect();
+    let want = [18.05 - 0.04, 16.05 - 0.08, 14.05 - 0.12, 14.05 - 0.12, 14.05 - 0.12];
+    assert_eq!(feeds.len(), want.len(), "three layers, out, back");
+    for (m, z) in feeds.iter().zip(want) {
+        assert!((m.to.z - z).abs() < 1e-9, "{:?} vs {z}", m.to);
+    }
+    assert_eq!(feeds[3].to.x, AMOUNT, "the lateral move is the stated amount");
+    assert!(path.iter().all(|m| m.to.z >= 14.05 - 0.12 - 1e-9), "no move below the deepest compensated tip");
+    let verdict = simulate_document(&world).expect("judged");
+    assert_eq!(verdict.dev.gouge_cells, 0, "the worn burn gouges at {:?}", verdict.dev.max_gouge_at);
+
+    // The edit, paste and file doors admit it too.
+    let layered = worn(None, None, Some(3.0));
+    h.execute(&world, EditOperationParams::new(&world, "Side1", layered.clone()).expect("edit admits a layer step"));
     let e = model::find_by_name(&world, "Side1").expect("op");
     let mut copy = model::operation_of(&world, &e).expect("op");
-    copy.params = worn(Some(0.1), Some(5.0), None);
-    let err = PasteOperation::new(&world, "Side2", copy).map(|_| ()).expect_err("paste");
-    assert!(err.to_string().contains(WEAR), "{err}");
-    h.execute(&world, GenerateOperation::new(&world, "Side1").expect("the plain side burn generates"));
-
-    // A hand-edited file stating a wear on the side burn: the reader refuses it by name.
-    let path = std::env::temp_dir().join(format!("camcraft-546-side-{}.ccam", std::process::id()));
-    project::save(&world, &path).expect("save");
-    let text = std::fs::read_to_string(&path).expect("read");
-    let mut v: serde_json::Value = serde_json::from_str(&text).expect("json");
-    fn stamp(v: &mut serde_json::Value) -> bool {
-        match v {
-            serde_json::Value::Object(m) if m.contains_key("undersize") && m.contains_key("amount") => {
-                m.insert("wear_lost".into(), serde_json::json!(0.1));
-                m.insert("wear_over".into(), serde_json::json!(5.0));
-                true
-            }
-            serde_json::Value::Object(m) => m.values_mut().any(stamp),
-            serde_json::Value::Array(a) => a.iter_mut().any(stamp),
-            _ => false,
-        }
-    }
-    assert!(stamp(&mut v), "the side burn's row is in the file");
-    std::fs::write(&path, v.to_string()).expect("write");
+    copy.params = p.clone();
+    h.execute(&world, PasteOperation::new(&world, "Side2", copy).expect("paste admits a measured wear"));
+    let file = std::env::temp_dir().join(format!("camcraft-1340-{}.ccam", std::process::id()));
+    project::save(&world, &file).expect("save");
     let back = new_world();
-    let err = project::load(&back, &path).expect_err("the reader refuses it");
-    let _ = std::fs::remove_file(&path);
-    assert!(err.to_string().contains(WEAR), "{err}");
+    project::load(&back, &file).expect("the reader admits it");
+    let _ = std::fs::remove_file(&file);
+    for (name, want) in [("Side1", &layered), ("Side2", &p)] {
+        let e = model::find_by_name(&back, name).expect("op survives");
+        assert_eq!(&model::operation_of(&back, &e).expect("op").params, want, "{name}");
+    }
+
+    // A condition stating its own wear: a side burn with no measured
+    // wear keeps its plain moves (the condition's wear is not applied).
+    let mut v: serde_json::Value = serde_json::from_str(&machine(GAP)).expect("json");
+    v["edm"]["conditions"][0]["wear"] = serde_json::json!(0.02);
+    let (world, mut h) = finished_doc();
+    let m = parse_mch(&v.to_string()).expect("parses");
+    h.execute(&world, LoadMachine::new(&world, "sinker.mch".into(), Some(m)).expect("remount"));
+    let path = generated(&world, &mut h, side(SinkerSideDirection::PlusX, AMOUNT, UNDER, "S1"));
+    assert!(path.iter().filter(|m| m.kind == MoveKind::Feed).all(|m| m.to.z == 14.0 + GAP), "uncompensated");
 }

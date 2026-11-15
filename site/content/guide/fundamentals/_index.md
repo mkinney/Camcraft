@@ -30,13 +30,13 @@ something, the page says so.
 These topics have pages of their own. The fundamentals pages summarise them
 and link rather than repeat:
 
-- [Order of operations](@/guide/order-of-operations.md)
-- [Workholding and fixtures](@/guide/workholding.md)
+- [Order of operations](@/guide/check-and-post/order-of-operations.md)
+- [Workholding and fixtures](@/guide/set-up/workholding.md)
 - Machine types
-- [Multi-axis operations](@/guide/operations-multiaxis.md)
-- [Units and coordinates](@/guide/units-and-coordinates.md)
-- [Common workflows](@/guide/workflows.md)
-- [Troubleshooting](@/guide/troubleshooting.md)
-- [Glossary](@/guide/glossary.md)
-- [Operations](@/guide/operations.md), [Setups](@/guide/setups.md),
-  [Posting](@/guide/posting.md) and [Reading a refusal](@/guide/refusals.md)
+- [Multi-axis operations](@/guide/multi-axis/operations-multiaxis.md)
+- [Units and coordinates](@/guide/reference/units-and-coordinates.md)
+- [Common workflows](@/guide/getting-started/workflows.md)
+- [Troubleshooting](@/guide/reference/troubleshooting.md)
+- [Glossary](@/guide/reference/glossary.md)
+- [Operations](@/guide/operations/_index.md), [Setups](@/guide/set-up/setups.md),
+  [Posting](@/guide/check-and-post/posting.md) and [Reading a refusal](@/guide/reference/refusals.md)

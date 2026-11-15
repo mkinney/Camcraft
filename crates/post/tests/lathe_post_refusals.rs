@@ -64,7 +64,7 @@ fn a_move_off_every_meridian_is_refused_by_name() {
     let out = run(r);
     assert_eq!(out.warnings.len(), 1, "one named refusal per reason, not per line: {:?}", out.warnings);
     assert!(out.warnings[0].contains("milling work"), "{:?}", out.warnings);
-    assert!(out.program.contains("G00 X12 Z10"), "the meridian rapid still posts as a diameter: {}", out.program);
+    assert!(out.program.contains("G00 X12. Z10."), "the meridian rapid still posts as a diameter: {}", out.program);
     assert!(!out.program.contains("X80"), "the refused move wrote no guess: {}", out.program);
 }
 
@@ -127,8 +127,8 @@ fn a_thread_helix_posts_as_g32_and_a_stray_xy_arc_refuses() {
     r.push(cnc::Record::Section { begin: false });
     let out = run(r);
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.contains("G01 X5 Z10 F0.1"), "the plunge in diameter and per-rev: {}", out.program);
-    assert!(out.program.contains("G32 Z9 F2\nG32 Z8 F2\n"), "two half-turns, one lead: {}", out.program);
+    assert!(out.program.contains("G01 X5. Z10. F0.1"), "the plunge in diameter and per-rev: {}", out.program);
+    assert!(out.program.contains("G32 Z9. F2.\nG32 Z8. F2.\n"), "two half-turns, one lead: {}", out.program);
     assert!(out.program.contains("M03") && !out.program.contains("M04"), "{}", out.program);
 
     // #629: the same passes turning counter-clockwise under the M03 the
@@ -226,7 +226,7 @@ fn a_face_cycle_ends_on_the_rapid_leaving_its_hole_and_refuses_a_cut_that_leaves
     r.push(cnc::Record::Section { begin: false });
     let out = run(r);
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.contains("G83 Z10 F0.1\nG80\nG00 X0 Z40\n"), "the exit posts after G80: {}", out.program);
+    assert!(out.program.contains("G83 Z10. F0.1\nG80\nG00 X0. Z40.\n"), "the exit posts after G80: {}", out.program);
     assert_eq!(out.program.matches("G80").count(), 2, "the header's G80 and the group's, once: {}", out.program);
 
     let mut r = preface();
@@ -349,7 +349,7 @@ fn a_thread_after_a_css_section_opens_under_g97() {
     let first_s = thread.find(" S").expect("the thread's spindle word");
     assert!(thread[..first_s].ends_with("\nG97"), "G97 is the mode word before the thread's S: {thread}");
     assert!(after(p, "G96 S200 M03\n").contains("M05\nG97\nG54\n(T0303"), "the CSS section cancels at its end: {p}");
-    assert!(thread.contains("G32 Z9 F2\n"), "the passes still post: {thread}");
+    assert!(thread.contains("G32 Z9. F2.\n"), "the passes still post: {thread}");
 }
 
 #[test]

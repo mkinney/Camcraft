@@ -68,7 +68,7 @@ pub(crate) fn v_import(env: &mut Env, args: Vec<Value>) -> Result<Value, String>
     let name = given_name.unwrap_or_else(|| imp.name.clone());
     let notes = imp.notes.clone();
     if model::find_by_name(&env.world, &name).is_some() {
-        let cmd = UpdateModel::new(&env.world, &name, imp.mesh).map_err(|e| e.to_string())?.with_fidelity(imp.coarse_mm).with_budget(imp.facet_budget);
+        let cmd = UpdateModel::new(&env.world, &name, imp.mesh).map_err(|e| e.to_string())?.with_fidelity(imp.coarse_mm).with_hole(imp.hole.clone()).with_budget(imp.facet_budget);
         env.history.execute(&env.world, cmd);
     } else {
         env.history.execute(&env.world, imp.renamed(&name));
@@ -78,8 +78,8 @@ pub(crate) fn v_import(env: &mut Env, args: Vec<Value>) -> Result<Value, String>
     let mut out = json!({ "model": name, "facets": facets });
     // #864: a mesh imported coarser than the importer promises says so,
     // with the error it carries; a full-fidelity import adds nothing.
-    if let Some(chord) = entity.and_then(|e| crate::model_fidelity::chord_of(&env.world, &e)) {
-        out["reduced_fidelity"] = crate::model_fidelity::facts(&env.world, chord);
+    if let Some((e, chord)) = entity.and_then(|e| crate::model_fidelity::chord_of(&env.world, &e).map(|c| (e, c))) {
+        out["reduced_fidelity"] = crate::mesh_open::facts(&env.world, &e, chord);
     }
     if let Some(b) = entity.and_then(|e| crate::model_fidelity::budget_of(&env.world, &e)) {
         out["facet_budget"] = json!(b);

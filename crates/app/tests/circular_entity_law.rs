@@ -67,8 +67,19 @@ fn job() -> (World, History) {
     let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("tool");
     h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
     h.execute(&world, ImportModel::from_mesh("part", holed_block()));
-    let at = Location { pos: Point3::new(-20.0, -20.0, 0.0), ..Location::default() };
+    // A box stock stands centred on its place: pos at the origin puts
+    // [-20, 20]^2 over the part.
+    let at = Location::default();
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 40.0, dy: 40.0, dz: 8.0 }, at).expect("stock"));
+    let b = model::stock_world_aabb_for(&world, None).expect("stock box");
+    let on = |v: f64, want: f64| (v - want).abs() < 1e-9;
+    assert!(
+        on(b.min.x, -20.0) && on(b.min.y, -20.0) && on(b.min.z, 0.0)
+            && on(b.max.x, 20.0) && on(b.max.y, 20.0) && on(b.max.z, 8.0),
+        "stock at {:?}..{:?}",
+        b.min,
+        b.max
+    );
     (world, h)
 }
 
@@ -205,4 +216,22 @@ fn over_mcp_the_whole_model_circle_is_judged_the_same() {
     assert_eq!(reply["generated"][0]["status"], json!("ok"), "{reply}");
     assert_eq!(op_gouges(&good), 0, "{good}");
     assert_eq!(good["ok"], json!(true), "a legal circle verifies ok: {good}");
+}
+
+#[test]
+fn fixture_stock_covers_the_part() {
+    let (world, _) = job();
+    let b = model::stock_world_aabb_for(&world, None).expect("stock box");
+    let on = |v: f64, want: f64| (v - want).abs() < 1e-9;
+    assert!(
+        on(b.min.x, -20.0)
+            && on(b.min.y, -20.0)
+            && on(b.min.z, 0.0)
+            && on(b.max.x, 20.0)
+            && on(b.max.y, 20.0)
+            && on(b.max.z, 8.0),
+        "stock at {:?}..{:?}",
+        b.min,
+        b.max
+    );
 }

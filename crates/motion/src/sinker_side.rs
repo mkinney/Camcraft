@@ -22,7 +22,8 @@
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
 use crate::geometry::Point3;
 use crate::machining2d::GenError;
-use crate::sinker::{check, SinkerParams};
+use crate::sinker::{check, SinkerParams, ON_FLOOR};
+use crate::sinker_wear::{burn_compensated, deepest_tip, SinkerWear};
 
 /// Slack under which an amount counts as "at" the allowance, mm.
 const AT_ALLOWANCE: f64 = 1e-9;
@@ -171,6 +172,57 @@ pub fn side_burn(p: &SinkerParams, s: &SideBurn) -> Result<Toolpath, GenError> {
     Ok(b.finish())
 }
 
+/// The side burn with #546's electrode wear compensation and layering
+/// (#1340): the plunge is `sinker_wear::burn_compensated`'s - every layer
+/// tip deepened by the stated axial wear rate, under all of its refusals
+/// (rate, layer step, electrode length, the deepest-tip bound) - and the
+/// lateral move and its return run at the last layer's compensated tip,
+/// re-judged against that bound, so the worn face rides the burn floor
+/// one spark gap up, as the plain side burn's does. The side's own
+/// allowance law is unchanged: only the axial (end) wear is compensated;
+/// the electrode's side wear makes it smaller, which leaves the wall
+/// short of the stated amount, never past it. With no rate and no layer
+/// step the moves and notes are exactly [`side_burn`]'s.
+///
+/// # Errors
+/// [`side_burn`]'s refusals and `sinker_wear::burn_compensated`'s.
+pub fn side_burn_worn(p: &SinkerParams, s: &SideBurn, w: &SinkerWear) -> Result<Toolpath, GenError> {
+    // Uncompensated, or an orbit (which `side_burn` refuses by name).
+    if (w.comp.is_none() && w.layer.is_none()) || p.orbit.is_some() {
+        return side_burn(p, s);
+    }
+    let z = check(p)?;
+    let room = allowance(s, p.gap).map_err(GenError::Invalid)?;
+    let plunge = burn_compensated(p, w)?;
+    let rate = w.comp.as_ref().map_or(0.0, |c| c.rate);
+    let deepest = deepest_tip(p, rate);
+    let tip = plunge.moves.iter().filter(|m| m.kind == MoveKind::Feed).map(|m| m.to.z).next_back();
+    let Some(tip) = tip.filter(|t| t.is_finite() && *t >= deepest - ON_FLOOR) else {
+        return Err(GenError::Invalid(format!(
+            "sinker side burn: the compensated plunge reaches no tip at or above the compensated floor Z {deepest:.3}"
+        )));
+    };
+    let (ux, uy) = s.direction.unit();
+    let mut b = PathBuilder::approached(Point3::new(p.x, p.y, p.approach_z));
+    for m in plunge.moves.iter().filter(|m| m.kind == MoveKind::Feed) {
+        b.push(MoveKind::Feed, m.to, m.feed);
+    }
+    b.push(MoveKind::Feed, Point3::new(p.x + ux * s.amount, p.y + uy * s.amount, tip), Some(p.feed));
+    b.push(MoveKind::Feed, Point3::new(p.x, p.y, tip), Some(p.feed));
+    b.push(MoveKind::Rapid, Point3::new(p.x, p.y, p.approach_z), None);
+    for n in &plunge.notes {
+        b.note(n.clone());
+    }
+    b.note(format!(
+        "sinker side burn: {:.3} toward {} at Z {z:.3}, tip at Z {tip:.3} after wear compensation (undersize {:.3}, spark gap {:.3}, allowance {room:.3}; side wear not compensated)",
+        s.amount,
+        s.direction.word(),
+        s.undersize,
+        p.gap
+    ));
+    Ok(b.finish())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +277,67 @@ mod tests {
         }
         let orbit = crate::sinker_orbit::Orbit { kind: crate::sinker_orbit::OrbitKind::Circular, radius: 0.1, vectors: 4, turns: 1 };
         let e = side_burn(&SinkerParams { orbit: Some(orbit), ..p }, &at).expect_err("an orbit");
+        assert!(e.to_string().contains("takes no orbit"), "{e}");
+    }
+
+    fn worn(rate: f64, layer: Option<f64>) -> SinkerWear {
+        SinkerWear { comp: Some(crate::sinker_wear::WearComp { rate, from: "test".into() }), layer }
+    }
+
+    #[test]
+    fn sinker_side_worn_off_is_the_plain_side_burn() {
+        let s = SideBurn { direction: SideDirection::PlusY, amount: 0.15, undersize: 0.2 };
+        let off = side_burn_worn(&params(), &s, &SinkerWear::default()).expect("burns");
+        let plain = side_burn(&params(), &s).expect("burns");
+        assert_eq!((off.moves, off.notes), (plain.moves, plain.notes));
+    }
+
+    #[test]
+    fn sinker_side_worn_plunges_in_compensated_layers_and_moves_at_the_deepest_tip() {
+        let p = params();
+        let s = SideBurn { direction: SideDirection::PlusX, amount: 0.15, undersize: 0.2 };
+        let path = side_burn_worn(&p, &s, &worn(0.02, Some(2.0))).expect("burns");
+        let feeds: Vec<_> = path.moves.iter().filter(|m| m.kind == MoveKind::Feed).collect();
+        // Layers at 2, 4, 6 below the top, each deepened by 0.02 per mm
+        // burned; then out and back at the last layer's tip.
+        let want = [18.05 - 0.04, 16.05 - 0.08, 14.05 - 0.12];
+        assert_eq!(feeds.len(), 5, "three layers, out, back");
+        for (m, z) in feeds.iter().zip(want) {
+            assert!((m.to.z - z).abs() < 1e-9 && m.to.x == 0.0, "{:?}", m.to);
+        }
+        let deepest = deepest_tip(&p, 0.02);
+        assert!((feeds[3].to.z - deepest).abs() < 1e-9 && (feeds[4].to.z - deepest).abs() < 1e-9);
+        assert_eq!((feeds[3].to.x, feeds[4].to.x), (0.15, 0.0));
+        // No move below the compensated floor; the worn face rides the
+        // floor one gap up through the lateral move.
+        assert!(path.moves.iter().all(|m| m.to.z >= deepest - 1e-9));
+        assert!((crate::sinker_wear::worn_tip(feeds[3].to.z, 20.0, 0.05, 0.02) - 14.05).abs() < 1e-9);
+        assert_eq!(path.moves.last().map(|m| (m.kind, m.to.z)), Some((MoveKind::Rapid, 25.0)));
+        assert!(path.notes.iter().any(|n| n.contains("compensated in Z at 0.0200")), "{:?}", path.notes);
+        // A layer step alone layers the plunge without compensation.
+        let layered = side_burn_worn(&p, &s, &SinkerWear { comp: None, layer: Some(3.0) }).expect("burns");
+        let z: Vec<_> = layered.moves.iter().filter(|m| m.kind == MoveKind::Feed).map(|m| m.to.z).collect();
+        assert_eq!(z, [17.05, 14.05, 14.05, 14.05]);
+    }
+
+    #[test]
+    fn sinker_side_worn_keeps_every_refusal_by_name() {
+        let p = params();
+        let s = SideBurn { direction: SideDirection::MinusX, amount: 0.16, undersize: 0.2 };
+        let e = side_burn_worn(&p, &s, &worn(0.02, None)).expect_err("past the allowance");
+        assert!(e.to_string().contains("burns into the part"), "{e}");
+        let at = SideBurn { amount: 0.15, ..s };
+        for r in [f64::NAN, -0.1, 1.0] {
+            let e = side_burn_worn(&p, &at, &worn(r, None)).expect_err("rate");
+            assert!(e.to_string().contains("not an axial wear rate"), "{r}: {e}");
+        }
+        let e = side_burn_worn(&p, &at, &SinkerWear { comp: None, layer: Some(0.0) }).expect_err("step");
+        assert!(e.to_string().contains("layer step"), "{e}");
+        let short = SinkerParams { electrode_len: 6.0, ..p };
+        let e = side_burn_worn(&short, &at, &worn(0.05, None)).expect_err("holder");
+        assert!(e.to_string().contains("with wear compensation"), "{e}");
+        let orbit = crate::sinker_orbit::Orbit { kind: crate::sinker_orbit::OrbitKind::Circular, radius: 0.1, vectors: 4, turns: 1 };
+        let e = side_burn_worn(&SinkerParams { orbit: Some(orbit), ..p }, &at, &worn(0.02, None)).expect_err("orbit");
         assert!(e.to_string().contains("takes no orbit"), "{e}");
     }
 }

@@ -132,3 +132,68 @@ fn a_wire_contour_quick_adds_with_the_first_condition_and_its_page_has_no_tool_r
     h.run();
     assert_eq!(side(&h), Some(side0), "one undo restores it");
 }
+
+fn editor_harness(machine: camcraft_app::machine::Machine, path: &str) -> Harness<'static, crate::state::State> {
+    let mut state = crate::state::State::new();
+    state.pending.push_back(CommandKind::EditMachineApply { path: path.to_owned(), machine: Box::new(machine.clone()) });
+    state.drain_actions();
+    state.machine_editor = Some(MachineEditor { path: path.to_owned(), machine });
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(900.0, 1600.0))
+        .build_ui_state(|ui, st: &mut crate::state::State| super::super::machine_editor::window(ui.ctx(), st), state);
+    h.run_steps(3);
+    h
+}
+
+/// #1119: every input in the Wire EDM machine editor carries an accessible name.
+#[test]
+fn the_wire_machine_editor_names_every_input() {
+    let mut m = wire_machine();
+    if let Some(edm) = m.edm.as_mut() {
+        edm.lower_guide_z.get_or_insert(0.0);
+        edm.upper_guide_z.get_or_insert(50.0);
+        edm.max_taper_deg.get_or_insert(10.0);
+        if edm.wire_diameters.is_empty() {
+            edm.wire_diameters.push(0.25);
+        }
+        if let Some(c) = edm.conditions.first_mut() {
+            c.gap.get_or_insert(0.02);
+            c.wire_diameter.get_or_insert(0.25);
+        }
+    }
+    let h = editor_harness(m, "wire-test.mch");
+    let (bad, seen) = super::super::fixture_plate_tests::unnamed_inputs(&h);
+    assert!(seen >= 10, "only {seen} inputs found in wire machine editor");
+    assert!(bad.is_empty(), "unnamed inputs in wire machine editor: {bad:?}");
+}
+
+/// #1119: every input in the mill/lathe machine editor carries an accessible name.
+#[test]
+fn the_mill_machine_editor_names_every_input() {
+    let mut state = crate::state::State::new();
+    state.pending.push_back(CommandKind::LoadBuiltinMachine("Tormach 770MX".into()));
+    state.drain_actions();
+    let mut m = camcraft_app::machine::of(&state.world).1.expect("770MX mounted");
+    m.spindle_min.get_or_insert(100.0);
+    m.spindle_max.get_or_insert(10_000.0);
+    m.spindle_power.get_or_insert(1.5);
+    m.spindle_d.get_or_insert(60.0);
+    m.spindle_len.get_or_insert(90.0);
+    m.max_tool_length.get_or_insert(150.0);
+    m.max_tool_diameter.get_or_insert(50.0);
+    m.tool_count.get_or_insert(10);
+    if let Some(a) = m.axes.first_mut() {
+        a.rapid.get_or_insert(5000.0);
+        a.feed.get_or_insert(2000.0);
+        a.travel.get_or_insert((-100.0, 100.0));
+        a.resolution.get_or_insert(0.001);
+    }
+    m.coolants.push(camcraft_app::machine::Coolant {
+        name: "ShopAir".to_owned(),
+        m_code: "M7".to_owned(),
+    });
+    let h = editor_harness(m, "mill-test.mch");
+    let (bad, seen) = super::super::fixture_plate_tests::unnamed_inputs(&h);
+    assert!(seen >= 20, "only {seen} inputs found in mill machine editor");
+    assert!(bad.is_empty(), "unnamed inputs in mill machine editor: {bad:?}");
+}

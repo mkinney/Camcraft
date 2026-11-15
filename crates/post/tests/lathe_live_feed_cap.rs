@@ -216,7 +216,7 @@ fn a_capped_move_is_judged_on_its_posted_words() {
     for (c_rate, fmax, what) in [(1.0e6, 1000.0, "the maximum feed binds"), (100.0, 1.0e6, "the C rate binds")] {
         let out = live_moves(&mill_turn(c_rate, fmax), moves());
         assert!(out.warnings.is_empty(), "{what}: {:?}", out.warnings);
-        assert!(out.program.contains("X20.008 Z5 C30.01 F"), "{what}: the probe's words: {}", out.program);
+        assert!(out.program.contains("X20.008 Z5. C30.01 F"), "{what}: the probe's words: {}", out.program);
         let rates = posted_rates(&out.program);
         assert!(!rates.is_empty(), "{what}: {}", out.program);
         for (xz, cr, line) in rates {

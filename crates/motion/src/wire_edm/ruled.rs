@@ -23,10 +23,11 @@
 //!
 //! Refused by name, never trimmed: an open profile or profiles of
 //! different kinds, sync points that are unpaired, off their profile,
-//! doubled or crossed, a folding or self-crossing pairing, a ruling
-//! past the machine's maximum taper, a twist past the tolerance, and
-//! every refusal of the vertical cut on either plane. The upper guide's
-//! U/V stroke and the guides' reach are the machine check's (#536).
+//! identical or crossed, an ambiguous whole-ring fan, a folding or
+//! self-crossing pairing, a ruling past the machine's maximum taper, a
+//! twist past the tolerance, and every refusal of the vertical cut on
+//! either plane. The upper guide's U/V stroke and the guides' reach
+//! are the machine check's (#536).
 //!
 //! Provenance: see `pairing` and `ruled_laws` (public CAGD and
 //! differential-geometry texts), over the umbrella's decisions D2 and
@@ -64,6 +65,7 @@ pub enum WirePairing {
     /// from its point nearest the start hole.
     ArcLength,
     /// The stated pairs, normalised arc length between neighbours.
+    /// A shared endpoint states a fan; keep its pairs in span order.
     SyncPoints(Vec<WireSync>),
 }
 

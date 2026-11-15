@@ -92,6 +92,8 @@ fn slot() -> OpParams {
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: None,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 

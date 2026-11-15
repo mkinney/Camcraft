@@ -583,6 +583,12 @@ pub struct EntityDto {
     /// false; never written beside `coarse_mm`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fidelity_unknown: bool,
+    /// #1610: the hole of a model imported from a STEP closed shell that
+    /// meshes open (`schema::MeshOpen`), written only on a model beside
+    /// `fidelity_unknown`. An old reader dropping it keeps the mark and
+    /// still refuses every operation on the model; only the words go.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh_open: Option<String>,
     /// The STEP facet budget a model was imported under when it is not the
     /// default (#1054, `schema::StepBudget`). Absent everywhere else, so a
     /// file from before the key existed - and every default import - reads

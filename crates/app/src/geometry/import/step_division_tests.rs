@@ -6,6 +6,124 @@ use super::*;
 use crate::geometry::import::step_thread_fixture::flank;
 use truck_stepio::r#in::alias::{algo, BSplineSurface, KnotVec, Surface};
 
+fn healthy_curves() -> Vec<truck_stepio::r#in::alias::Curve3D> {
+    use truck_stepio::r#in::alias::{BSplineCurve, Curve3D, NurbsCurve, Vector4};
+    let points = vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0), Point3::new(1.0, 0.0, 2.0)];
+    let rational = vec![Vector4::new(1.0, 0.0, 0.0, 1.0), Vector4::new(4.0, 0.0, 2.0, 2.0), Vector4::new(1.0, 0.0, 2.0, 1.0)];
+    vec![
+        Curve3D::BSplineCurve(BSplineCurve::new(KnotVec::bezier_knot(2), points)),
+        Curve3D::NurbsCurve(NurbsCurve::new(BSplineCurve::new(KnotVec::bezier_knot(2), rational))),
+    ]
+}
+
+#[test]
+fn healthy_curve_divisions_match_truck_exactly() {
+    use truck_stepio::r#in::alias::ParameterDivision1D;
+    for curve in healthy_curves() {
+        for range in [(0.0, 1.0), (0.2, 0.7)] {
+            for tolerance in [0.1, 0.01, 0.001] {
+                let guard = CurveGuard::new(curve.clone(), 100_000);
+                assert_eq!(guard.parameter_division(range, tolerance), curve.parameter_division(range, tolerance));
+                assert!(!guard.meter.refused());
+            }
+        }
+    }
+}
+
+#[test]
+fn healthy_swept_divisions_match_truck_with_transforms_and_reversal() {
+    use truck_stepio::r#in::alias::{ExtrudedCurve, Invertible, Matrix4, ParameterDivision2D, Processor, RevolutedCurve, SweptCurve, Transformed, Vector3};
+    for curve in healthy_curves() {
+        let extrusion = SweptCurve::ExtrudedCurve(ExtrudedCurve::by_extrusion(curve.clone(), Vector3::new(0.0, 1.0, 0.0)));
+        let revolution = RevolutedCurve::by_revolution(curve, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
+        let mut processor = Processor::<_, Matrix4>::new(revolution);
+        for reversed in [false, true] {
+            if reversed {
+                processor.invert();
+                processor.transform_by(Matrix4::from_nonuniform_scale(2.0, 1.5, 0.75));
+            }
+            let revolution = SweptCurve::RevolutedCurve(processor.clone());
+            for surface in [&extrusion, &revolution] {
+                let range = ((0.1, 0.9), (0.2, 0.8));
+                let meter = std::sync::Arc::new(super::super::step_guard::Meter::new(100_000));
+                assert_eq!(swept_division(surface, &meter, range, 0.01), surface.parameter_division(range, 0.01));
+                assert!(!meter.refused());
+            }
+        }
+    }
+}
+
+#[test]
+fn a_curve_division_that_spends_its_budget_is_refused() {
+    use truck_stepio::r#in::alias::ParameterDivision1D;
+    for curve in healthy_curves() {
+        let guard = CurveGuard::new(curve, 2);
+        let (parameters, points) = guard.parameter_division((0.0, 1.0), 0.001);
+        assert!(guard.meter.refused(), "a two-evaluation budget cannot finish even the first midpoint");
+        assert_eq!(parameters, vec![0.0, 1.0]);
+        assert!(points.iter().all(|p| p.x.is_finite() && p.y.is_finite() && p.z.is_finite()));
+    }
+}
+
+#[test]
+fn a_full_multiplicity_curve_knot_is_legal_when_joined_or_trimmed_away() {
+    use truck_stepio::r#in::alias::{BSplineCurve, Curve3D, ParameterDivision1D};
+    let k = KnotVec::from(vec![0.0, 0.0, 0.5, 0.5, 1.0, 1.0]);
+    for (right_start, range) in [(0.5, (0.0, 1.0)), (0.7, (0.0, 0.4)), (0.7, (0.6, 1.0))] {
+        let points = [0.0, 0.5, right_start, 1.0].into_iter().map(|x| Point3::new(x, 0.0, 0.0)).collect();
+        let curve = Curve3D::BSplineCurve(BSplineCurve::new(k.clone(), points));
+        let guard = CurveGuard::new(curve.clone(), 100_000);
+        assert_eq!(guard.parameter_division(range, 0.01), curve.parameter_division(range, 0.01));
+        assert!(!guard.meter.refused(), "a full knot with a joined endpoint or outside the trim does not jump");
+    }
+}
+
+#[test]
+fn a_non_finite_curve_probe_stops_before_spending_the_budget() {
+    use truck_stepio::r#in::alias::{BSplineCurve, Curve3D, NurbsCurve, Vector4};
+    let curve = Curve3D::NurbsCurve(NurbsCurve::new(BSplineCurve::new(
+        KnotVec::bezier_knot(1), vec![Vector4::new(0.0, 0.0, 0.0, 0.0); 2],
+    )));
+    let guard = CurveGuard::new(curve, 5);
+    assert!(guard.divide((0.0, 1.0), 0.01).is_none());
+    assert!(guard.meter.spend_many(1), "a non-finite endpoint stops division before the budget is spent");
+}
+
+#[test]
+fn invalid_curve_division_arguments_spend_no_evaluations() {
+    for (range, tol) in [((0.0, 1.0), f64::NAN), ((f64::NEG_INFINITY, 1.0), 0.01)] {
+        let guard = CurveGuard::new(healthy_curves().remove(0), 2);
+        assert!(guard.divide(range, tol).is_none());
+        assert!(guard.meter.spend_many(2), "invalid division arguments must be refused before evaluation");
+    }
+}
+
+#[test]
+fn an_unresolved_curve_leaf_is_refused_instead_of_returned() {
+    use truck_stepio::r#in::alias::{BSplineCurve, Curve3D};
+    let points = [0.0, 0.3, 0.7, 1.0].into_iter().map(|x| Point3::new(x, 0.0, 0.0)).collect();
+    let curve = Curve3D::BSplineCurve(BSplineCurve::new(KnotVec::from(vec![0.0, 0.0, 0.5, 0.5, 1.0, 1.0]), points));
+    let guard = CurveGuard::new(curve, 100_000);
+    assert!(guard.divide((0.0, 1.0), 0.01).is_none(), "a rounded-off unresolved jump must not become a chord");
+    assert!(guard.meter.spend_many(1), "the geometric leaf refusal must occur before the work budget runs out");
+}
+
+#[test]
+fn a_curve_jump_is_refused_even_at_a_tolerance_wider_than_the_jump() {
+    use truck_stepio::r#in::alias::{BSplineCurve, Curve3D, NurbsCurve, ParameterDivision1D, Vector4};
+    let k = KnotVec::from(vec![0.0, 0.0, 0.5, 0.5, 1.0, 1.0]);
+    let points: Vec<_> = [0.0, 0.3, 0.7, 1.0].into_iter().map(|x| Point3::new(x, 0.0, 0.0)).collect();
+    let rational = points.iter().map(|p| Vector4::new(p.x, p.y, p.z, 1.0)).collect();
+    for curve in [
+        Curve3D::BSplineCurve(BSplineCurve::new(k.clone(), points)),
+        Curve3D::NurbsCurve(NurbsCurve::new(BSplineCurve::new(k, rational))),
+    ] {
+        let guard = CurveGuard::new(curve, 100_000);
+        let _ = guard.parameter_division((0.0, 1.0), 2.0);
+        assert!(guard.meter.refused(), "a wide tolerance must never smear a curve jump into a chord");
+    }
+}
+
 /// Every cell of `(udiv, vdiv)` stands within `tol` of `s` at truck's
 /// jittered interior point (the acceptance test of truck's division).
 fn assert_cells_within(s: &Surface, (udiv, vdiv): (&[f64], &[f64]), tol: f64) {

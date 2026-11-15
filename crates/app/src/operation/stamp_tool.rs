@@ -68,8 +68,16 @@ pub(super) fn write(world: &World, tool_name: &str, params: &OpParams, h: &mut s
         crate::tools::ToolKind::Drill => w(h, tool.tip_angle),
         crate::tools::ToolKind::Tap => w(h, tool.pitch),
         crate::tools::ToolKind::Groove => w(h, tool.width),
-        // The electrode's Y size is its face (#541).
-        crate::tools::ToolKind::Electrode => w(h, tool.width),
+        // The electrode's Y size is its face (#541); a body electrode's
+        // outline is its section (#1152) - bytes only when it states
+        // one, so no rectangular electrode's digest moves.
+        crate::tools::ToolKind::Electrode => {
+            w(h, tool.width);
+            for p in &tool.outline {
+                w(h, p[0]);
+                w(h, p[1]);
+            }
+        }
         // The threading insert digests BOTH its profile numbers
         // (M5.2 D): the crest width and the flanks' angle are the
         // wave's footprint - a recut V is a different thread even

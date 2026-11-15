@@ -177,6 +177,14 @@ icon_table! {
     // or over one form tooth (single-form).
     ToolThreadMill => "tool-thread-mill", "icon-tool-thread-mill";
     ToolThreadMillSingle => "tool-thread-mill-single", "icon-tool-thread-mill-single";
+    // The operation page's section tabs (M1.4's named sections), one
+    // per tab the page shows; drawn from what each section is.
+    SecGeometry => "sec-geometry", "icon-sec-geometry";
+    SecHeights => "sec-heights", "icon-sec-heights";
+    SecPasses => "sec-passes", "icon-sec-passes";
+    SecLeads => "sec-leads", "icon-sec-leads";
+    SecFeeds => "sec-feeds", "icon-sec-feeds";
+    SecMachine => "sec-machine", "icon-sec-machine";
 }
 
 /// Upload edge: 2x the token's `glyph_px` (20 display px at the dark

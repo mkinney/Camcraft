@@ -29,7 +29,7 @@ use super::face::GenError;
 use super::levels::cut_levels;
 use super::trochoid_air::lifted_cut;
 use super::trochoid_bore::{bore, start as bore_start};
-use super::trochoid_loops::{Chain, El, Layout, MAX_LOOPS, contained, layout};
+use super::trochoid_loops::{Chain, El, Layout, MAX_LOOPS, contained, layout, layout_closed};
 
 /// The forward step is tried at these shares of the user's, longest
 /// first, until the measured engagement holds.
@@ -203,11 +203,30 @@ pub fn plan_trochoidal_slot(chain: &[Point2], p: &TrochoidParams) -> Result<Troc
     plan_lane(chain, p, open)
 }
 
+/// Planned 2D layout for one lane after holding the engagement limit.
+pub(super) struct LaneLayout {
+    pub(super) lay: Layout,
+    pub(super) step: f64,
+    pub(super) deg: f64,
+    pub(super) b: f64,
+    pub(super) room: f64,
+    pub(super) open: bool,
+    pub(super) entry: Point2,
+    pub(super) tp: TrochoidParams,
+}
+
 /// The planner behind [`plan_trochoidal_slot`]; `open` opens the bore
 /// out to a band wider than the tool (`trochoid_bore`, #1509).
 pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Result<TrochoidPlan, GenError> {
+    let planned = plan_lane_layout(chain, p, open, false)?;
+    finish(&planned.lay, p, planned.step, planned.deg, planned.b, planned.room, open)
+}
+
+/// Plan one open or closed trochoidal lane without yet repeating across levels.
+pub(super) fn plan_lane_layout(chain: &[Point2], p: &TrochoidParams, open: bool, closed: bool) -> Result<LaneLayout, GenError> {
     p.validate()?;
-    let Some(ch) = Chain::new(chain) else {
+    let ch = if closed { Chain::new_closed(chain) } else { Chain::new(chain) };
+    let Some(ch) = ch else {
         return Err(GenError::Invalid("trochoidal slot: the centre line needs two distinct, finite points".into()));
     };
     let b = p.band()?;
@@ -231,19 +250,15 @@ pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Res
         Ok(bld.finish())
     };
     let mut best: Option<(f64, Point3, f64)> = None;
-    // The longest step that needed more loops than the cap (every
-    // shorter rung needs more still).
     let mut capped: Option<f64> = None;
     for f in LADDER {
         let step = p.step * f;
-        let Some(lay) = layout(&ch, b, step, p.smoothing, p.climb) else {
+        let lay_opt = if closed { layout_closed(&ch, b, step, p.smoothing, p.climb) } else { layout(&ch, b, step, p.smoothing, p.climb) };
+        let Some(lay) = lay_opt else {
             capped = capped.or(Some(step));
             continue;
         };
         contained(&ch, &lay, room)?;
-        // The first loops first (the steady state comes within a few
-        // loops; a failing step need not be walked to the end), then
-        // the whole level.
         let head = Layout { pieces: lay.pieces.iter().take(TRIAL_LOOPS).cloned().collect(), ..lay.clone() };
         let full = lay.pieces.len() > TRIAL_LOOPS;
         let mut q = gauge(&level(&head)?)?;
@@ -259,7 +274,6 @@ pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Res
         if q.max_deg > p.max_engagement {
             continue;
         }
-        // The lifted returns land on air, read inside the disc.
         let trial = match trial {
             Some(t) => t,
             None => level(&lay)?,
@@ -272,7 +286,8 @@ pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Res
                 at.x, at.y
             )));
         }
-        return finish(&lay, p, step, q.max_deg, b, room, open);
+        let entry = bore_start(&lay, p, open);
+        return Ok(LaneLayout { lay, step, deg: q.max_deg, b, room, open, entry, tp: *p });
     }
     let cap = |s: f64| {
         format!(
@@ -356,7 +371,7 @@ fn finish(lay: &Layout, p: &TrochoidParams, step: f64, deg: f64, b: f64, room: f
 /// loop's wall lead and cut, the returns between them. `levels` says
 /// whether a retract return may hop (the planner's single level lifts
 /// in place instead, which reads the same stock).
-fn emit_level(b: &mut PathBuilder, lay: &Layout, p: &TrochoidParams, z: f64, from: f64, levels: bool, open: bool) -> Result<(), GenError> {
+pub(super) fn emit_level(b: &mut PathBuilder, lay: &Layout, p: &TrochoidParams, z: f64, from: f64, levels: bool, open: bool) -> Result<(), GenError> {
     let p3 = |q: Point2, zz: f64| Point3::new(lattice(q.x), lattice(q.y), lattice(zz));
     bore(b, lay, p, z, from, open)?;
     let n = lay.pieces.len();

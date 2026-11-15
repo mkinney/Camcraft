@@ -158,7 +158,7 @@ fn box_anchor(ui: &mut Ui, state: &mut State) {
     });
     ui.checkbox(&mut state.wcs_ui.pick_anchor, "Pick markers in viewport");
     if state.wcs_ui.pick_anchor {
-        ui.label("Click a yellow marker in the viewport to set the origin.");
+        ui.label("Click a yellow marker, a corner or a circle centre of the part in the viewport to set the origin.");
     }
     compass(ui, state);
 }
@@ -219,7 +219,7 @@ pub(super) fn circle_line(state: &State) -> String {
 fn circle_anchor(ui: &mut Ui, state: &mut State) {
     let avail = ui.available_width();
     let armed = state.wcs_ui.pick_circle;
-    if ui.add_sized(Vec2::new(avail, BUTTON_H), Button::selectable(armed, "Pick a circular edge")).clicked() {
+    if ui.add_sized(Vec2::new(avail, BUTTON_H), super::pick_button::pick_widget(ui, armed, "Pick a circular edge")).clicked() {
         state.wcs_ui.pick_circle = !armed;
     }
     if state.wcs_ui.pick_circle {

@@ -23,7 +23,7 @@ macro_rules! post {
 }
 
 /// Every shipped script.
-const SCRIPTS: [(&str, &str); 11] = [
+const SCRIPTS: [(&str, &str); 13] = [
     post!("carvera.cps"),
     post!("doosan-dnm.cps"),
     post!("fanuc-lathe.cps"),
@@ -35,6 +35,8 @@ const SCRIPTS: [(&str, &str); 11] = [
     post!("tormach-lathe.cps"),
     post!("tormach-plasma.cps"),
     post!("tormach.cps"),
+    post!("grblhal.cps"),
+    post!("tinyg.cps"),
 ];
 
 /// What each dialect writes for offset `n`, and its declared maximum.

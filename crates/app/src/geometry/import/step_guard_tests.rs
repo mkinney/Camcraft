@@ -4,6 +4,41 @@
 use super::*;
 use truck_stepio::r#in::alias::{BSplineSurface, KnotVec};
 
+/// #1545: the curve inside a swept surface shares the face budget.
+#[test]
+fn a_zero_weight_swept_curve_division_is_bounded_and_trips() {
+    use truck_stepio::r#in::alias::{BSplineCurve, Curve3D, ExtrudedCurve, NurbsCurve, SweptCurve, Vector4};
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let curve = Curve3D::NurbsCurve(NurbsCurve::new(BSplineCurve::new(
+            KnotVec::from(vec![0.0, 0.0, 0.5, 0.5, 1.0, 1.0]),
+            vec![Vector4::new(0.0, 0.0, 0.0, 0.0); 4],
+        )));
+        let surface = Surface::SweptCurve(Box::new(SweptCurve::ExtrudedCurve(ExtrudedCurve::by_extrusion(
+            curve, Vector3::new(0.0, 0.0, 1.0),
+        ))));
+        let metered = Metered::new(surface, 100_000);
+        let _ = metered.parameter_division(((0.0, 1.0), (0.0, 1.0)), 0.01);
+        let _ = tx.send(metered.meter.refused());
+    });
+    let refused = rx.recv_timeout(std::time::Duration::from_secs(20)).expect("swept curve division must finish in 20 seconds");
+    assert!(refused, "a non-finite swept curve trips its face budget");
+}
+
+#[test]
+fn a_refused_revolution_does_not_divide_a_bogus_radius() {
+    use truck_stepio::r#in::alias::{BSplineCurve, Curve3D, Matrix4, NurbsCurve, Processor, RevolutedCurve, SweptCurve, Vector4};
+    let curve = Curve3D::NurbsCurve(NurbsCurve::new(BSplineCurve::new(
+        KnotVec::bezier_knot(1), vec![Vector4::new(0.0, 0.0, 0.0, 0.0); 2],
+    )));
+    let revolution = RevolutedCurve::by_revolution(curve, Point3::new(1_000.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
+    let surface = Surface::SweptCurve(Box::new(SweptCurve::RevolutedCurve(Processor::<_, Matrix4>::new(revolution))));
+    let metered = Metered::new(surface, 100_000);
+    let (_, angles) = metered.parameter_division(((0.0, 1.0), (0.0, 1.0)), 0.01);
+    assert!(metered.meter.refused());
+    assert_eq!(angles, vec![0.0, 1.0], "a refused generator must not allocate angular samples from a fake radius");
+}
+
 /// Degree 1 in u with the knot 1.0 repeated twice: the left half sits
 /// at z = 0, the right half at z = 1, so the surface jumps at u = 1.
 fn discontinuous() -> Surface {

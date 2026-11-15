@@ -53,7 +53,7 @@ fn plunge() -> Toolpath {
 }
 
 fn judge(ear_x: f64, cutter: &verify::Cutter) -> Result<(), String> {
-    part_clear(&plunge(), &ear(ear_x), &tool(), cutter, &[hole()]).map_err(|e| e.to_string())
+    part_clear(&plunge(), &ear(ear_x), &tool(), cutter, &[hole()], 0.0).map_err(|e| e.to_string())
 }
 
 #[test]

@@ -56,6 +56,8 @@ fn opened() -> State {
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: None,
+        extend_start: 0.0,
+        extend_end: 0.0,
     };
     state.history.execute(
         &state.world,

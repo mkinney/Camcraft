@@ -76,11 +76,42 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     let Value::Object(back) = project::params_to_json(&next) else {
         return Err("the patched parameters could not be read back".into());
     };
-    let back = back.get(&key).and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut back = back.get(&key).and_then(Value::as_object).cloned().unwrap_or_default();
+    // An opt-in flag (`blend_turns`) is written only when ON, so `false`
+    // never comes back: it is kept when `true` would have come back.
+    for (k, v) in patch {
+        if *v == Value::Bool(false) && !back.contains_key(k) && flag_kept(&key, &fields_of(base), k) {
+            back.insert(k.clone(), Value::Bool(false));
+        }
+    }
     if let Some(path) = lost(patch, &back, "") {
         return Err(format!("bad params patch: unknown field {path} - a {key} operation has no field \"{path}\"; see list_operation_types"));
     }
     Ok(next)
+}
+
+/// The kind's field object of `p`, without its tag.
+fn fields_of(p: &OpParams) -> Map<String, Value> {
+    match project::params_to_json(p) {
+        Value::Object(tagged) => tagged.into_iter().next().and_then(|(_, v)| match v {
+            Value::Object(m) => Some(m),
+            _ => None,
+        }),
+        _ => None,
+    }
+    .unwrap_or_default()
+}
+
+/// True when the kind `key` has a boolean field `k`: set to `true`, it
+/// survives the typed round-trip. A misspelled key never does.
+fn flag_kept(key: &str, fields: &Map<String, Value>, k: &str) -> bool {
+    let mut probe = fields.clone();
+    probe.insert(k.to_owned(), Value::Bool(true));
+    let mut tagged = Map::new();
+    tagged.insert(key.to_owned(), Value::Object(probe));
+    project::params_from_json(&Value::Object(tagged))
+        .map(|p| fields_of(&p).get(k) == Some(&Value::Bool(true)))
+        .unwrap_or(false)
 }
 
 /// The first key path of `patch` (dotted, e.g. `clearance_z.ofset`) the

@@ -59,6 +59,20 @@ use super::shell::{Tab, build_dock, headless, shell_layout};
 use super::viewcube;
 use super::{theme, world};
 
+/// The y of the browser tree's first row at the default window: the ribbon
+/// (its tab strip + cells) plus the browser's own header row, as the
+/// shipping layout resolves them. Pointer tests aim at rows through this
+/// one number; a header change moves it here, once.
+const BROWSER_TREE_TOP: f32 = 150.0;
+
+
+/// The x of the tree's eye column: the browser pane's right edge less the
+/// eye's inset (see `painted::tree`). Pointer tests aim at a row's eye
+/// through this one number, beside `BROWSER_TREE_TOP`.
+const BROWSER_EYE_X: f32 = 220.0;
+
+
+
 #[test]
 fn empty_egui_meshes_are_filtered_before_gpu_submission() {
     let empty = egui::ClippedPrimitive {
@@ -97,6 +111,7 @@ mod post_refusal;
 mod program_units;
 mod gcode_viewer;
 mod first_setup;
+mod work_envelope;
 mod structural;
 mod cycle_combo;
 mod radial_step_field;
@@ -117,6 +132,8 @@ mod pick_through;
 mod setup_picks_disarm;
 // #555: real clicks pick the three points of the plane.
 mod points_vertex_pick;
+// #1171: real clicks state a wire sync pair.
+mod wire_sync_viewport;
 mod one_wcs;
 // #343: the per-setup browser tree.
 mod setup_tree;
@@ -131,6 +148,7 @@ mod setup_eye;
 mod program_entry;
 // #371: the tool editor's Body section.
 mod tool_body;
+mod tool_body_assembly;
 mod tool_body_lathe;
 // #93: the tool editor's spun-profile (Profile) section.
 mod tool_profile;
@@ -157,6 +175,8 @@ mod fixture_rows;
 mod fixtures_page;
 // #864: a reduced-fidelity model says so on its page.
 mod model_fidelity;
+// #1610 review: incomplete model advice and import status are visible.
+mod model_incomplete;
 // #1054: the STEP facet budget on the model page.
 mod step_budget;
 // #1573 review: what a STEP import changed is said on the status line.
@@ -166,6 +186,7 @@ mod two_point_marks;
 // #979: the viewport box select.
 mod box_select;
 mod edge_click_modifiers;
+mod first_ctrl_click;
 // #1104: the Setups page lists setups only.
 mod setups_declutter;
 // #1206: each setup's own Machine and Post pages pick its own mount.
@@ -387,12 +408,37 @@ fn history_key_queues_command() {
     );
 }
 
+/// Wheel over `pos` and let the panes settle. The property pages scroll
+/// (the ribbon's workspace tab strip made them taller than a 720-point
+/// window), so a test reaching a control below the fold scrolls to it the
+/// way a user does.
+fn wheel(h: &mut Harness<'static, ShellUi>, pos: egui::Pos2, dy: f32) {
+    h.input_mut().events.push(Event::PointerMoved(pos));
+    h.run();
+    h.input_mut().events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: Vec2::new(0.0, dy),
+        phase: egui::TouchPhase::Move,
+        modifiers: Modifiers::NONE,
+    });
+    h.run_steps(2);
+}
+
+/// The browser header's View door: since the compact header the
+/// global switches live inside its popup, so a test that wants one opens
+/// the door first - a real click, not a state poke.
+fn open_view_menu(harness: &mut Harness<'static, ShellUi>) {
+    harness.get_by_label("View").click();
+    harness.run_steps(3);
+}
+
 /// Port of the spike's `click_toggles_view_state` (M-b's browser pane):
 /// the global view toggles are immediate UI state (AGENTS.md: not
 /// undoable), reached here through a real pointer event, not a poke.
 #[test]
 fn click_toggles_view_state() {
     let mut harness = shell_harness();
+    open_view_menu(&mut harness);
     assert!(!harness.state().state.show_all_paths);
     harness.get_by_label("Show all toolpaths").click();
     harness.run();
@@ -400,6 +446,7 @@ fn click_toggles_view_state() {
     // The display mode follows the same law through the same door: a real
     // pointer event, view state (never a command, never the undo stack).
     assert_eq!(harness.state().state.display, crate::state::DisplayMode::ShadedEdges);
+    open_view_menu(&mut harness);
     harness.get_by_label("Wireframe").click();
     harness.run();
     assert_eq!(harness.state().state.display, crate::state::DisplayMode::Wireframe);
@@ -417,9 +464,11 @@ fn projection_radios_flip_the_viewport_mode() {
         crate::viewport::ProjectionMode::Perspective,
         "the house default stays perspective"
     );
+    open_view_menu(&mut harness);
     harness.get_by_label("Ortho").click();
     harness.run();
     assert_eq!(harness.state().state.cam.projection, crate::viewport::ProjectionMode::Orthographic);
+    open_view_menu(&mut harness);
     harness.get_by_label("Perspective").click();
     harness.run();
     assert_eq!(harness.state().state.cam.projection, crate::viewport::ProjectionMode::Perspective);
@@ -436,12 +485,14 @@ fn browser_show_and_hide_all_toolpaths_update_operation_eyes() {
         .collect();
     assert!(!operation_names.is_empty());
 
+    open_view_menu(&mut harness);
     harness.get_by_label("Show all toolpaths").click();
     harness.run();
     let state = &harness.state().state;
     assert!(state.show_all_paths);
     assert!(state.hidden_paths.is_empty());
 
+    open_view_menu(&mut harness);
     harness.get_by_label("Show all toolpaths").click();
     harness.run();
     let state = &harness.state().state;
@@ -569,25 +620,23 @@ fn post_cell_queues_and_the_file_arm_runs_the_gate() {
         .iter()
         .find(|c| c.cmd == Cmd::Post)
         .expect("the File group carries a Post cell");
-    {
-        let mut harness = Harness::builder()
-            .with_size(Vec2::new(1280.0, 720.0))
-            .build_ui_state(frame_undrained, ShellUi::seeded());
-        harness.run();
-        let at = post.rect.center();
-        set_pos(&mut harness, at);
-        button_at(&mut harness, egui::PointerButton::Primary, at, true);
-        button_at(&mut harness, egui::PointerButton::Primary, at, false);
-        harness.run_steps(2);
-        assert!(
-            harness.state().state.pending.iter().any(|c| matches!(
-                c,
-                CommandKind::PostProgramDialog
-            )),
-            "the Post cell must fire through the actions law (pending: {:?})",
-            harness.state().state.pending
-        );
-    }
+    let mut harness = Harness::builder()
+        .with_size(Vec2::new(1280.0, 720.0))
+        .build_ui_state(frame_undrained, ShellUi::seeded());
+    harness.run();
+    let at = post.rect.center();
+    set_pos(&mut harness, at);
+    button_at(&mut harness, egui::PointerButton::Primary, at, true);
+    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness.run_steps(2);
+    assert!(
+        harness.state().state.pending.iter().any(|c| matches!(
+            c,
+            CommandKind::PostProgramDialog
+        )),
+        "the Post menu row must fire through the actions law (pending: {:?})",
+        harness.state().state.pending
+    );
 
     let mut harness = shell_harness();
     let path = std::env::temp_dir().join(format!("camcraft-egui-post-{}.nc", std::process::id()));
@@ -1578,6 +1627,64 @@ fn mmb_orbits_and_rmb_pans() {
     assert!(st.pending.is_empty(), "camera gestures are not commands");
 }
 
+/// A latched nav tool owns the drag whatever the button: LMB pans in
+/// pan, zooms in zoom, and the release's pick law sees no press to
+/// resolve - a click with a tool latched is no click at all.
+#[test]
+fn nav_tools_own_the_drag_and_swallow_clicks() {
+    let mut harness = shell_harness();
+    let c = vp_center(harness.state());
+    // Zoom tool: a left drag dollies the camera, never a pick.
+    harness.state_mut().state.nav_tool = Some(DragMode::Zoom);
+    set_pos(&mut harness, c);
+    let d0 = harness.state().state.cam.dist;
+    button_at(&mut harness, egui::PointerButton::Primary, c, true);
+    let moved = c + egui::vec2(0.0, 60.0);
+    set_pos(&mut harness, moved);
+    {
+        let st = harness.state();
+        assert_eq!(st.state.drag, Some(DragMode::Zoom), "the zoom tool owns the drag");
+        assert_ne!(st.state.cam.dist, d0, "the zoom tool drags the distance");
+    }
+    button_at(&mut harness, egui::PointerButton::Primary, moved, false);
+    assert_eq!(harness.state().state.drag, None, "release ends any tool's drag");
+    // Pan tool: a left drag moves the target, never a pick.
+    harness.state_mut().state.nav_tool = Some(DragMode::Pan);
+    set_pos(&mut harness, c);
+    let t0 = harness.state().state.cam.target;
+    button_at(&mut harness, egui::PointerButton::Primary, c, true);
+    let moved = c + egui::vec2(40.0, 0.0);
+    set_pos(&mut harness, moved);
+    {
+        let st = harness.state();
+        assert_eq!(st.state.drag, Some(DragMode::Pan), "the pan tool owns the drag");
+        assert_ne!(st.state.cam.target, t0, "the pan tool drags the target");
+    }
+    button_at(&mut harness, egui::PointerButton::Primary, moved, false);
+    assert_eq!(harness.state().state.drag, None);
+    // A click with a tool latched does nothing at all.
+    harness.state_mut().state.nav_tool = Some(DragMode::Orbit);
+    set_pos(&mut harness, c);
+    button_at(&mut harness, egui::PointerButton::Primary, c, true);
+    button_at(&mut harness, egui::PointerButton::Primary, c, false);
+    assert!(
+        harness.state().state.pending.is_empty(),
+        "a click with a tool latched queues nothing: {:?}",
+        harness.state().state.pending,
+    );
+    // Unlatch: the stock gesture law is back (RMB pans, MMB orbits).
+    harness.state_mut().state.nav_tool = None;
+    set_pos(&mut harness, c);
+    let target0 = harness.state().state.cam.target;
+    button_at(&mut harness, egui::PointerButton::Secondary, c, true);
+    let m2 = c + egui::vec2(30.0, 0.0);
+    set_pos(&mut harness, m2);
+    assert_eq!(harness.state().state.drag, Some(DragMode::Pan), "unlatched: RMB pans again");
+    assert_ne!(harness.state().state.cam.target, target0);
+    button_at(&mut harness, egui::PointerButton::Secondary, m2, false);
+    assert_eq!(harness.state().state.drag, None);
+}
+
 /// Wheel = dolly, one notch of the Line unit to one step of
 /// `dolly_cursor`, positive toward the cursor - the same units the imgui
 /// shell's raw `mouse_wheel` feeds. Pure camera state: nothing queued.
@@ -1755,8 +1862,13 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
     }
     assert!(!harness.state().state.wcs_ui.pick_anchor, "pick mode starts off");
 
-    harness.get_by_label("SE").click();
-    harness.run();
+    // Scroll the properties pane so the anchor grid (bottom of the page)
+    // is in view.
+    for _ in 0..4 {
+        wheel(&mut harness, egui::pos2(1100.0, 500.0), -220.0);
+    }
+    harness.get_by_label("SE").click_accesskit();
+    harness.run_steps(2);
     let want = interact::anchor_points(&harness.state().state)[8].0;
     let e = model::find_by_name(&harness.state().state.world, "G54")
         .expect("the seed places G54");
@@ -2095,6 +2207,7 @@ fn save_as_ribbon_cell_queues_its_own_dialog() {
     let mut harness = Harness::builder()
         .with_size(Vec2::new(1280.0, 720.0))
         .build_ui_state(frame_undrained, ShellUi::seeded());
+    harness.run();
     let (cells, _, _, _) = panes::ribbon_cells(
         egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
         &theme::current(),
@@ -2599,80 +2712,81 @@ fn changing_the_machine_heals_a_stale_door() {
     );
 }
 
-/// The machine door, end to end (the ribbon law): the door stands on
-/// the Setup group, wears the running workspace as its caption, and
-/// opens the list of all three. The current mode is inert - pressing
-/// it closes the list and mounts nothing - and pressing another
-/// switches the document through the command queue, so undo switches
-/// back exactly. The operations follow the mount: a mill kind goes
-/// dark on the lathe and lives again after the undo (the family gate
-/// `a_lathe_machine_darkens_the_mill_cells` proves for the file
-/// picker, proven here for the door the user asked for).
+/// The workspace tabs, end to end (the ribbon law): the tab strip
+/// sits above the cells, carries the four modes in the table's
+/// order, and a click mounts the kind's built-in machine through the
+/// command queue - the same switch the Setup pane's picker rides, so
+/// undo switches back exactly. The operations follow the mount: a
+/// mill kind goes dark on the lathe and lives again after the undo
+/// (the family gate `a_lathe_machine_darkens_the_mill_cells` proves
+/// for the file picker, proven here for the strip the bar wears).
 #[test]
-fn the_machine_door_switches_workspaces_and_rides_undo() {
+fn the_workspace_tabs_switch_workspaces_and_ride_undo() {
     use camcraft_app::machine::Kind;
     let mut harness = shell_harness();
     harness.run();
-    let (cells, _) = mill_plan_at(1280.0);
-    let button = cells
+    let texts = structural::painted(&harness);
+    let mut xs = Vec::with_capacity(4);
+    for want in ["MILLING", "TURNING", "MILL-TURNING", "PLASMA CUTTING"] {
+        let (want_, p) = texts
+            .iter()
+            .find(|(t, _)| t == want)
+            .cloned()
+            .unwrap_or_else(|| {
+                panic!(
+                    "no painted tab {want:?}; painted: {:?}",
+                    texts.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>()
+                )
+            });
+        let _ = want_;
+        xs.push(p.x);
+    }
+    assert!(xs.windows(2).all(|w| w[0] < w[1]), "the tabs run left to right: {xs:?}");
+    // A tab's interact rect covers the painted text's cell, so a
+    // click at the text is a click at the tab.
+    let (_, tab) = texts
         .iter()
-        .find(|c| c.cmd == Cmd::Machine)
-        .expect("the machine door stands on the bar")
-        .rect;
-    let rows = panes::machine_rows(button, theme::current().row_height, 200.0);
-    assert_eq!(rows.len(), 4, "Milling, Turning, Mill-turning, Plasma cutting");
-    // Open the door.
-    let at = button.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
-    harness.run_steps(2);
-    assert!(
-        harness.state().state.ribbon_mode_open,
-        "pressing the door must open the list"
-    );
-    // The first row is the mode already running: a choice, but a
-    // silent one - the list closes and no machine mounts.
-    let before = harness.state().state.history.can_undo();
-    let at = rows[0].1.center();
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
-    harness.run_steps(2);
-    assert!(
-        !harness.state().state.ribbon_mode_open && harness.state().state.history.can_undo() == before,
-        "the current row closes without mounting (status: {})",
-        harness.state().state.status
-    );
-    assert_eq!(
-        camcraft_app::machine::kind_of(&harness.state().state.world),
-        Kind::Mill,
-        "the mill keeps running"
-    );
-    // Reopen and switch to Turning: the queue carries the mount, the
-    // world follows, and the status names the workspace.
-    let at = button.center();
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
-    harness.run_steps(2);
-    let at = rows[1].1.center();
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+        .find(|(t, _)| t == "TURNING")
+        .cloned()
+        .expect("the Turning tab stands on the strip");
+    set_pos(&mut harness, tab);
+    button_at(&mut harness, egui::PointerButton::Primary, tab, true);
+    button_at(&mut harness, egui::PointerButton::Primary, tab, false);
     harness.run_steps(2);
     assert_eq!(
         camcraft_app::machine::kind_of(&harness.state().state.world),
         Kind::Lathe,
-        "the Turning row must mount the library lathe (status: {})",
+        "the Turning tab must mount the library lathe (status: {})",
         harness.state().state.status
     );
     assert!(
-        // The mode gesture's own line ("machine mode: Turning") rides
-        // the queue; the mount's landing message then speaks with the
-        // machine's own voice - which is the truth the status line owes.
+        // The mount's landing message rides the queue with its own
+        // voice, which is the truth the status line owes.
         harness.state().state.status.contains("Lathe"),
         "the switch must say what mounted: {}",
         harness.state().state.status
     );
-    assert!(!harness.state().state.ribbon_mode_open, "a choice closes the list");
+    // The current tab is inert: a click mounts nothing and queues nothing.
+    let before = harness.state().state.history.can_undo();
+    let (_, current_tab) = texts
+        .iter()
+        .find(|(t, _)| t == "TURNING")
+        .cloned()
+        .expect("the Turning tab stands on the strip");
+    set_pos(&mut harness, current_tab);
+    button_at(&mut harness, egui::PointerButton::Primary, current_tab, true);
+    button_at(&mut harness, egui::PointerButton::Primary, current_tab, false);
+    harness.run_steps(2);
+    assert_eq!(
+        camcraft_app::machine::kind_of(&harness.state().state.world),
+        Kind::Lathe,
+        "the current tab stays the running workspace",
+    );
+    assert_eq!(
+        harness.state().state.history.can_undo(),
+        before,
+        "the current tab queues nothing (undo depth unchanged)",
+    );
     // The operations follow the workspace (the user's ask): the mill
     // kinds go dark behind the doors...
     assert!(
@@ -2729,7 +2843,7 @@ fn tips_match_the_imgui_table() {
         (Cmd::Tools, "Tool library"),
         (
             Cmd::Machine,
-            "Switch the workspace: Milling, Turning, Mill-turning or Plasma cutting (mounts the kind's built-in machine, undoable)",
+            "Switch the workspace: Milling, Turning, Mill-turning, Plasma cutting or Wire EDM (mounts the kind's built-in machine, undoable)",
         ),
         (Cmd::Undo, undo.as_str()),
         (Cmd::Redo, redo.as_str()),
@@ -4572,7 +4686,7 @@ fn stock_eye_hides_the_viewport_stock_without_removing_it_from_the_document() {
     let stock_name = camcraft_app::setup::stock_entity_name(&harness.state().state.world, None);
     let (_, leaves) = panes::browser_rows(&harness.state().state);
     let row = leaves.iter().position(|leaf| matches!(leaf, panes::Leaf::Stock(_))).expect("stock row");
-    let eye = egui::pos2(216.0, 221.0 + (row as f32 + 0.5) * theme::current().row_height);
+    let eye = egui::pos2(BROWSER_EYE_X, BROWSER_TREE_TOP + (row as f32 + 0.5) * theme::current().row_height);
     assert!(world::collect(&harness.state().state).parts.iter().any(|part| part.stock));
 
     set_pos(&mut harness, eye);
@@ -4650,6 +4764,7 @@ fn selecting_a_post_script_is_a_command_with_the_pane_labels() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+
 /// M10.1 C, the ui half of the honest after-state: delete the seed's one
 /// tool out from under Contour1 and the op stays in the tree, its row's
 /// status column reads BLOCKED with the app's sentence, and the open
@@ -4692,7 +4807,7 @@ fn setup_navigation_is_always_reachable_and_operations_keep_a_flat_browser() {
     let setup_group = plan.iter().find(|group| group.title == "Setup").expect("setup group");
     assert_eq!(
         setup_group.cells.as_slice(),
-        &[Cmd::Setups, Cmd::Stock, Cmd::Origin, Cmd::Tools, Cmd::Machine],
+        &[Cmd::Setups, Cmd::Stock, Cmd::Origin, Cmd::Tools],
         "the Setup toolbar opens on the Setups door (#322)"
     );
 
@@ -4770,8 +4885,8 @@ fn dragging_an_operation_row_reorders_within_global_setup() {
     // 1280x720 shell. The row indices come from the current flat browser,
     // so the drag follows the rows after setup nesting was removed.
     let row_h = theme::current().row_height;
-    let from = egui::pos2(120.0, 221.0 + (second as f32 + 0.5) * row_h);
-    let to = egui::pos2(120.0, 221.0 + (first as f32 + 0.25) * row_h);
+    let from = egui::pos2(120.0, BROWSER_TREE_TOP + (second as f32 + 0.5) * row_h);
+    let to = egui::pos2(120.0, BROWSER_TREE_TOP + (first as f32 + 0.25) * row_h);
     set_pos(&mut harness, from);
     button_at(&mut harness, egui::PointerButton::Primary, from, true);
     set_pos(&mut harness, to);
@@ -4913,14 +5028,14 @@ fn operations_heading_menu_pastes_the_copied_operation() {
         panes::Leaf::SetupOps(_)))
         .expect("Operations heading");
     let row_height = theme::current().row_height;
-    let heading = egui::pos2(90.0, 221.0 + (row as f32 + 0.5) * row_height);
+    let heading = egui::pos2(90.0, BROWSER_TREE_TOP + (row as f32 + 0.5) * row_height);
     set_pos(&mut harness, heading);
     button_at(&mut harness, egui::PointerButton::Secondary, heading, true);
     button_at(&mut harness, egui::PointerButton::Secondary, heading, false);
     assert_eq!(harness.state().state.tree_menu, Some(TreeMenuTarget::Operations));
 
     let paste = egui::pos2(90.0,
-        221.0 + (row as f32 + 1.0) * row_height + panes::DROP_GAP + 1.5 * row_height);
+        BROWSER_TREE_TOP + (row as f32 + 1.0) * row_height + panes::DROP_GAP + 1.5 * row_height);
     set_pos(&mut harness, paste);
     button_at(&mut harness, egui::PointerButton::Primary, paste, true);
     button_at(&mut harness, egui::PointerButton::Primary, paste, false);
@@ -4937,7 +5052,7 @@ fn operation_type_menu_requires_confirmation() {
         panes::Leaf::Op(name) if name == "Contour1"))
         .expect("operation row");
     let row_height = theme::current().row_height;
-    let operation = egui::pos2(90.0, 221.0 + (row as f32 + 0.5) * row_height);
+    let operation = egui::pos2(90.0, BROWSER_TREE_TOP + (row as f32 + 0.5) * row_height);
     set_pos(&mut harness, operation);
     button_at(&mut harness, egui::PointerButton::Secondary, operation, true);
     button_at(&mut harness, egui::PointerButton::Secondary, operation, false);
@@ -4947,7 +5062,7 @@ fn operation_type_menu_requires_confirmation() {
     // Operation, Rename, Copy, Paste, Clear, Delete, Suppress, After
     // (#110), add pause / home / optional stop (#155), section header, Face.
     let face = egui::pos2(90.0,
-        221.0 + (row as f32 + 1.0) * row_height + panes::DROP_GAP + 12.5 * row_height);
+        BROWSER_TREE_TOP + (row as f32 + 1.0) * row_height + panes::DROP_GAP + 12.5 * row_height);
     set_pos(&mut harness, face);
     button_at(&mut harness, egui::PointerButton::Primary, face, true);
     button_at(&mut harness, egui::PointerButton::Primary, face, false);
@@ -4976,14 +5091,14 @@ fn operation_menu_suppresses_and_sets_the_after_action() {
         panes::Leaf::Op(name) if name == "Contour1"))
         .expect("operation row");
     let row_height = theme::current().row_height;
-    let operation = egui::pos2(90.0, 221.0 + (row as f32 + 0.5) * row_height);
+    let operation = egui::pos2(90.0, BROWSER_TREE_TOP + (row as f32 + 0.5) * row_height);
     let open_menu = |harness: &mut Harness<'static, ShellUi>| {
         set_pos(harness, operation);
         button_at(harness, egui::PointerButton::Secondary, operation, true);
         button_at(harness, egui::PointerButton::Secondary, operation, false);
     };
     let click_row = |harness: &mut Harness<'static, ShellUi>, k: f32| {
-        let at = egui::pos2(90.0, 221.0 + (row as f32 + 1.0) * row_height + panes::DROP_GAP + k * row_height);
+        let at = egui::pos2(90.0, BROWSER_TREE_TOP + (row as f32 + 1.0) * row_height + panes::DROP_GAP + k * row_height);
         set_pos(harness, at);
         button_at(harness, egui::PointerButton::Primary, at, true);
         button_at(harness, egui::PointerButton::Primary, at, false);
@@ -5196,3 +5311,6 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
         "and the offer stands again over the mounted lathe"
     );
 }
+
+mod review_1710_evidence;
+

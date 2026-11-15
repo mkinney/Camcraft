@@ -203,8 +203,8 @@ fn a_drill_on_centre_posts_on_the_work_spindle_as_a_lathe_drills() {
     let lines: Vec<&str> = posted.program.lines().collect();
     let at = |word: &str| lines.iter().position(|l| *l == word).unwrap_or_else(|| panic!("{word} in:\n{}", posted.program));
     // The work turns at the drill's rpm, the drill stands still on X0.
-    assert!(at("G97 S10000 M03") < at("G00 X0 Z20"), "{}", posted.program);
-    assert!(lines.iter().any(|l| l.starts_with("G83 Z10 ")), "{}", posted.program);
+    assert!(at("G97 S10000 M03") < at("G00 X0. Z20."), "{}", posted.program);
+    assert!(lines.iter().any(|l| l.starts_with("G83 Z10. ")), "{}", posted.program);
     assert!(!posted.program.contains("M1003"), "no live-tool word in a work-spindle section");
     // #1232 (maintainer, 2026-11-12): on a mill-turn the on-centre
     // drill turns the work, so a mill post - which would write it for
@@ -224,7 +224,7 @@ fn a_face_pass_on_the_meridian_is_refused_by_name_never_posted_on_the_work_spind
     // it from a facing pass. This is the wrong output of the issue.
     let bare = gate_free(FANUC_LATHE, &world);
     assert!(bare.warnings.is_empty(), "the script alone cannot refuse it: {:?}", bare.warnings);
-    for line in ["G97 S12000 M03", "G01 X-24 Z4 F0.0083", "G01 X24 Z4 F0.025"] {
+    for line in ["G97 S12000 M03", "G01 X-24. Z4. F0.0083", "G01 X24. Z4. F0.025"] {
         assert!(bare.program.lines().any(|l| l == line), "{line} in:\n{}", bare.program);
     }
     let bare = gate_free(TORMACH_LATHE, &world);

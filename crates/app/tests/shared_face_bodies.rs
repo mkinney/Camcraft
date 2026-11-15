@@ -4,10 +4,13 @@
 //! the stock sim and verify find no gouge. Genuine non-manifold input is
 //! still refused, now named as a model fault, not "invalid machining
 //! parameters". The model as imported (axis horizontal) is untouched.
+//! Its 3D Finish, in level bands, is in `shared_face_bodies_finish.rs`
+//! (#1715).
 //!
 //! Gate map: covers app::operation::material (from_slice), app::mcp's
 //! generate / verify, through camcraft_geometry::geometry::slice's union
-//! fallback and camcraft_motion::machining3d::rest.
+//! fallback and camcraft_motion::machining3d (including the pocket ladder
+//! and camcraft_motion::machining3d::rest).
 //!
 //! Provenance: the issue's own MCP reproduction; hand-built boxes for the
 //! refusal (a closed shell welded to another along one vertical edge).
@@ -143,38 +146,33 @@ fn the_sample_as_imported_still_sections_on_the_plain_read() {
     }
 }
 
-/// The as-imported job end to end: 118 mm of Z in debug is far past the
-/// default suite's budget, so it rides the heavy lane. #1706: only the
-/// 3D Finish can run here - the 3D Pocket has nothing it may cut (next
-/// test), so this test generates S1 alone and verifies it.
+/// #1706, read again by #1749: a 3D Pocket's machine area is the
+/// model's own XY silhouette (`operation::material_source`, `Pocket3D`).
+/// The sample as imported casts a strip only 6.53 mm wide (Y -4.94 ..
+/// 1.59), so with the centre kept a radius inside it no 6 mm end mill
+/// fit at any level and the op refused. Since #1749 the centre rides the
+/// silhouette edge (the outside of a silhouette is air at every Z), so
+/// the pocket clears the stock along the strip's sides - never a cut
+/// into the part (no gouge).
+///
+/// #1844: the short tool is refused by name before the ladder runs.
+/// A reaching tool still generates and verifies clean beside the silhouette.
 #[test]
-#[ignore = "heavy lane (#1407): 3D Finish over the as-imported sample's 118 mm Z span, ~15+ min debug - run at the cut with -- --ignored"]
-fn the_sample_as_imported_still_generates_the_3d_finish() {
+fn the_sample_as_imported_roughs_the_3d_pocket_beside_its_silhouette() {
     let mut c = sample_job(false);
-    let generated = c.ok("generate", json!({ "name": "S1" }));
-    let st = statuses(&generated);
-    assert_eq!(st.len(), 1, "{generated}");
-    for (name, status, row) in st {
-        assert_eq!(status, "ok", "{name}: {row}");
-    }
-    let v = c.ok("verify", json!({}));
-    assert!(gate_problems(&v).iter().all(|p| !p.starts_with("gouge")), "{v}");
-}
+    c.ok("delete_operation", json!({ "name": "S1" }));
+    let (_, generated) = c.call("generate", json!({ "name": "R1" }));
+    let text = generated.to_string();
+    assert!(!text.contains("\"status\":\"ok\""), "the short tool must refuse at generation: {text}");
+    assert!(text.contains("3D Pocket") && text.contains("shank") && text.contains("Bottom"), "name the reach and remedy: {text}");
 
-/// #1706: a 3D Pocket's machine area is the model's own XY silhouette
-/// (`operation::material_source`, `Pocket3D`), and the cutter centre must
-/// stay a radius inside it. The sample as imported casts a strip only
-/// 6.53 mm wide (Y -4.94 .. 1.59), so with the part's section taken out
-/// no 6 mm end mill fits at any level. The refusal is correct and named;
-/// the job never cut here (the test that asked for it, added by #1407,
-/// failed from its first commit).
-#[test]
-fn the_sample_as_imported_refuses_the_3d_pocket_by_name() {
-    let mut c = sample_job(false);
-    let (err, result) = c.call("generate", json!({ "name": "R1" }));
-    let text = result.to_string();
-    assert!(err, "no area for the tool must refuse: {text}");
-    assert!(text.contains("nothing to cut: the model fills the pocket at every level"), "{text}");
+    // Longer flutes remove the obstruction without weakening verify.
+    c.ok("edit_tool", json!({ "name": "EM-0600-4FL", "patch": { "flute_len": 125.0, "shank_d": 6.0 } }));
+    let generated = c.ok("generate", json!({ "name": "R1" }));
+    assert!(statuses(&generated).iter().all(|(_, s, _)| s == "ok"), "{generated}");
+    let v = c.ok("verify", json!({}));
+    assert_eq!(v["ok"], json!(true), "a reaching tool posts: {v}");
+    assert_eq!(v["findings"], json!([]), "{v}");
 }
 
 /// Two blocks welded along one vertical edge, written as one ASCII STL:

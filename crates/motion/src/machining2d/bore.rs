@@ -11,9 +11,8 @@
 //!
 //! The law in one line: the cutter center rides `rc = hole_radius -
 //! tool_radius - leave`, so the disc's rim stands on the finished wall,
-//! and one radial sweep followed by one closed ring clears the annulus
-//! of each level - the disk's waterline reduced to the one ring that
-//! reaches the wall (`circular`'s ring walk with `stepover` past `rc`).
+//! and concentric rings walk outward from the centre at each level.
+//! Their floor bands overlap; the last ring finishes the wall.
 //! The entry family certifies against the cutter-center disk exactly
 //! where the material opens: a counterbore-shaped step (`stepped`)
 //! would promise the fold's hidden ring to nobody, so it is declined
@@ -25,8 +24,8 @@
 //! draws (`holes` arrive as params data, like the drill's); a tool too
 //! wide to enter the mouth, a hole with no floor under its entry, and
 //! every non-finite number are refused before any move is built. A
-//! hole too wide for the dive and the one ring to meet (#1556: a core
-//! left that no pass touches) is refused by name with its numbers.
+//! floor band too small to resolve or an excessive radial ring count
+//! is refused by name before the plan is allocated (#1566).
 
 use std::f64::consts::PI;
 
@@ -36,7 +35,7 @@ use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::Point3;
 use crate::links::Links;
 
-use super::bore_core::{CORE_TOL, bore_floor_reach, bore_leaves_core, max_bore_diameter};
+use super::bore_core::{CORE_TOL, MAX_BORE_RINGS, bore_ring_count, max_bore_diameter};
 use super::face::GenError;
 use super::levels::{Cert, Motion, cut_levels, run_levels};
 
@@ -200,41 +199,15 @@ impl BoreParams {
                     mouth,
                 ));
             }
-            // #1556, the core door: the ride clears the centre disc
-            // the dive opens and the ring's band `[rc - reach, rc +
-            // reach]`, where `reach` is how far the cutter cuts at the
-            // plane the core would stand on (the full radius, or a
-            // corner-radiused cutter's reach at a through hole's floor,
-            // [`bore_floor_reach`]). A ring whose inner edge stands past
-            // the dive's leaves the annulus between them uncut - a free
-            // core on a through hole - that no pass touches. Refused by
-            // name with the numbers, never posted as a finished bore.
             let through = h.through.then_some(self.through_allowance);
-            if bore_leaves_core(h.radius, self.tool_diameter, self.corner_radius, self.stock_to_leave, through) {
-                let reach = bore_floor_reach(self.tool_diameter, self.corner_radius, through);
-                let rule = if reach < self.tool_diameter * 0.5 - CORE_TOL {
-                    format!(
-                        "the tool diameter + 4 x the R{reach:.3} its {:.3} mm corner reaches at the \
-                         break-through + 2 x the stock to leave",
-                        self.corner_radius
-                    )
-                } else {
-                    "3 x the tool diameter + 2 x the stock to leave".to_string()
-                };
+            if bore_ring_count(h.radius, self.tool_diameter, self.corner_radius, self.stock_to_leave, through).is_none() {
                 return Err(GenError::invalid_at(
                     format!(
-                        "the {:.3} mm hole at ({:.3}, {:.3}) is too wide to bore with a {:.3} mm cutter: \
-                         the centre dive and one ring at R{:.3} leave a core from {:.3} to {:.3} mm \
-                         across that no pass touches (free once the hole breaks through). This ride \
-                         clears holes up to {:.3} mm ({rule}) - clear it with a pocket or adaptive \
-                         operation, or bore it with a larger tool",
-                        h.radius * 2.0,
-                        tidy(h.xy.x),
-                        tidy(h.xy.y),
-                        self.tool_diameter,
-                        rc,
-                        reach * 2.0,
-                        (rc - reach) * 2.0,
+                        "the {:.3} mm hole at ({:.3}, {:.3}) cannot bore with a {:.3} mm cutter and {:.3} mm corner radius: \
+                         the floor reach must be positive and resolvable, and the radial plan must fit within {MAX_BORE_RINGS} rings \
+                         (maximum hole diameter {:.3} mm). Use a flat end mill, a larger tool, or a pocket operation",
+                        h.radius * 2.0, tidy(h.xy.x), tidy(h.xy.y), self.tool_diameter,
+                        self.corner_radius,
                         max_bore_diameter(self.tool_diameter, self.corner_radius, self.stock_to_leave, through),
                     ),
                     mouth,
@@ -282,7 +255,14 @@ pub fn bore(p: &BoreParams) -> Result<Toolpath, GenError> {
             .with_entry(p.entry, p.helix_radius)
             .with_arc_radius(p.tool_diameter);
     }
-    let mut motion = motion.with_arc_radius(p.tool_diameter).with_links(p.links, p.helix_radius);
+    // #1665: the bore is a ring ladder. Its ramp entry rides the first
+    // cut (the radial sweep) at the ramp angle, never the chord from the
+    // last ring start to the centre, which is only one ring radius long
+    // and so descends at up to 84 deg on a small hole.
+    let mut motion = motion
+        .with_arc_radius(p.tool_diameter)
+        .with_links(p.links, p.helix_radius)
+        .with_ring_zig();
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
 
     for h in &p.holes {
@@ -306,14 +286,24 @@ pub fn bore(p: &BoreParams) -> Result<Toolpath, GenError> {
             .ok()
             .and_then(|l| Region::new(vec![l]).ok());
         let cert = disk.as_ref().map(Cert::Region);
-        // Radial sweep opens the level (center to wall), the closed
-        // ring finishes it: waterline order with one ring.
-        let start = ring_loop(h.xy, rc, p.climb);
-        let Some(&s0) = start.first() else {
-            continue;
-        };
-        let sweep = vec![h.xy, s0];
-        let passes = [sweep, start];
+        // Walk centre-out: open only the next radial band, then close
+        // its ring. The last ring stays on the finished wall. Explicit
+        // sweep passes keep each ring start in the column just cut.
+        let through = h.through.then_some(p.through_allowance);
+        let count = bore_ring_count(h.radius, p.tool_diameter, p.corner_radius, p.stock_to_leave, through)
+            .ok_or_else(|| GenError::Invalid("bore radial plan exceeds its floor reach or ring budget".into()))?;
+        let mut passes = Vec::with_capacity(count * 2);
+        let mut prev = h.xy;
+        for k in 1..=count {
+            let rho = rc * (k as f64 / count as f64);
+            let ring = ring_loop(h.xy, rho, p.climb);
+            let Some(&start) = ring.first() else {
+                return Err(GenError::Invalid("bore ring has no start".into()));
+            };
+            passes.push(vec![prev, start]);
+            passes.push(ring);
+            prev = start;
+        }
         // #871: a part-way refusal hands back the holes bored so far.
         let zs = cut_levels(h.top_z, bottom, p.stepdown).map_err(|e| e.with_ghost_moves(b.moves()))?;
         // Each hole's own entry surface is its top of cut (M11.3 B).

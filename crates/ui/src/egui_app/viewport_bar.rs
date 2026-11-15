@@ -13,7 +13,8 @@
 //! view-state writes (the camera's immediate-mode exemption).
 
 use crate::actions;
-use crate::state::{DisplayMode, State};
+use crate::state::{DisplayMode, DragMode, State};
+use crate::viewport::ProjectionMode;
 
 /// Button side, the gap between buttons, the ribbon's inner padding and its
 /// margin from the pane's bottom edge.
@@ -21,12 +22,17 @@ pub(crate) const NAV_PX: f32 = 26.0;
 const NAV_GAP: f32 = 4.0;
 const PAD: f32 = 6.0;
 const BOTTOM_MARGIN: f32 = 10.0;
-/// Six buttons in a row: the ribbon's width and height, so the layout gate
-/// can ask the pane for room (pinned by `bar_fits_its_buttons`).
-pub(crate) const BAR_W: f32 = 6.0 * NAV_PX + 5.0 * NAV_GAP + 2.0 * PAD;
+/// Ten buttons in a row: the ribbon's width and height, so the layout
+/// gate can ask the pane for room (pinned by `bar_fits_its_buttons`).
+pub(crate) const BAR_W: f32 = 10.0 * NAV_PX + 9.0 * NAV_GAP + 2.0 * PAD;
 const BAR_H: f32 = NAV_PX + 2.0 * PAD;
 const BAR_RADIUS: f32 = 8.0;
 
+/// Camera buttons (#1198 follow-up): the projection is a direct
+/// view-state write like the display-mode toggle; the orbit / pan /
+/// zoom tools latch the drag onto that mode and leave the shortcut to
+/// the vertex (a tool latched is a tool any drag obeys). View state
+/// like the camera - never commands, never saved.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Nav {
     /// Reframe the whole document - the F key's button twin.
@@ -42,11 +48,19 @@ pub(crate) enum Nav {
     /// Viewport picks may reach the far side of the part (#692). Off by
     /// default; when on, a click sends `through: true`.
     PickThrough,
+    /// Perspective <-> Orthographic, the View door's radios' twin.
+    Projection,
+    /// Latch the drag onto the orbit tool whatever the button.
+    Orbit,
+    /// Latch the drag onto the pan tool whatever the button.
+    Pan,
+    /// Latch the drag onto the zoom tool whatever the button.
+    Zoom,
 }
 
 /// The buttons in bar order. `NAV_COUNT` sizes the ribbon, and a test checks
 /// the two agree.
-pub(crate) const NAV_COUNT: usize = 6;
+pub(crate) const NAV_COUNT: usize = 10;
 pub(crate) const NAVS: [Nav; NAV_COUNT] = [
     Nav::Frame,
     Nav::Iso,
@@ -54,6 +68,10 @@ pub(crate) const NAVS: [Nav; NAV_COUNT] = [
     Nav::Paths,
     Nav::Axes,
     Nav::PickThrough,
+    Nav::Projection,
+    Nav::Orbit,
+    Nav::Pan,
+    Nav::Zoom,
 ];
 
 /// The plain-English state line of the pick-through button (#692).
@@ -61,6 +79,28 @@ pub(crate) const NAVS: [Nav; NAV_COUNT] = [
 pub(crate) fn pick_through_label(on: bool) -> &'static str {
     if on { "Pick through: on" } else { "Pick through: off" }
 }
+
+/// The status line the projection button flips the viewer between.
+#[must_use]
+pub(crate) fn projection_label(mode: ProjectionMode) -> &'static str {
+    match mode {
+        ProjectionMode::Perspective => "projection: perspective",
+        ProjectionMode::Orthographic => "projection: orthographic",
+    }
+}
+
+/// The status line a latched nav tool wears on the status bar.
+#[must_use]
+pub(crate) fn nav_tool_label(tool: DragMode) -> &'static str {
+    match tool {
+        DragMode::Orbit => "nav tool: orbit",
+        DragMode::Pan => "nav tool: pan",
+        DragMode::Zoom => "nav tool: zoom",
+    }
+}
+
+/// The status line when a nav tool latches off.
+pub(crate) const NAV_TOOL_CLEAR: &str = "nav tool: off";
 
 /// The ribbon: centred on the pane's width, resting on its bottom edge at
 /// the same margin as before. Floats over the 3D view (#1198, maintainer:
@@ -105,6 +145,28 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
             state.pick_through = !state.pick_through;
             state.status = pick_through_label(state.pick_through).to_string();
         }
+        Nav::Projection => {
+            state.cam.projection = match state.cam.projection {
+                ProjectionMode::Perspective => ProjectionMode::Orthographic,
+                ProjectionMode::Orthographic => ProjectionMode::Perspective,
+            };
+            state.status = projection_label(state.cam.projection).to_string();
+        }
+        Nav::Orbit | Nav::Pan | Nav::Zoom => {
+            let wanted = match kind {
+                Nav::Orbit => DragMode::Orbit,
+                Nav::Pan => DragMode::Pan,
+                _ => DragMode::Zoom,
+            };
+            state.nav_tool = if state.nav_tool == Some(wanted) {
+                None
+            } else {
+                Some(wanted)
+            };
+            state.status = state
+                .nav_tool
+                .map_or_else(|| NAV_TOOL_CLEAR.to_string(), |t| nav_tool_label(t).to_string());
+        }
     }
 }
 
@@ -131,6 +193,10 @@ pub(crate) fn draw(
             Nav::Paths => state.show_all_paths,
             Nav::Axes => state.show_world_axes,
             Nav::PickThrough => state.pick_through,
+            Nav::Projection => state.cam.projection == ProjectionMode::Orthographic,
+            Nav::Orbit => state.nav_tool == Some(DragMode::Orbit),
+            Nav::Pan => state.nav_tool == Some(DragMode::Pan),
+            Nav::Zoom => state.nav_tool == Some(DragMode::Zoom),
         };
         let hov = hover.is_some_and(|p| r.contains(p));
         let fill = if hov { ink.button.saturating_add(28) } else { ink.button };
@@ -234,6 +300,64 @@ pub(crate) fn draw(
                 ui.painter().line_segment([c - egui::vec2(half, 0.0), c + egui::vec2(half, 0.0)], s);
                 ui.painter().line_segment([c - egui::vec2(m * 0.4, m), c + egui::vec2(m * 0.4, m)], s);
             }
+            Nav::Projection => {
+                // The two doors on one viewer: converging bars for
+                // perspective, a plain square for orthographic.
+                let c = r.center();
+                let half = r.width() * 0.5 - m;
+                if matches!(state.cam.projection, ProjectionMode::Orthographic) {
+                    ui.painter().rect_stroke(
+                        egui::Rect::from_center_size(c, egui::vec2(half * 1.7, half * 1.7)),
+                        1.0,
+                        s,
+                        egui::StrokeKind::Inside,
+                    );
+                } else {
+                    let top = c.y - half * 0.8;
+                    let bot = c.y + half * 0.8;
+                    let tip_top = half;
+                    let tip_bot = half * 0.4;
+                    ui.painter().line_segment([egui::pos2(c.x - tip_top, top), egui::pos2(c.x - tip_bot, bot)], s);
+                    ui.painter().line_segment([egui::pos2(c.x + tip_top, top), egui::pos2(c.x + tip_bot, bot)], s);
+                    ui.painter().line_segment([egui::pos2(c.x - tip_top, top), egui::pos2(c.x + tip_top, top)], s);
+                    ui.painter().line_segment([egui::pos2(c.x - tip_bot, bot), egui::pos2(c.x + tip_bot, bot)], s);
+                }
+            }
+            Nav::Orbit => {
+                // The orbit ring with the eye-satellite riding it.
+                let c = r.center();
+                let rad = NAV_PX * 0.27;
+                ui.painter().circle_stroke(c, rad, s);
+                let a = std::f32::consts::FRAC_PI_4;
+                let dot = c + egui::vec2(a.cos() * rad, -a.sin() * rad);
+                ui.painter().circle_filled(dot, 2.4, s.color);
+                ui.painter().arrow(dot, egui::vec2(a.sin(), a.cos()) * 5.0, s);
+            }
+            Nav::Pan => {
+                // A pair of rails bowed out: the move arrows' move.
+                let c = r.center();
+                let l = NAV_PX * 0.24;
+                for (origin, vec) in [
+                    (c, egui::vec2(l, 0.0)),
+                    (c, egui::vec2(-l, 0.0)),
+                    (c, egui::vec2(0.0, l)),
+                    (c, egui::vec2(0.0, -l)),
+                ] {
+                    ui.painter().arrow(origin, vec, s);
+                }
+            }
+            Nav::Zoom => {
+                // A magnifier: ring plus the handle it hangs from.
+                let c = r.center() - egui::vec2(2.5, 2.5);
+                ui.painter().circle_stroke(c, NAV_PX * 0.21, s);
+                ui.painter().line_segment(
+                    [
+                        c + egui::vec2(NAV_PX * 0.15, NAV_PX * 0.15),
+                        c + egui::vec2(NAV_PX * 0.30, NAV_PX * 0.30),
+                    ],
+                    s,
+                );
+            }
         }
     }
 }
@@ -243,9 +367,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn camera_buttons_flip_the_viewer_and_latch_a_tool() {
+        // Projection: flips perspective <-> orthographic, the View
+        // door's radios' true twin.
+        let mut state = State::new();
+        let p0 = state.cam.projection;
+        act(&mut state, Nav::Projection);
+        assert_ne!(state.cam.projection, p0, "the projection must flip");
+        assert!(state.status.contains("orthographic"), "{:?}", state.status);
+        act(&mut state, Nav::Projection);
+        assert_eq!(state.cam.projection, p0, "one more press flips back");
+        // The tool buttons latch once on and once off, and say so.
+        for (nav, tool, word) in [
+            (Nav::Orbit, DragMode::Orbit, "orbit"),
+            (Nav::Pan, DragMode::Pan, "pan"),
+            (Nav::Zoom, DragMode::Zoom, "zoom"),
+        ] {
+            let mut state = State::new();
+            act(&mut state, nav);
+            assert_eq!(state.nav_tool, Some(tool));
+            assert!(state.status.contains(word), "{:?}", state.status);
+            // Latching a different tool replaces the first.
+            act(&mut state, if matches!(nav, Nav::Zoom) { Nav::Orbit } else { Nav::Zoom });
+            assert_ne!(state.nav_tool, Some(tool));
+            // The second press on the same tool latches off.
+            act(&mut state, nav);
+            assert_eq!(state.nav_tool, Some(tool));
+            act(&mut state, nav);
+            assert_eq!(state.nav_tool, None);
+            assert_eq!(state.status, NAV_TOOL_CLEAR);
+        }
+    }
+
+    #[test]
     fn bar_fits_its_buttons() {
-        // The ribbon is every button in the list plus their gaps and padding,
-        // counted from the list - no literal count, no slack, no overflow.
         assert_eq!(NAVS.len(), NAV_COUNT, "NAV_COUNT sizes the ribbon");
         let count = NAVS.len() as f32;
         let width = count * NAV_PX + (count - 1.0) * NAV_GAP + 2.0 * PAD;

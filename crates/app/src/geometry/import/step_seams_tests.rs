@@ -172,7 +172,7 @@ fn a_face_never_closes_its_own_boundary() {
 
 /// The importer's own gap: a side's top edge bowed `bow` chord
 /// tolerances off the top face's edge, judged as a closed shell.
-fn judged_with_bow(bow: f64) -> Result<Vec<String>, crate::geometry::import::ImportError> {
+fn judged_with_bow(bow: f64) -> Result<super::super::step_closed::Judged, crate::geometry::import::ImportError> {
     use super::super::step_closed::{Shell, judge};
     let tol = 1e-3;
     let mut l = loops();
@@ -186,15 +186,23 @@ fn judged_with_bow(bow: f64) -> Result<Vec<String>, crate::geometry::import::Imp
 fn the_importer_closes_seams_within_two_chord_tolerances_only() {
     // Each side's chords stand within one tolerance of the shared curve,
     // so two sides within two of each other: 1.5 is a seam, 3 is a gap.
-    assert!(judged_with_bow(1.5).is_ok());
-    let err = judged_with_bow(3.0).expect_err("a boundary 3 chord tolerances off is a gap");
-    assert!(err.to_string().contains("closed shell #1 (6 faces) meshes open"), "{err}");
+    let seam = judged_with_bow(1.5).expect("a seam imports");
+    assert!(seam.open.is_none(), "{:?}", seam.open);
+    // #1610: the gap is named for the caller, who refuses it or lands the
+    // model incomplete.
+    let gap = judged_with_bow(3.0).expect("a gap is named, not refused here");
+    let hole = gap.open.unwrap_or_default();
+    assert!(hole.contains("closed shell #1 (6 faces) meshes open"), "{hole}");
 }
 
 fn judged(tris: &mut [Triangle], ends: &[usize]) -> Result<Vec<String>, crate::geometry::import::ImportError> {
     use super::super::step_closed::{Shell, judge};
     let shell = Shell { id: 7, faces: ends.len(), closed: true, mm_per_unit: 1.0 };
-    judge(tris, Some(ends), GAP / 2.0, &shell, |f| Some(100 + f as u64), None)
+    let judged = judge(tris, Some(ends), GAP / 2.0, &shell, |f| Some(100 + f as u64), None)?;
+    match judged.open {
+        Some(hole) => Err(super::super::step_closed::open_refusal(&hole)),
+        None => Ok(judged.notes),
+    }
 }
 
 #[test]

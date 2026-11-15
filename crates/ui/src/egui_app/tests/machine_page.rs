@@ -200,3 +200,13 @@ fn the_machine_page_of_an_inactive_setup_offers_only_activation() {
         assert!(h.query_by_label(gone).is_none(), "{gone} waits for activation");
     }
 }
+
+/// #1119: the Machine page's library combo carries an accessible name.
+#[test]
+fn the_machine_page_names_every_input() {
+    let mut h = shell_harness();
+    open_machine(&mut h, Some("Tormach 770MX"));
+    let (bad, seen) = super::super::fixture_plate_tests::unnamed_inputs(&h);
+    assert!(seen >= 1, "only {seen} inputs found on the machine page");
+    assert!(bad.is_empty(), "unnamed inputs on machine page: {bad:?}");
+}

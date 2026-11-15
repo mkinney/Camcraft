@@ -65,18 +65,18 @@ fn the_inverted_x_golden_carries_the_translated_words() {
         assert!(p.contains(b), "inverted lacks {b}:\n{p}");
     };
     // X 50 - origin 10 = 40 in the program; the inverted controller reads -40.
-    both("G01 X40 Y10 Z-1 F600", "G01 X-40 Y10 Z-1 F600");
+    both("G01 X40. Y10. Z-1. F600", "G01 X-40. Y10. Z-1. F600");
     // G17: the CCW quarter becomes a G02; I stays 0 (it is an X increment).
-    both("G03 X50 Y20 Z-1 I0 J10", "G02 X-50 Y20 Z-1 I0 J10");
+    both("G03 X50. Y20. Z-1. I0. J10.", "G02 X-50. Y20. Z-1. I0. J10.");
     // G18 holds X: the sense reverses and I flips sign.
-    both("G18 G03 X25 Y30 Z4 I-5 K0", "G18 G02 X-25 Y30 Z4 I5 K0");
+    both("G18 G03 X25. Y30. Z4. I-5. K0.", "G18 G02 X-25. Y30. Z4. I5. K0.");
     // G19 holds no X: its sense and J/K are unchanged.
-    both("G19 G02 X25 Y25 Z-1 J-5 K0", "G19 G02 X-25 Y25 Z-1 J-5 K0");
+    both("G19 G02 X25. Y25. Z-1. J-5. K0.", "G19 G02 X-25. Y25. Z-1. J-5. K0.");
     // Left compensation is right in the mirrored controller frame.
-    both("G17 G03 X25 Y15 Z-1 I0 J-5", "G17 G02 X-25 Y15 Z-1 I0 J-5");
-    both("G01 G41 X25 Y10", "G01 G42 X-25 Y10");
+    both("G17 G03 X25. Y15. Z-1. I0. J-5.", "G17 G02 X-25. Y15. Z-1. I0. J-5.");
+    both("G01 G41 X25. Y10.", "G01 G42 X-25. Y10.");
     // The hole.
-    both("G81 X60 Y0", "G81 X-60 Y0");
+    both("G81 X60. Y0.", "G81 X-60. Y0.");
 }
 
 #[test]
@@ -188,6 +188,8 @@ fn a_threading_cycle_refuses_by_name() {
         infeed_angle: 0.0,
         spring_passes: 1,
         pull_out: 0.0,
+        alternating: false,
+        repeat_each_depth: false,
         hand: camcraft_post::cl::ThreadHand::Right,
     }));
     let e = refused("fanuc", &["X"], &with(vec![t, Record::Thread(None)]));
@@ -272,7 +274,7 @@ fn the_raw_door_reads_a_files_direction() {
     let file = json!({"general": {"model": "Flip 1"}, "kinematics": {"default": {"parts": [
         {"type": "linear", "name": "X", "direction": -1}]}}});
     let out = engine::run(&cps("fanuc"), &file, &probe_stream()).expect("an inverted X posts");
-    assert!(out.program.contains("G01 X-40 Y10 Z-1 F600"), "{}", out.program);
+    assert!(out.program.contains("G01 X-40. Y10. Z-1. F600"), "{}", out.program);
     let bad = json!({"general": {"model": "Flip 1"}, "kinematics": {"default": {"parts": [
         {"type": "linear", "name": "X", "direction": 2}]}}});
     let e = engine::run(&cps("fanuc"), &bad, &probe_stream()).map(|o| o.program).expect_err("garbled").to_string();

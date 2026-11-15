@@ -38,8 +38,8 @@ const STEP: f64 = 0.25;
 /// plunge, far under any tolerance.
 const ROUNDS: usize = 24;
 
-fn law() -> verify::SolidLaw {
-    verify::SolidLaw { step: STEP, allow: GOUGE_TOL, hole_walls: true }
+fn law(excess: f64) -> verify::SolidLaw {
+    verify::SolidLaw { step: STEP, allow: super::fidelity_law::tightened(GOUGE_TOL, excess), hole_walls: true }
 }
 
 /// The cross holes' axes, whose round walls the solid law excuses
@@ -63,12 +63,14 @@ pub(super) fn part_clear(
     tool: &Tool,
     cutter: &verify::Cutter,
     holes: &[CrossHole],
+    excess: f64,
 ) -> Result<(), GenError> {
     if facets.is_empty() {
         return Ok(()); // no part, nothing kept: the other laws own the chain
     }
     let cutter = verify::Cutter::judged(&tool.geom(), Some(*cutter));
-    let Some(w) = verify::solid_hits_walled(t, facets, &cutter, &law(), &walls(holes)).into_iter().next() else {
+    let l = law(excess);
+    let Some(w) = verify::solid_hits_walled(t, facets, &cutter, &l, &walls(holes)).into_iter().next() else {
         return Ok(());
     };
     let (at, what) = match w {
@@ -89,7 +91,7 @@ pub(super) fn part_clear(
     let depth = -h.floor_d;
     let why = match w {
         Warning::Gouge { .. } if m.kind != MoveKind::Rapid => {
-            let met = met_at(m, facets, &cutter, h);
+            let met = met_at(m, facets, &cutter, h, &l);
             // A real hole carries the drill at least its own radius in
             // before a floor stops it; steel met sooner - the face's
             // own curvature - is a hole the model does not have.
@@ -127,12 +129,13 @@ pub(super) fn neighbours_clear(
     tool: &Tool,
     cutter: &verify::Cutter,
     holes: &[CrossHole],
+    excess: f64,
 ) -> Result<(), GenError> {
     if neighbours.is_empty() {
         return Ok(());
     }
     let cutter = verify::Cutter::judged(&tool.geom(), Some(*cutter));
-    let Some(w) = verify::solid_hits_walled(t, neighbours, &cutter, &law(), &[]).into_iter().next() else {
+    let Some(w) = verify::solid_hits_walled(t, neighbours, &cutter, &law(excess), &[]).into_iter().next() else {
         return Ok(());
     };
     let (at, what) = match w {
@@ -173,7 +176,7 @@ fn hole_of(p: Point3, holes: &[CrossHole]) -> Option<&CrossHole> {
 /// convicted plunge `m` stands when the drill first meets the part:
 /// the clean prefix of the plunge, bisected. 0 when the plunge's own
 /// start is already in the part.
-fn met_at(m: &Move, facets: &[Triangle], cutter: &verify::Cutter, h: &CrossHole) -> f64 {
+fn met_at(m: &Move, facets: &[Triangle], cutter: &verify::Cutter, h: &CrossHole, l: &verify::SolidLaw) -> f64 {
     let at = |f: f64| {
         Point3::new(
             m.from.x + (m.to.x - m.from.x) * f,
@@ -183,7 +186,7 @@ fn met_at(m: &Move, facets: &[Triangle], cutter: &verify::Cutter, h: &CrossHole)
     };
     let hits = |f: f64| {
         let probe = Toolpath { moves: vec![Move { to: at(f), ..*m }], ..Toolpath::default() };
-        !verify::solid_hits_walled(&probe, facets, cutter, &law(), &walls(std::slice::from_ref(h))).is_empty()
+        !verify::solid_hits_walled(&probe, facets, cutter, l, &walls(std::slice::from_ref(h))).is_empty()
     };
     let (mut lo, mut hi) = (0.0f64, 1.0f64);
     if hits(0.0) {

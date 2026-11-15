@@ -17,8 +17,9 @@
 //!
 //! Gate map: covers app::operation::keep_law (neighbour_parts),
 //! app::operation::job (neighbour_parts), app::operation::generate (the
-//! neighbour law), app::posting, app::posting_sim, app::mcp
-//! (add_operation, verify).
+//! neighbour law), app::operation::mark_law (budget_of, target_facets,
+//! sim_mark_of), app::stock_sim (marks), sim::stock_sim::mark,
+//! app::posting, app::posting_sim, app::mcp (add_operation, verify).
 
 mod area_support;
 mod pocket_support;
@@ -164,6 +165,53 @@ fn a_cut_on_b_into_its_neighbour_gouges_on_the_op_and_never_posts() {
             assert_post_refused(&world, &format!("into-a-{label}-{rotated}"), rotated);
         }
     }
+}
+
+#[test]
+fn the_program_sim_refuses_a_mark_on_b_whose_flank_enters_a_neighbour() {
+    // #1627: on the aligned stock, the program sim itself must convict
+    // the #1621 probe (a 0.3 mm part-source mark on B whose flank enters
+    // A by 2.3 mm x 0.3 mm) instead of crediting B's mark budget on A.
+    for trace in [false, true] {
+        for picked in [false, true] {
+            let (world, mut h) = job(TIGHT, false);
+            let src = if picked { sel("part", top_face(&world, "part", TOP)) } else { whole_b() };
+            generated(&world, &mut h, src, mark(trace, TOP, 7.7));
+            let dev = camcraft_app::stock_sim::simulate_document(&world)
+                .expect("the aligned stock is judged")
+                .dev;
+            assert!(
+                dev.gouge_cells > 0,
+                "trace {trace} picked {picked}: the program sim credited B's mark on A"
+            );
+            assert!(
+                (dev.max_gouge - 0.3).abs() < 1e-6,
+                "trace {trace} picked {picked}: expected 0.3 mm gouge on A, got {}",
+                dev.max_gouge
+            );
+            let at = dev.max_gouge_at.expect("located");
+            assert!(
+                at.x < -TIGHT + 0.125,
+                "trace {trace} picked {picked}: worst gouge must lie on A (x < -{TIGHT}), got {at:?}"
+            );
+        }
+    }
+    // Clear of A, the same mark on B is clean in the program sim too.
+    for trace in [false, true] {
+        let (world, mut h) = job(CLEAR, false);
+        generated(&world, &mut h, whole_b(), mark(trace, TOP, 7.7));
+        let dev = camcraft_app::stock_sim::simulate_document(&world)
+            .expect("the aligned stock is judged")
+            .dev;
+        assert_eq!(dev.gouge_cells, 0, "trace {trace}: worst {} at {:?}", dev.max_gouge, dev.max_gouge_at);
+    }
+    // A stock-source mark still credits every part in the setup (#1607).
+    let (world, mut h) = job(TIGHT, false);
+    generated(&world, &mut h, SrcRef::Stock, mark(false, TOP, 7.7));
+    let dev = camcraft_app::stock_sim::simulate_document(&world)
+        .expect("the aligned stock is judged")
+        .dev;
+    assert_eq!(dev.gouge_cells, 0, "stock source worst {} at {:?}", dev.max_gouge, dev.max_gouge_at);
 }
 
 #[test]

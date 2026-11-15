@@ -747,6 +747,7 @@ fn seed_contour(c: &Carried) -> OpParams {
 
 fn seed_pocket(c: &Carried) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -780,6 +781,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
 /// (optimal_load) stays visible.
 fn seed_adaptive2d(c: &Carried) -> OpParams {
     OpParams::Adaptive2D {
+        blend_radius: None, blend_turns: false,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -795,6 +797,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         method: crate::machining2d::AdaptiveMethod::Spiral,
+        troch: crate::machining2d::AdaptiveTrochParams::default(),
         tilt: c.tilt,
     }
 }
@@ -804,6 +807,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
 /// the pane must not show.
 fn seed_offset2d(c: &Carried) -> OpParams {
     OpParams::Offset2D {
+        blend_radius: None, blend_turns: false,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -899,6 +903,8 @@ fn seed_slot(c: &Carried) -> OpParams {
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: c.tilt,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 

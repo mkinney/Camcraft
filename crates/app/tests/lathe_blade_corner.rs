@@ -161,8 +161,8 @@ fn a_3mm_groove_at_z_minus_10_posts_the_touched_off_corner() {
     create(&world, &mut history, "G1", groove());
     all_at(&posted_plunge_z(&world), -11.5, "the default left corner");
     let text = program(&world);
-    assert!(text.contains("X8 Z-11.5 "), "the r4 floor at the left corner: {text}");
-    assert!(!text.contains("Z-10 "), "never the middle of the blade: {text}");
+    assert!(text.contains("X8. Z-11.5 "), "the r4 floor at the left corner: {text}");
+    assert!(!text.contains("Z-10. "), "never the middle of the blade: {text}");
     assert!(text.contains("ORIENTATION 2)"), "the tool note names the corner: {text}");
     set_corner(&world, &mut history, Some(1));
     all_at(&posted_plunge_z(&world), -8.5, "the right corner");

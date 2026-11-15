@@ -116,7 +116,7 @@ pub(super) fn get_job(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, S
             });
             // #864: only a model imported coarser than promised says so.
             if let Some(chord) = crate::model_fidelity::chord_of(w, e) {
-                m["reduced_fidelity"] = crate::model_fidelity::facts(w, chord);
+                m["reduced_fidelity"] = crate::mesh_open::facts(w, e, chord);
             }
             // #1054: and one imported under a non-default STEP facet budget.
             if let Some(b) = crate::model_fidelity::budget_of(w, e) {
@@ -219,7 +219,7 @@ pub(super) fn list_tool_catalog(_env: &mut Env, _a: &Map<String, Value>) -> Resu
 pub(super) fn finding(op: &str, w: &Warning) -> Value {
     let (kind, at) = match w {
         Warning::Crossing { moves } => ("crossing", moves[0]),
-        Warning::Gouge { at } => ("gouge", *at),
+        Warning::Gouge { at } | Warning::StockChamferGouge { at } => ("gouge", *at),
         Warning::ShankHit { at, .. } => ("shank_hit", *at),
         Warning::HolderHit { at, .. } => ("holder_hit", *at),
         Warning::SweepHit { at, .. } => ("sweep_hit", *at),

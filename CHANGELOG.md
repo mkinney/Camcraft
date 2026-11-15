@@ -10,6 +10,71 @@ v0.8.1).
 
 | Commit | Date | Change | Version |
 |---|---|---|---|
+| e0c11ca33 | 2026-11-15 | Give unsupported Sodick wire compensation requests an operation-specific refusal and suppress affected cutting blocks (#1498, PR #1913) | 0.21.0 |
+| 4c4e96ae6 | 2026-11-15 | Fanuc, Haas, Mazak, Doosan DNM and Fanuc lathe posts now write each whole-number length, angle and feed-per-revolution word with a decimal point (`Z14.`), so that a control with parameter 3401#0 DPI=0 does not read it in least increments (#1836, PR #1866) | 0.21.0 |
+| bca1ff4c0 | 2026-11-15 | Credit an earlier setup's declared chamfers, deburrs and marks before retaining gouges across a new block or side-on turn, while retaining real excess cuts (#1806, PR #1879) | 0.21.0 |
+| ac4a20e27 | 2026-11-15 | 3D Pocket refuses depths with unproved shank or holder clearance before generation and names the tool and Bottom Z remedy (#1844, PR #1895) | 0.21.0 |
+| 88a989caf | 2026-11-15 | MCP advertises the Tormach PathPilot Plasma post and documents its tested Plasma Profile workflow (#1871, PR #1900) | 0.21.0 |
+| 0a66d179d | 2026-11-15 | A sinker electrode can be a body: `electrode_from_faces` makes an outline electrode for a cavity that is not an axis-aligned rectangle (a rounded-corner pocket, an L, a rotated rectangle), the tool record carries the outline through the project file, the library and MCP, and the program verdict burns it with a new outline atom (#1152, PR #1811) | 0.21.0 |
+| 8b366d65f | 2026-11-15 | Expose engagement limit, return mode/lift, return feed and loop width parameters for 2D Adaptive (Trochoidal) in the UI, project files, and MCP (#1588, PR #1782) | 0.21.0 |
+| da413a92a | 2026-11-15 | A setup turned side-on (a quarter turn about X or Y) can take the machined stock of the setup before it; the carried stock is never smaller than the real stock, and a gouge cut before the turn stays in the verdict (#874, PR #1804) | 0.21.0 |
+| 30f1f7f53 | 2026-11-15 | Seven mill posts now retract Z and name the next setup before a setup-change stop; Heidenhain refuses a setup change without safe work clearance (#1647, PR #1859) | 0.21.0 |
+| 0fb24619d | 2026-11-15 | Accept a clear U-shaped blind-slot selection in the 2D pocket family and extend its open side to stock (#1762, PR #1841) | 0.21.0 |
+| 56ee418b3 | 2026-11-15 | Bore clears wide holes with bounded concentric rings and clears blind bull-nose interior floor ridges (#1566, PR #1839) | 0.21.0 |
+| ae601e476 | 2026-11-15 | Enable 3D Pocket, 3D Adaptive, and 3D Finish with area controls in part-aligned milling setups (#1743, PR #1858) | 0.21.0 |
+| 3074c0f9b | 2026-11-15 | Refuse runaway or discontinuous STEP edge and swept-curve subdivisions by name while preserving healthy division output (#1545, PR #1837) | 0.21.0 |
+| 62e1d36a6 | 2026-11-15 | Threading: an optional repeat pass at each roughing depth (G32 / G33 output; the Fanuc and PathPilot G76 cycles refuse it by name) (#418, PR #518) | 0.21.0 |
+| abfe23ad4 | 2026-11-15 | A whole-model 3D Pocket (and Multi-Axis Rough) clears the stock around the model out to the stock's outline instead of stopping about two tool radii past the silhouette (#1774, PR #1780) | 0.21.0 |
+| 4dd4febc4 | 2026-11-15 | A wire taper the mounted machine cannot post (no stated edm.max_taper_deg, past it, or no guide planes on a U/V machine) is now refused when the taper is set, not at generate or post (#1800, PR #1818) | 0.21.0 |
+| c0e502d18 | 2026-11-15 | A whole-model 3D Pocket (and Multi-Axis Rough) clears a notch open to the part's outside past its open edge instead of leaving a tool-radius ridge, keeps off the setup's other parts, and warns when it cuts through one (#1749, PR #1772) | 0.21.0 |
+| a1ef0219e | 2026-11-15 | With the G76 cycle option, the G76 words state the passes that were verified: the finish allowance R is posted (the default thread posts R0.4 instead of R0), and options that G76 cannot express are refused by name (#417, PR #517) | 0.21.0 |
+| b0a95adc9 | 2026-11-15 | A STEP closed shell that meshes open now imports as an incomplete model with its hole named, instead of being refused; every operation on it is refused at the post by name (#1610, PR #1699) | 0.21.0 |
+| a330f7cbd | 2026-11-15 | grblHAL and TinyG declare indexed work offsets and their G54-G59 limits (#1385, PR #1824) | 0.21.0 |
+| d99821de9 | 2026-11-15 | Refuse unsupported Sodick angle-word moves instead of silently posting them vertically; retain taper refusal pending a verified mapping (#1496, PR #1787) | 0.21.0 |
+| dc44993fc | 2026-11-15 | Fanuc-family posts support bounded Explain G-code comments without changing executable words (#1388, PR #1814) | 0.21.0 |
+| 2ed946395 | 2026-11-15 | Added the Sodick ALC400G wire EDM machine file, with travels and taper from Sodick's published specifications (#1501, PR #1793) | 0.21.0 |
+| fbb81d9d6 | 2026-11-14 | Add optional plain-English block explanations to the Tormach mill post (#1387, PR #1812) | 0.21.0 |
+| 6c33940dc | 2026-11-14 | 2D Adaptive (Trochoidal) now clears wide, branching, island, and closed-ring regions with parallel lanes and corner/wall clean-up peels (#1587, PR #1788) | 0.21.0 |
+| a39e9a8b4 | 2026-11-14 | Tools can be assembled from modular multi-piece bodies imported from vendor STEP, STL or OBJ models (#361, PR #1744) | 0.21.0 |
+| 2072246d2 | 2026-11-14 | WCS page marker pick also anchors the origin on a part's corners and on circle/slot centres (#1502, PR #1710) | 0.21.0 |
+| 724041d73 | 2026-11-14 | Sinker rough and finish burns count orbit radius in wall sizing and floor stand-off, with named overburn and incomplete-vector refusals (#1355, PR #1791) | 0.21.0 |
+| 085a4717e | 2026-11-15 | A Sinker Side Burn takes a measured electrode wear and a layer step: the plunge is compensated in Z and the lateral move runs at the compensated tip (#1340, PR #1789) | 0.21.0 |
+| ca603fc41 | 2026-11-15 | The Browser View shows the machine's work envelope as an outline (#1567, PR #1786) | 0.21.0 |
+| bed96be78 | 2026-11-15 | Wire Contour page: pick the 4-axis sync points in the viewport (#1171, PR #1785) | 0.21.0 |
+| 05b8e3003 | 2026-11-15 | Wire EDM: a machine can state an angle-word taper dialect (edm.taper_angle: side rule and mitre/cone corner rule). The wire post writes the angle word, and the verify judges the lean the stated corner rule cuts (#1164, PR #1218) | 0.21.0 |
+| ebda4f2fb | 2026-11-15 | Tormach skips redundant G30/M6 for consecutive sections using the same tool while preserving compensation and safe clearance (#1626, PR #1741) | 0.21.0 |
+| fe1a94c77 | 2026-11-14 | Hovering a picked face, edge or corner in the viewport marks its row in the Geometry tab (#1519, PR #1711) | 0.21.0 |
+| 59a0e3289 | 2026-11-15 | An operation's Boundary group takes edge picks in any pick mode, and two separate edges now bound the area between them (touching or crossing chains are refused by name) (#1727, PR #1756) | 0.21.0 |
+| e47fb890e | 2026-11-15 | Add Wire Contour skim ordering, holding-tab fields and captured-piece controls to the Passes tab (#1148, PR #1765) | 0.21.0 |
+| 2ffdd5206 | 2026-11-15 | Name the part-collision cause and the `chamfer with the part as source` workaround when a stock-source 2D Chamfer breaks into a part (#1637, PR #1771) | 0.21.0 |
+| 11b7cbbee | 2026-11-15 | Tormach lathe post: after G30 the first point is approached one axis at a time (X then Z outside the stock's diameter, Z then X in front of the face), and before each G30 the tool leaves +X to the stock's diameter, then +Z to the face; a missing stock or clearance plane is refused by name (#1604, PR #1667) | 0.21.0 |
+| b8c0306af | 2026-11-15 | Honor a user post script's wireEdm manifest when admitting Wire EDM posts (#1335, PR #1770) | 0.21.0 |
+| 3b1965b1f | 2026-11-15 | Sinker machine page: the condition table edits each condition's wear rate and notes (#1381, PR #1776) | 0.21.0 |
+| 4143282a3 | 2026-11-15 | 2D Pocket, 2D Adaptive and 2D Offset: arc turns at corners take a corner arc radius (default: the tool radius, output unchanged) (#1733, PR #1778) | 0.21.0 |
+| 613d11700 | 2026-11-15 | A 2D Offset, 2D Pocket or 2D Adaptive with two opposite open edges selected now cuts the band between the edges up to the stock edge, and the extension moves the open ends out of the stock along the edges; an unclear selection is refused by name (#1735, PR #1769) | 0.21.0 |
+| 96c40cfc5 | 2026-11-15 | Contour on an open edge of a part now cuts with the tool on the edge's air side (one radius off), instead of on the edge, and refuses a run with no clear air side by name (#1777, PR #1781) | 0.21.0 |
+| c5ac1057d | 2026-11-15 | The CamCraft icon shows in the Windows taskbar and in Alt+Tab (#1754, PR #1764) | 0.21.0 |
+| 2aca3e55f | 2026-11-15 | Pick buttons have one style, with a clear armed state (#1728, PR #1747) | 0.21.0 |
+| a89d47128 | 2026-11-15 | Slot: new "Extend past A" and "Extend past B" parameters run the pass past each end along the slot; an extension into a kept part is refused as a gouge (#1731, PR #1745) | 0.21.0 |
+| ec6ffa92a | 2026-11-14 | Support explicit 4-axis wire EDM fan spans and name unsupported stitched profiles (#1172, PR #1766) | 0.21.0 |
+| 18829eebe | 2026-11-15 | The first Ctrl+click on a second edge adds it: the pick door of the pocket family accepts an edge pick whose stitched ring has no area (a vertical edge, or an edge below another edge); Generate keeps the refusal (#1726, PR #1748) | 0.21.0 |
+| 8e4958234 | 2026-11-14 | Keep ring ramps as planned chords when any prefix chord exceeds the ring sagitta tolerance (#1612, PR #1751) | 0.21.0 |
+| e2f012e90 | 2026-11-14 | Expose cylinder alignment and setup origin placement as undoable MCP tools with named refusals (#1586, PR #1695) | 0.21.0 |
+| bd48e0a77 | 2026-11-14 | MCP `get_post_options` and `set_post_options` tools for explicit document and per-setup post options (#1534, PR #1722) | 0.21.0 |
+| cf9ff14ee | 2026-11-14 | Allow cross drill on reduced-fidelity models by tightening standoffs, entries, reach, holder clearance, part checks, and radial rapids by the model excess (#1053, PR #1755) | 0.21.0 |
+| caf7e365f | 2026-11-14 | Program simulation now credits part-source Engrave and Trace marks only on the marked part(s), never on neighbouring parts (#1627, PR #1767) | 0.21.0 |
+| dc60415a5 | 2026-11-14 | 3D Pocket names tool clearance when the open area is too narrow to cut (#1709, PR #1739) | 0.21.0 |
+| 9096259c8 | 2026-11-14 | Default Ramp entries for Inside Contour, Circular and Bore use 3 degrees independently of the link ramp angle (#1674, PR #1742) | 0.21.0 |
+| c785c14bd | 2026-11-14 | grblHAL, Carvera and TinyG posts write no motion after refusing a first X/Y traverse with no stated clearance or retract plane (the `post` CLI no longer puts the refused move in the file) (#1682, PR #1707) | 0.21.0 |
+| 703af8185 | 2026-11-14 | Allow picked faces and edges in aligned setups for Face, Contour, Pocket, and Adaptive2D via OpFrame (#763, PR #1736) | 0.21.0 |
+| 46a80ca74 | 2026-11-14 | AccessKit labels name every input of the Machine page, the Machines pane filter and the Machine editor (#1119, PR #1725) | 0.21.0 |
+| 06339e428 | 2026-11-14 | Keep near-trace wall wobble under verification by requiring a distance band for rim-vertex crossings (#1669, PR #1740) | 0.21.0 |
+| d73da9d58 | 2026-11-14 | The Linux release packages build again: the RPM now lists the application icons (#1719, PR #1721) | 0.21.0 |
+| d2350d6a7 | 2026-11-14 | UI workbench rework: the built-in themes are denser (smaller cells, 16 px glyphs, 11 px labels) and Horizon Day uses the same density with the light palette (#1677, PR #1639) | 0.21.0 |
+| 5a4742122 | 2026-11-14 | Closed inward STL and OBJ bodies turn outward at import and report the correction (#1672, PR #1686) | 0.21.0 |
+| 3975532f0 | 2026-11-14 | A 2D Contour on the inside with a Ramp entry now descends at the ramp angle (zig-zag along the ring), or dives by name at the plunge feed; it no longer feeds straight down at the cutting feed (#1664, PR #1670) | 0.21.0 |
+| 96e9b0bd0 | 2026-11-14 | A 2D Pocket, Adaptive or Offset that clears the stock around a part now names each band of the stock narrower than the tool, which no pass can cut (#1655, PR #1680) | 0.21.0 |
+| 4c98f37cd | 2026-11-14 | Bore with entry Ramp descends at the ramp angle along the radial sweep (or a named plunge), not on a steep chord at the cutting feed; the ring restart plunge is named (#1665, PR #1679) | 0.21.0 |
 | 058e14ca0 | 2026-11-14 | The post no longer refuses a legal stock-source drill, bore, thread or cross drill in the part's own modelled hole on a turned stock (#1691, PR #1692) | 0.20.0 |
 | 4f4edcf35 | 2026-11-14 | STEP import meshes rational B-spline thread faces at full fidelity in seconds (about 10 K facets instead of 5-6 M per part, and no hole), splitting each parameter direction only where it is curved (PR #1638) | 0.20.0 |
 | 819ecfc31 | 2026-11-14 | A part moved into, added to, or un-tagged inside an operation's cut after generation no longer posts on a turned stock: the post judges the parts beside each op's source again and refuses by name (#1628, PR #1643) | 0.20.0 |

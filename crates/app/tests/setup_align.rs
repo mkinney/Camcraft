@@ -240,23 +240,22 @@ fn two_setups_hold_the_part_differently_without_touching_each_other() {
 }
 
 #[test]
-fn unverified_kinds_and_picks_are_refused_by_name_in_an_aligned_setup() {
+fn unverified_kinds_are_refused_while_verified_picks_generate_aligned() {
     let (world, mut h) = document(60.0);
-    let seed = (KindInfo::ALL[OpType::Pocket3D.ordinal()].seed)(&Carried::of(&contour_params()));
-    let op = CreateOperation::new(&world, "Rough3D", TOOL, SrcRef::Entity("part".into()), seed);
-    h.execute(&world, op.expect("create 3D pocket"));
+    let seed = (KindInfo::ALL[OpType::Offset2D.ordinal()].seed)(&Carried::of(&contour_params()));
+    let op = CreateOperation::new(&world, "Offset2D", TOOL, SrcRef::Entity("part".into()), seed);
+    h.execute(&world, op.expect("create offset pocket"));
     let face = model::find_by_name(&world, "part")
         .and_then(|e| model::features_of(&world, &e))
-        .and_then(|f| f.faces.first().map(|fa| fa.id))
-        .expect("a face");
+        .and_then(|f| f.faces.iter().find(|fa| fa.normal[2].abs() > 0.9).map(|fa| fa.id))
+        .expect("a horizontal face");
     let pick = SrcRef::Selection(vec![GeoSel { entity: "part".into(), feature: FeatureSel::Face(face) }]);
     let picked = CreateOperation::new(&world, "Picked", TOOL, pick, contour_params());
     h.execute(&world, picked.expect("create a face-picked contour"));
     align(&world, &mut h, AlignPreset::FlipY);
-    let err = generate(&world, &mut h, "Rough3D").expect_err("3D pocket is not verified aligned");
+    let err = generate(&world, &mut h, "Offset2D").expect_err("offset pocket is not verified aligned");
     assert!(err.contains("part alignment") && err.contains("not supported yet"), "{err}");
-    let err = generate(&world, &mut h, "Picked").expect_err("picks are not verified aligned");
-    assert!(err.contains("picked faces"), "{err}");
+    generate(&world, &mut h, "Picked").expect("verified-kind picks generate aligned");
     generate(&world, &mut h, "Contour1").expect("the verified kind generates");
 }
 

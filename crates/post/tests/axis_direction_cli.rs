@@ -54,8 +54,8 @@ fn the_cli_posts_an_inverted_x_mirrored() {
     let (ok, err, nc) = run("flipx", r#"{"type": "linear", "name": "X", "direction": -1}"#, &fanuc(), STREAM);
     assert!(ok, "{err}");
     let nc = nc.expect("written");
-    assert!(nc.contains("G00 X-10 Y5 Z2"), "{nc}");
-    assert!(nc.contains("G01 X-20 Y5 Z0 F500"), "{nc}");
+    assert!(nc.contains("G00 X-10. Y5. Z2."), "{nc}");
+    assert!(nc.contains("G01 X-20. Y5. Z0. F500"), "{nc}");
 }
 
 #[test]

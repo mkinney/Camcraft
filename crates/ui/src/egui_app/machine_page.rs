@@ -69,13 +69,14 @@ fn library_row(ui: &mut Ui, state: &mut State, path: &str, names: &[&str]) {
     let mut pick: Option<String> = None;
     prop_grid(ui, "machine_library_grid", |ui| {
         ui.label("Library");
-        egui::ComboBox::from_id_salt("machine_library").selected_text(text).show_ui(ui, |ui| {
+        let cb = egui::ComboBox::from_id_salt("machine_library").selected_text(text).show_ui(ui, |ui| {
             for (i, n) in names.iter().enumerate() {
                 if ui.selectable_label(sel == Some(i), *n).clicked() {
                     pick = Some((*n).to_owned());
                 }
             }
         });
+        super::fields::named(cb.response, "Machine library");
         ui.end_row();
     });
     if let Some(name) = pick {

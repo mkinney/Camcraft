@@ -15,6 +15,7 @@ use crate::commands::{LatheBodySpec, SetToolBody};
 use crate::model;
 use crate::script::{Env, fnum};
 use crate::tool_body::{self, BodyFrame};
+use crate::tool_body_assembly::{self, PiecePlace};
 use crate::tool_body_file;
 use crate::tool_body_lathe_view;
 use camcraft_tools::lathe_holder::LathePlacement;
@@ -23,9 +24,11 @@ use camcraft_tools::lathe_insert_zone::InsertZone;
 use serde_json::{Map, Value, json};
 
 pub(super) const TOOLS: &[Tool] = &[
-    Tool { name: "get_tool_body", description: "A document tool's modelled body, or body: null when it has none (the holder cylinder is judged). A \"spindle\" body (milling) states the model direction that is the tool axis, the model origin's height above the tip, and its revolved envelope (foot, top, max_radius above the tip); a \"lathe\" body states its placement in the turning tool frame (radial, along, tip), its insert zone and its extent from the tip (radial, normal, spindle). Lengths in mm.", schema: s_tool, run: get_body },
+    Tool { name: "get_tool_body", description: "A document tool's modelled body, or body: null when it has none (the holder cylinder is judged). A \"spindle\" body (milling) states the model direction that is the tool axis, the model origin's height above the tip, and its revolved envelope (foot, top, max_radius above the tip); a \"lathe\" body states its placement in the turning tool frame (radial, along, tip), its insert zone and its extent from the tip (radial, normal, spindle); \"pieces\" lists every assembled piece and its carried coordinate systems. Lengths in mm.", schema: s_tool, run: get_body },
     Tool { name: "set_tool_body", description: "Give a milling tool (or a boring bar on a mill) a body from a holder or assembly file (STEP, STL, OBJ), placed along the spindle axis. With axis and tip_offset: the model direction that points from the tip toward the spindle, and the model origin's height above the tip along it. With neither: a STEP is aligned by the ISO 13399 tool coordinate systems it names, and refused by name when it names none. The collision laws then judge the body's revolved envelope instead of the holder cylinder. Refused by name: a lathe-held tool (use set_lathe_tool_body), a body reaching into the flutes, a mesh that is no body, a model too detailed to import at full fidelity. One undoable step.", schema: s_set, run: set_body },
     Tool { name: "set_lathe_tool_body", description: "Give a lathe-held tool (turning, grooving, threading or form insert, or a boring bar) a holder body from a file (STEP, STL, OBJ), placed in the turning tool frame: radial is the model direction that points away from the spindle axis, along the model direction of the lathe's +Z (chuck toward the free end), tip the model point the moves carry (the insert's nose centre). The body need not be symmetric: every move of a turning operation is then judged against the part and the standing stock, a rub blocking the post. insert_zone (optional) is a box about the tip, in that frame, holding the insert plate the file models - the judge leaves it out. Refused by name: a tool that is no lathe steel, directions that are not square, a tip far from the body, a zone larger than one insert. One undoable step.", schema: s_set_lathe, run: set_lathe_body },
+    Tool { name: "attach_tool_body_piece", description: "Attach a modular holder/adapter/clamping-unit piece (STEP, STL, OBJ) onto a tool's existing body as one undoable step. With no explicit placement arguments, mates by unambiguous ISO 13399 MCS <-> CSW coordinate systems (or pass target_piece / target_csys / piece_csys to pick the pair, axis + tip_offset for spindle placement, or radial + along + optional tip for lathe placement). Combined pieces are judged and displayed together.", schema: s_attach_piece, run: attach_piece },
+    Tool { name: "remove_tool_body_piece", description: "Remove piece at 0-based index from a multi-piece tool body assembly and rebuild its collision envelope as one undoable step. Refused by name when index is out of range or only one piece remains (use clear_tool_body to remove the whole body).", schema: s_remove_piece, run: remove_piece },
     Tool { name: "set_lathe_insert_zone", description: "Set or clear (insert_zone: null) the insert zone of a tool's lathe body, keeping its mesh and placement: a box about the tip, in the turning tool frame (x radial, y normal, z along the spindle), holding the insert plate - lo at or below 0 and hi at or above 0 on every axis, no farther from the tip than one insert reaches. One undoable step.", schema: s_zone, run: set_zone },
     Tool { name: "clear_tool_body", description: "Remove a tool's modelled body (either frame): the holder cylinder is judged again, and a turning tool's holder is no longer judged (its operations say so). One undoable step.", schema: s_tool, run: clear_body },
 ];
@@ -39,11 +42,24 @@ fn view(env: &Env, name: &str) -> Result<Value, String> {
         return Ok(json!({ "tool": name, "body": null }));
     };
     let v3 = |a: [f64; 3]| json!([fnum(a[0]), fnum(a[1]), fnum(a[2])]);
+    let pieces: Vec<Value> = tool_body_assembly::pieces_of(&body)
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| {
+            json!({
+                "index": i,
+                "source": p.source,
+                "facets": p.facets.len(),
+                "csys": p.csys.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
     let mut out = json!({
         "source": body.source,
         "facets": body.facets.len(),
         "drawn": body.spun.is_some(),
         "machine_default": body.machine_default,
+        "pieces": pieces,
     });
     match &body.frame {
         BodyFrame::Spindle { axis, offset, profile } => {
@@ -100,8 +116,72 @@ fn set_lathe_body(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String
     let tip = vec3(a, "tip")?.unwrap_or([0.0; 3]);
     let zone = zone_arg(a)?.flatten();
     let file = tool_body_file::read(path)?;
+    let raw_csys = tool_body_assembly::read_csys_if_step(path)?;
     let spec = LatheBodySpec { source: file.source, facets: file.facets, place: LathePlacement { radial, along, tip }, zone };
-    let cmd = SetToolBody::lathe(&env.world, name, Some(spec)).map_err(cmd_err)?;
+    let cmd = SetToolBody::lathe_with_csys(&env.world, name, spec, raw_csys).map_err(cmd_err)?;
+    env.history.execute(&env.world, cmd);
+    view(env, name)
+}
+
+fn opt_str(a: &Map<String, Value>, key: &str) -> Result<Option<String>, String> {
+    match a.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_str().map(|s| Some(s.to_owned())).ok_or_else(|| format!("\"{key}\" must be a string")),
+    }
+}
+
+fn opt_usize(a: &Map<String, Value>, key: &str) -> Result<Option<usize>, String> {
+    match a.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| format!("\"{key}\" must be a non-negative integer")),
+    }
+}
+
+fn attach_piece(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
+    let name = req_str(a, "tool")?;
+    let path = Path::new(req_str(a, "path")?);
+    let target_piece = opt_usize(a, "target_piece")?;
+    let target_csys = opt_str(a, "target_csys")?;
+    let piece_csys = opt_str(a, "piece_csys")?;
+    let axis = vec3(a, "axis")?;
+    let tip_offset = match a.get("tip_offset") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(v.as_f64().ok_or("\"tip_offset\" must be a number (mm)")?),
+    };
+    let radial = vec3(a, "radial")?;
+    let along = vec3(a, "along")?;
+    let tip = vec3(a, "tip")?;
+
+    let has_csys = target_piece.is_some() || target_csys.is_some() || piece_csys.is_some();
+    let has_spindle = axis.is_some() || tip_offset.is_some();
+    let has_lathe = radial.is_some() || along.is_some() || tip.is_some();
+    let place = match (has_csys, has_spindle, has_lathe) {
+        (_, true, true) | (true, true, _) | (true, _, true) => {
+            return Err("give either CSYS mating arguments (target_piece/target_csys/piece_csys), spindle placement (axis + tip_offset), or lathe placement (radial + along), not a mix".to_owned());
+        }
+        (false, true, false) => match (axis, tip_offset) {
+            (Some(axis), Some(offset)) => PiecePlace::Spindle { axis, offset },
+            _ => return Err("give both \"axis\" and \"tip_offset\" for spindle placement".to_owned()),
+        },
+        (false, false, true) => match (radial, along) {
+            (Some(radial), Some(along)) => PiecePlace::Lathe(LathePlacement { radial, along, tip: tip.unwrap_or([0.0; 3]) }),
+            _ => return Err("give both \"radial\" and \"along\" for lathe placement".to_owned()),
+        },
+        (_, false, false) => PiecePlace::Csys { target_piece, target_csys, piece_csys },
+    };
+    let cmd = SetToolBody::attach_piece(&env.world, name, path, place).map_err(cmd_err)?;
+    env.history.execute(&env.world, cmd);
+    view(env, name)
+}
+
+fn remove_piece(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
+    let name = req_str(a, "tool")?;
+    let index = opt_usize(a, "index")?.ok_or("\"index\" is required (0-based piece index)")?;
+    let cmd = SetToolBody::remove_piece(&env.world, name, index).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     view(env, name)
 }
@@ -209,5 +289,33 @@ fn s_zone() -> Value {
             "insert_zone": zone_schema()
         }),
         &["tool", "insert_zone"],
+    )
+}
+
+fn s_attach_piece() -> Value {
+    obj(
+        json!({
+            "tool": { "type": "string", "description": "The document tool's name; it already carries piece 0." },
+            "path": { "type": "string", "description": "The piece file (extension, adapter, clamping unit): .step/.stp, .stl or .obj." },
+            "target_piece": { "type": "integer", "minimum": 0, "description": "Optional 0-based index of the existing piece to mate onto; omit to search all existing pieces." },
+            "target_csys": { "type": "string", "description": "Optional coordinate system name on the existing piece (e.g. \"MCS\" or \"CSW\"); omit for ISO 13399 auto-mate." },
+            "piece_csys": { "type": "string", "description": "Optional coordinate system name on the incoming piece (e.g. \"CSW\" or \"MCS\"); omit for ISO 13399 auto-mate." },
+            "axis": vec_schema("Optional explicit spindle axis direction (with tip_offset) instead of CSYS mating."),
+            "tip_offset": { "type": "number", "description": "Optional explicit spindle tip offset in mm (with axis) instead of CSYS mating." },
+            "radial": vec_schema("Optional explicit lathe radial direction (with along) instead of CSYS mating."),
+            "along": vec_schema("Optional explicit lathe spindle +Z direction (with radial) instead of CSYS mating."),
+            "tip": vec_schema("Optional explicit lathe tip point in model coordinates (with radial and along).")
+        }),
+        &["tool", "path"],
+    )
+}
+
+fn s_remove_piece() -> Value {
+    obj(
+        json!({
+            "tool": { "type": "string", "description": "The document tool's name; it carries a multi-piece body." },
+            "index": { "type": "integer", "minimum": 0, "description": "0-based index of the piece to remove." }
+        }),
+        &["tool", "index"],
     )
 }

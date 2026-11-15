@@ -33,21 +33,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 if holes.is_empty() && cross.is_empty() {
                     hint(ui, "none yet - Detect holes reads them from the model");
                 }
-                for (i, h) in holes.iter().enumerate() {
-                    let floor = if h.through {
-                        "through".to_owned()
-                    } else {
-                        format!("floor {}", units::len(h.floor_z, u, 3))
-                    };
-                    ui.label(format!(
-                        "{}  X {}  Y {}  Ø{}  entry {}  {floor}",
-                        i + 1,
-                        units::len(h.xy.x, u, 3),
-                        units::len(h.xy.y, u, 3),
-                        units::len(2.0 * h.radius, u, 3),
-                        units::len(h.entry_z, u, 3),
-                    ));
-                }
+                axial_hole_rows(ui, u, holes);
                 // The radial half of the list (M5.2 F2): a cross hole
                 // states its mouth in world XYZ, its plunge by the
                 // station's axis, and its floor as a travel INWARD
@@ -60,19 +46,22 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                     } else {
                         format!("depth {}", units::len(-h.floor_d, u, 3))
                     };
-                    ui.label(format!(
-                        "R{}  ({}, {}, {})  Ø{}  plunge {station}  {floor}",
-                        holes.len() + i + 1,
-                        units::len(h.origin.x, u, 3),
-                        units::len(h.origin.y, u, 3),
-                        units::len(h.origin.z, u, 3),
-                        units::len(2.0 * h.radius, u, 3),
-                    ));
+                    list_row(
+                        ui,
+                        format!(
+                            "R{}  ({}, {}, {})  Ø{}  plunge {station}  {floor}",
+                            holes.len() + i + 1,
+                            units::len(h.origin.x, u, 3),
+                            units::len(h.origin.y, u, 3),
+                            units::len(h.origin.z, u, 3),
+                            units::len(2.0 * h.radius, u, 3),
+                        ),
+                    );
                 }
                 // Edge-driven, one recognize pass per click (never per
                 // paint frame): the list it finds replaces the draft's,
                 // and the command lands so undo restores the old one.
-                if ui.button("Detect holes").clicked() {
+                if button(ui, "Detect holes").clicked() {
                     cx.detect_holes = true;
                 }
             }
@@ -141,22 +130,8 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 if holes.is_empty() {
                     hint(ui, "none yet - Detect holes reads them from the model");
                 }
-                for (i, h) in holes.iter().enumerate() {
-                    let floor = if h.through {
-                        "through".to_owned()
-                    } else {
-                        format!("floor {}", units::len(h.floor_z, u, 3))
-                    };
-                    ui.label(format!(
-                        "{}  X {}  Y {}  Ø{}  entry {}  {floor}",
-                        i + 1,
-                        units::len(h.xy.x, u, 3),
-                        units::len(h.xy.y, u, 3),
-                        units::len(2.0 * h.radius, u, 3),
-                        units::len(h.entry_z, u, 3),
-                    ));
-                }
-                if ui.button("Detect holes").clicked() {
+                axial_hole_rows(ui, u, holes);
+                if button(ui, "Detect holes").clicked() {
                     cx.detect_holes = true;
                 }
                 hint(ui, "a stepped hole is declined by name at generate - this ride wants one finished wall per hole");
@@ -242,6 +217,28 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             }
         }
         _ => {}
+    }
+}
+
+/// Axial hole list rows shared by Drill and Bore Geometry tabs.
+fn axial_hole_rows(ui: &mut Ui, u: Unit, holes: &[camcraft_app::drilling::Hole]) {
+    for (i, h) in holes.iter().enumerate() {
+        let floor = if h.through {
+            "through".to_owned()
+        } else {
+            format!("floor {}", units::len(h.floor_z, u, 3))
+        };
+        list_row(
+            ui,
+            format!(
+                "{}  X {}  Y {}  Ø{}  entry {}  {floor}",
+                i + 1,
+                units::len(h.xy.x, u, 3),
+                units::len(h.xy.y, u, 3),
+                units::len(2.0 * h.radius, u, 3),
+                units::len(h.entry_z, u, 3),
+            ),
+        );
     }
 }
 

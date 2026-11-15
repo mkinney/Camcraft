@@ -33,6 +33,12 @@
 //! - Plasma (#1053): the kerf law and the cover law
 //!   (`plasma::PlasmaParams::kerf_tol`), the only laws that read the
 //!   part; the cut-order, kerf-crossing and tip-up laws read the path.
+//! - Cross drill (#1053): `cross_part` (`GOUGE_TOL`) and `rapids_radial`
+//!   give the excess back; `cross_stock::standoff` and `rapids_clear`,
+//!   `cross_entry`, `drill_reach` and `drill_station` grow measured
+//!   standoffs, entries, reach and holder bands by [`band_growth`]
+//!   while `floor_of` leaves a positive tolerance, and read untightened
+//!   past it.
 //!
 //! Still refused, each for its reason:
 //!
@@ -52,16 +58,6 @@
 //!   a crease the ride then breaks - a cut no verify law speaks to.
 //!   Judging them needs a stated ride accuracy, a new promise, not a
 //!   tightened one (#1053's decision file).
-//! - The cross drill: its part law (`cross_part`, `GOUGE_TOL`) and its
-//!   rapid law (`rapids_radial`) could give the excess back, but the
-//!   chain is also proved by construction laws that measure the mesh
-//!   with no slack at all - the standoff radius and Z top the kernel
-//!   stations about (`cross_stock::standoff`, `rapids_clear`), the
-//!   entry along each hole's line (`cross_entry`), the flute reach and
-//!   holder faces (`drill_reach`). Each reads a coarse mesh's chord
-//!   error straight through; tightening them means growing every
-//!   measured standoff by the excess, which moves the kernel's
-//!   stations. Left for #1053's remainder.
 
 use super::material::GOUGE_TOL;
 use super::probe_op::STYLUS_SLACK;
@@ -133,6 +129,14 @@ pub(crate) fn tightened(tol: f64, excess: f64) -> f64 {
     crate::verify::excess_floor(tol, excess).unwrap_or(tol)
 }
 
+/// How much a measured standoff, entry or band grows on a model
+/// imported coarser than promised (#1053): `excess` while `GOUGE_TOL`
+/// stays positive, `0.0` past that (where [`floor_of`] makes the
+/// program gate refuse the operation instead).
+pub(crate) fn band_growth(excess: f64) -> f64 {
+    (GOUGE_TOL - tightened(GOUGE_TOL, excess)).max(0.0)
+}
+
 /// The band kinds' meridian-scan tolerance (`turning::revolve`), `None`
 /// for every kind that scan does not judge.
 pub(crate) fn meridian_tol_of(params: &OpParams) -> Option<f64> {
@@ -184,14 +188,13 @@ pub(crate) fn floor_of(params: &OpParams) -> f64 {
 /// Whether every law that convicts this kind against its model reads a
 /// coarse model's excess (the module header names them per family): the
 /// upright mill kinds (#864), - #904 - turning, the rotary kinds and
-/// the multi-axis ball kinds, and - #1053 - probe and plasma.
+/// the multi-axis ball kinds, and - #1053 - probe, plasma and cross
+/// drill.
 ///
 /// Not yet: swarf (its flank proof is the generator's), the cone and
-/// engrave rides (no tolerance holds them to the model), the cross
-/// drill (its standoffs read the mesh with no slack), the wire (#532)
-/// and the sinker (#541). On a reduced-
-/// fidelity model those are refused at the program gate rather than
-/// judged loosely.
+/// engrave rides (no tolerance holds them to the model), the wire (#532)
+/// and the sinker (#541). On a reduced-fidelity model those are refused
+/// at the program gate rather than judged loosely.
 pub(crate) fn excess_aware(params: &OpParams) -> bool {
     if matches!(params, OpParams::Probe { .. }) {
         return true;
@@ -199,10 +202,8 @@ pub(crate) fn excess_aware(params: &OpParams) -> bool {
     let info = params.kind().info();
     match info.section {
         Section::Mill2D | Section::Mill3D | Section::Drilling => {
-            let judged = matches!(info.mode, Mode::Area | Mode::Boundary)
-                || (info.mode == Mode::Envelope && info.section == Section::Mill3D);
-            let cross_drill = matches!(params, OpParams::Drill { cross, .. } if !cross.is_empty());
-            judged && !cross_drill
+            matches!(info.mode, Mode::Area | Mode::Boundary)
+                || (info.mode == Mode::Envelope && info.section == Section::Mill3D)
         }
         Section::Turning => true,
         Section::MultiAxis => !matches!(params, OpParams::Swarf { .. } | OpParams::AdvancedSwarf { .. }),

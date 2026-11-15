@@ -43,6 +43,25 @@ pub fn sinker_wear(op: &SinkerBurnOp, cond_wear: Option<f64>) -> SinkerWear {
     SinkerWear { comp: wear_comp(op, cond_wear), layer: op.layer }
 }
 
+/// The Sinker Side Burn's wear and layering (#1340): the wear measured
+/// on the op and its layer step only. The condition's stated `wear` is
+/// not applied to a side burn, so a side burn the user has not given a
+/// wear keeps its moves (docs/decisions/1340-side-burn-wear.md).
+#[must_use]
+pub fn side_wear(op: &SinkerBurnOp) -> SinkerWear {
+    sinker_wear(op, None)
+}
+
+/// The side burn page's line (#1340): its measured wear's refusal, or
+/// "not compensated", or the measured rate.
+#[must_use]
+pub fn side_wear_status(op: &SinkerBurnOp) -> String {
+    if let Some(why) = op.wear_refusal() {
+        return why;
+    }
+    summary(side_wear(op).comp.as_ref())
+}
+
 /// The page's line: "not compensated", or the rate and its source.
 #[must_use]
 pub fn wear_status(world: &World, setup: Option<&str>, op: &SinkerBurnOp) -> String {
@@ -58,8 +77,15 @@ pub fn wear_status(world: &World, setup: Option<&str>, op: &SinkerBurnOp) -> Str
 /// # Errors
 /// [`as_burned`]'s.
 pub fn judged(world: &World, op: &crate::schema::Operation, gap: Option<f64>, moves: Vec<Move>) -> Result<Vec<Move>, String> {
+    let setup = op.setup.as_deref();
     match (&op.params, gap) {
-        (OpParams::SinkerBurn(sb), Some(gap)) => as_burned(world, op.setup.as_deref(), &op.src, sb, gap, moves),
+        (OpParams::SinkerBurn(sb), Some(gap)) => {
+            as_burned(world, setup, &op.src, sb, gap, wear_comp(sb, condition_wear(world, setup, sb)), moves)
+        }
+        // #1340: the side burn's plunge and lateral move, worn likewise.
+        (OpParams::SinkerSideBurn(sb), Some(gap)) => {
+            as_burned(world, setup, &op.src, &sb.burn, gap, side_wear(&sb.burn).comp, moves)
+        }
         _ => Ok(moves),
     }
 }
@@ -67,7 +93,8 @@ pub fn judged(world: &World, op: &crate::schema::Operation, gap: Option<f64>, mo
 /// The burn's moves as the worn electrode burns them (#546): each tip
 /// below the work raised by the wear the rate states by then, so the
 /// stock sim judges the cavity the burn leaves, not the deeper Z the
-/// unworn electrode is programmed to. Unchanged when not compensated.
+/// unworn electrode is programmed to. Unchanged when not compensated
+/// (`comp` is `None`).
 ///
 /// # Errors
 /// The op's heights do not resolve (the work top is the wear's datum).
@@ -77,9 +104,10 @@ pub fn as_burned(
     src: &SrcRef,
     op: &SinkerBurnOp,
     gap: f64,
+    comp: Option<WearComp>,
     moves: Vec<Move>,
 ) -> Result<Vec<Move>, String> {
-    let Some(c) = wear_comp(op, condition_wear(world, setup, op)) else {
+    let Some(c) = comp else {
         return Ok(moves);
     };
     let params = OpParams::SinkerBurn(op.clone());

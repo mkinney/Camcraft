@@ -294,7 +294,7 @@ fn skim_laws_refuse_by_name() {
 fn a_taper_leans_every_side_by_its_angle_and_zero_is_the_vertical_cut() {
     let loops = [rect(-20.0, -10.0, 20.0, 10.0)];
     let p = params(WireSide::Punch, Some((-30.0, 0.0)));
-    let t = |a: f64, max: Option<f64>| WireTaper { angle_deg: a, top_z: 0.0, max_deg: max, machine: "M".into() };
+    let t = |a: f64, max: Option<f64>| WireTaper { angle_deg: a, top_z: 0.0, max_deg: max, machine: "M".into(), corner: WireCorner::Mitre };
     let flat = wire_contour(&loops, &[], &p).unwrap();
     assert_eq!(wire_contour_tapered(&loops, &[], &p, &t(0.0, None)).unwrap().moves, flat.moves);
     let path = wire_contour_tapered(&loops, &[], &p, &t(3.0, Some(15.0))).unwrap();
@@ -316,4 +316,21 @@ fn a_taper_leans_every_side_by_its_angle_and_zero_is_the_vertical_cut() {
     let pin = params(WireSide::Punch, Some((-5.0, 0.0)));
     let err = wire_contour_tapered(&small, &[], &pin, &t(-20.0, Some(30.0))).unwrap_err().to_string();
     assert!(err.contains("folds the side"), "{err}");
+}
+
+/// #1164: the cone corner rule holds the lean at the angle through
+/// each corner (the lower end on an arc about the top corner), and a
+/// lead-in that meets a corner under it is refused by name.
+#[test]
+fn the_cone_rule_holds_the_lean_and_refuses_a_lead_into_a_corner() {
+    let loops = [rect(-20.0, -10.0, 20.0, 10.0)];
+    let t = WireTaper { angle_deg: 3.0, top_z: 0.0, max_deg: Some(15.0), machine: "M".into(), corner: WireCorner::Cone };
+    let path = wire_contour_tapered(&loops, &[], &params(WireSide::Punch, Some((-30.0, 0.0))), &t).unwrap();
+    let lean = |a: [f64; 3]| a[0].hypot(a[1]).atan2(a[2]).to_degrees();
+    let (_, cut) = path.moves.split_last().unwrap();
+    assert!(cut.iter().all(|m| (lean(m.axis.unwrap()) - 3.0).abs() < 1e-9));
+    // Four quarter turns of 45 two-degree steps, plus the sides and leads.
+    assert_eq!(path.moves.len(), 4 * 45 + 7);
+    let err = wire_contour_tapered(&loops, &[], &params(WireSide::Punch, Some((-30.0, -20.0))), &t).unwrap_err().to_string();
+    assert!(err.contains("lead-in meets the corner") && err.contains("cone corner rule"), "{err}");
 }

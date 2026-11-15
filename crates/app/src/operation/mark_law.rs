@@ -83,14 +83,23 @@ pub fn is_mark_kind(params: &OpParams) -> bool {
     matches!(params, OpParams::Engrave { .. } | OpParams::Trace { .. })
 }
 
+/// The mark an operation declares for the program sim (#1595, #1627):
+/// its budget (mm) and which part(s) it marks (`None` for a stock-source
+/// operation, which marks every part in the setup; `Some(facets)` for a
+/// part-source operation, whose own source entities alone carry the
+/// mark, in the setup's frame).
+#[derive(Clone, Debug)]
+pub struct SimMark {
+    pub budget: f64,
+    pub target: Option<Vec<Triangle>>,
+}
+
 /// The mark budget operation `op` declares, for the program sim's
 /// credit: `Some` only for an Engrave or Trace (the operations that
-/// carry the law themselves) with heights that resolve. Whatever the
-/// source: on the finished part the law reads that part, on the stock
-/// (or a pick off it) the setup's parts standing in it (#1607,
-/// `keep_law::parts_in_stock`) - the very mesh the sim judges against,
-/// so the two judges agree. Anything else declares no mark and is
-/// judged against the sharp model.
+/// carry the law themselves) with heights that resolve. Pair with
+/// [`target_facets`] (or call [`sim_mark_of`]) so a part-source mark
+/// credits only its own source entities, never a neighbouring part
+/// (#1627), while a stock source credits every setup part (#1607).
 #[must_use]
 pub fn budget_of(world: &flecs_ecs::prelude::World, op: &Operation, cutter_r: f64) -> Option<f64> {
     if !is_mark_kind(&op.params) {
@@ -99,6 +108,52 @@ pub fn budget_of(world: &flecs_ecs::prelude::World, op: &Operation, cutter_r: f6
     let h = super::resolve_params(world, op.setup.as_deref(), Some(&op.src), &op.params).ok()?;
     let b = budget(h.top?, h.bottom?, cutter_r);
     (b > 0.0).then_some(b)
+}
+
+/// The part(s) `op` marks, in its setup's frame (#1627): `None` when
+/// `op`'s source is the stock (or a pick off it), where the op's own
+/// law marks every part the setup holds; `Some(facets)` when `op`'s
+/// source is one or more parts, containing only those source entities'
+/// facets (empty if none resolves as a judged part, so no other part is
+/// credited).
+#[must_use]
+pub fn target_facets(world: &flecs_ecs::prelude::World, op: &Operation) -> Option<Vec<Triangle>> {
+    let setup = op.setup.as_deref();
+    let stock_name = crate::setup::stock_entity_name(world, setup);
+    let names: Vec<&str> = match &op.src {
+        super::SrcRef::Stock => return None,
+        super::SrcRef::Entity(n) if *n == stock_name => return None,
+        super::SrcRef::Entity(n) => vec![n.as_str()],
+        super::SrcRef::Selection(items) if items.is_empty() || items.iter().any(|g| g.entity == stock_name) => {
+            return None;
+        }
+        super::SrcRef::Selection(items) => {
+            let mut seen = Vec::new();
+            for g in items {
+                if !seen.contains(&g.entity.as_str()) {
+                    seen.push(g.entity.as_str());
+                }
+            }
+            seen
+        }
+    };
+    let skip = crate::stock_source::stock_only_model(world);
+    let facets = names
+        .into_iter()
+        .filter_map(|name| crate::model::find_by_name(world, name))
+        .filter(|e| crate::stock_source::judged(world, e, skip))
+        .filter_map(|e| crate::setup_align::facets_in(world, &e, setup))
+        .flatten()
+        .collect();
+    Some(facets)
+}
+
+/// Both the budget and the target part(s) operation `op` declares for
+/// the program sim (#1595, #1627).
+#[must_use]
+pub fn sim_mark_of(world: &flecs_ecs::prelude::World, op: &Operation, cutter_r: f64) -> Option<SimMark> {
+    let budget = budget_of(world, op, cutter_r)?;
+    Some(SimMark { budget, target: target_facets(world, op) })
 }
 
 /// `facets` lowered by `by` along Z: the part as a mark of that depth

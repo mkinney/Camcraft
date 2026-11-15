@@ -31,12 +31,24 @@ use super::kernel::part_surface;
 use crate::geometry::Triangle;
 use crate::verify::{undersides, MARK_FLOOR};
 
-/// One operation's declared mark: its own moves and cutter, and how far
-/// under the part's surface it may cut (mm).
+/// One operation's declared mark: its own moves and cutter, how far
+/// under the part's surface it may cut (mm), and which part(s) it marks
+/// (`None` for every part in `facets`, `Some(parts)` for only the
+/// source part(s) the operation marks, #1627).
 #[derive(Clone, Copy, Debug)]
 pub struct Mark<'a> {
     pub op: SimOp<'a>,
     pub budget: f64,
+    pub target: Option<&'a [Triangle]>,
+}
+
+/// One validated mark sweep, ready for the floor lookup.
+struct Sweep {
+    dex: Dexel,
+    budget: f64,
+    /// `(target_top, target_seat)` when the mark targets specific part(s);
+    /// `None` when it applies to every part in `facets`.
+    part: Option<(Vec<f64>, Vec<f64>)>,
 }
 
 /// What `mark`'s cutter sweeps on `dex`'s lattice: `+inf` where it never
@@ -56,40 +68,72 @@ fn swept(dex: &Dexel, mark: &Mark) -> Option<Dexel> {
     Some(s)
 }
 
+fn prepare_sweep(dex: &Dexel, mark: &Mark) -> Option<Sweep> {
+    if !(mark.budget.is_finite() && mark.budget > 0.0) {
+        return None;
+    }
+    let part = match mark.target {
+        None => None,
+        Some([]) => return None,
+        Some(tf) => {
+            let under = undersides(tf)?;
+            let top = part_surface(tf, dex.x0, dex.y0, dex.cell, dex.nx, dex.ny);
+            let seat = part_surface(&under, dex.x0, dex.y0, dex.cell, dex.nx, dex.ny);
+            Some((top, seat))
+        }
+    };
+    let s = swept(dex, mark)?;
+    Some(Sweep { dex: s, budget: mark.budget, part })
+}
+
 /// Re-judge `dev`'s gouge columns against the declared `marks`; returns
 /// how many columns the marks cleared or re-charged. `dex` is the
 /// verdict's own lattice (the tops `dev` was read from) and `facets`
 /// the part it judged. A mark with no positive finite budget declares
-/// nothing; a lattice that does not match `dev` credits nothing - the
-/// verdict then stands as it was, never looser.
+/// nothing; a mark with `target: Some(parts)` credits only columns
+/// whose top belongs to `parts` (never a neighbouring part), bounded by
+/// `parts`' own undersides. A lattice that does not match `dev` credits
+/// nothing - the verdict then stands as it was, never looser.
 pub fn credit_marks(dev: &mut Deviation, dex: &Dexel, facets: &[Triangle], marks: &[Mark]) -> usize {
     if dev.gouge_cells == 0 {
         return 0;
     }
-    let sweeps: Vec<(Dexel, f64)> = marks
-        .iter()
-        .filter(|m| m.budget.is_finite() && m.budget > 0.0)
-        .filter_map(|m| swept(dex, m).map(|s| (s, m.budget)))
-        .collect();
+    let sweeps: Vec<Sweep> = marks.iter().filter_map(|m| prepare_sweep(dex, m)).collect();
     if sweeps.is_empty() {
         return 0;
     }
-    // The surface the material under each column's top rests on; a part
-    // whose undersides cannot be read is credited nothing.
-    let Some(under) = undersides(facets) else { return 0 };
-    let seat = part_surface(&under, dex.x0, dex.y0, dex.cell, dex.nx, dex.ny);
+    // The surface the material under each column's top rests on for
+    // whole-program marks (`target: None`); a part whose undersides
+    // cannot be read is credited nothing.
+    let all_seat = if sweeps.iter().any(|s| s.part.is_none()) {
+        undersides(facets).map(|u| part_surface(&u, dex.x0, dex.y0, dex.cell, dex.nx, dex.ny))
+    } else {
+        None
+    };
     credit_floors(dev, dex, facets, |ix, iy, p, _tol| {
         let k = ix + iy * dex.nx;
-        // A column with a top and no underside under it is not a
-        // closed part there: nothing to measure a floor from, no credit.
-        let Some(kept) = seat.get(k).filter(|u| u.is_finite()).map(|u| u + MARK_FLOOR) else {
-            return f64::INFINITY;
-        };
         sweeps
             .iter()
-            .map(|(s, budget)| (s.top_at(k), budget))
-            .filter(|(z, _)| z.is_finite())
-            .map(|(z, budget)| z.max(p - budget).max(kept))
+            .filter_map(|sw| {
+                let z = sw.dex.top_at(k);
+                if !z.is_finite() {
+                    return None;
+                }
+                let seat = match &sw.part {
+                    Some((top, seat)) => {
+                        let t = top.get(k).copied().unwrap_or(f64::NEG_INFINITY);
+                        if !t.is_finite() || (p - t).abs() > 1e-9 {
+                            return None;
+                        }
+                        seat.as_slice()
+                    }
+                    None => all_seat.as_deref()?,
+                };
+                // A column with a top and no underside under it is not a
+                // closed part there: nothing to measure a floor from, no credit.
+                let kept = seat.get(k).filter(|u| u.is_finite()).map(|u| u + MARK_FLOOR)?;
+                Some(z.max(p - sw.budget).max(kept))
+            })
             .fold(f64::INFINITY, f64::min)
     })
 }

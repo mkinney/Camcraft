@@ -17,6 +17,14 @@
 // taper on and off and that write U V are the machine's edm.codes.
 // A 4-axis cut (#537, PARAM WireFourAxis: its pairing rule) leans the
 // same way: the same words, the same U V, no stated angle.
+// An angle-word machine (#1164, PARAM WireTaperDialect "angle", its
+// corner rule PARAM WireCorner): the app hands each move's X Y on the
+// programmed plane (PARAM WirePlane, the work's top) and the angle word
+// before it (PARAM WireAngle, signed by the machine's side rule, 0 for
+// the move that stands the wire upright); the post writes taper_on and
+// the taper_angle template ({angle}) before the first leaning move, and
+// taper_off before the upright one - the control ramps the lean over
+// the move after each.
 description = "Generic ISO wire EDM (RS-274 motion; every EDM code from the machine's edm.codes)";
 vendor = "Camcraft";
 legal = "Original clean-room work; public standards only";
@@ -44,6 +52,8 @@ var AWT_REQUIRED = ["thread", "cut", "tip_disposal"];
 // A tapered section (#536) also needs the taper's switch and its U V
 // words; `uv` is a template holding {u} and {v}.
 var TAPER_REQUIRED = ["taper_on", "taper_off", "uv"];
+// An angle-word taper (#1164): the switch and the angle template.
+var ANGLE_REQUIRED = ["taper_on", "taper_off", "taper_angle"];
 
 // ---------------------------------------------------------------- state
 var inch = false;
@@ -62,6 +72,9 @@ var fourAxis = "";         // the section's 4-axis pairing rule ("": one profile
 var uv = null;             // the next move's upper guide offset [U, V] (WireU, WireV)
 var tapering = false;      // the taper switch is on
 var taperOk = true;
+var dialect = "";          // "angle": the machine tapers by angle word (#1164)
+var corner = "", plane = null;
+var angleNext = null;      // the next move's angle word (WireAngle)
 var codesOk = false;
 var refused = {};
 
@@ -165,6 +178,10 @@ function onParameter(name, value) {
   else if (name === "AfterOperation") afterOp = String(value);
   else if (name === "WireTaper" && has(value)) taper = Number(value);
   else if (name === "WireFourAxis") fourAxis = clean(value);
+  else if (name === "WireTaperDialect") dialect = clean(value);
+  else if (name === "WireCorner") corner = clean(value);
+  else if (name === "WirePlane" && has(value)) plane = Number(value);
+  else if (name === "WireAngle" && has(value)) angleNext = Number(value);
   else if (name === "WireU" && has(value)) uv = [Number(value), uv !== null ? uv[1] : null];
   else if (name === "WireV" && has(value) && uv !== null) uv = [uv[0], Number(value)];
   else if (name === "SpindleSpeed" && has(value) && Number(value) > 0) {
@@ -194,10 +211,26 @@ function onSection() {
   if (setupName) note("SETUP " + setupName);
   if (side) note("SIDE " + side.toUpperCase() + " - KERF IN THE PATH");
   taperOk = true;
-  if (taper !== 0 || fourAxis !== "") {
+  if (dialect === "angle" && (taper === 0 || fourAxis !== "")) {
+    refuse("angle4" + opName, who() + "an angle-word taper needs one stated angle - refused");
+    taperOk = false;
+  } else if (dialect === "angle") {
+    for (var k = 0; k < ANGLE_REQUIRED.length; k++) {
+      if (code(ANGLE_REQUIRED[k]) === null) {
+        refuse("acode" + ANGLE_REQUIRED[k] + opName, who() + "is tapered by angle word, and machine " + machineName() + " states no edm.codes." + ANGLE_REQUIRED[k] + " - the wire post never invents an EDM code");
+        taperOk = false;
+      }
+    }
+    var at = code("taper_angle");
+    if (at !== null && at.indexOf("{angle}") < 0) {
+      refuse("angtpl" + opName, "machine " + machineName() + ": edm.codes.taper_angle states no {angle} place for the taper angle");
+      taperOk = false;
+    }
+    note("TAPER " + trim(Number(taper).toFixed(3)) + " DEG BY ANGLE WORD - XY ON THE PROGRAMMED PLANE Z" + (has(plane) ? fu(plane) : "?") + ", CORNERS " + corner.toUpperCase());
+  } else if (taper !== 0 || fourAxis !== "") {
     for (var i = 0; i < TAPER_REQUIRED.length; i++) {
       if (code(TAPER_REQUIRED[i]) === null) {
-        refuse("tcode" + TAPER_REQUIRED[i] + opName, who() + (fourAxis !== "" ? "is a 4-axis cut" : "is tapered") + ", and machine " + machineName() + " states no edm.codes." + TAPER_REQUIRED[i] + " - the wire post never invents an EDM code");
+        refuse("tcode" + TAPER_REQUIRED[i] + opName, who() + (fourAxis !== "" ? "is a 4-axis cut" : "is tapered") + ", and machine " + machineName() + " states no edm.codes." + TAPER_REQUIRED[i] + (TAPER_REQUIRED[i] === "uv" ? " (nor an angle-word taper, edm.taper_angle)" : "") + " - the wire post never invents an EDM code");
         taperOk = false;
       }
     }
@@ -291,6 +324,24 @@ function onLinear() {
   if (!cutOk(p)) return;
   var w = uv;
   uv = null;
+  var ang = angleNext;
+  angleNext = null;
+  if (ang !== null) {
+    if (dialect !== "angle" || !taperOk) {
+      refuse("ang" + opName, who() + "an angle word in a section that states no angle-word taper - refused");
+      return;
+    }
+    if (ang !== 0 && !tapering) {
+      block([code("taper_on")]);
+      block([code("taper_angle").split("{angle}").join(trim(Number(ang).toFixed(3)))]);
+      tapering = true;
+    } else if (ang === 0 && tapering) {
+      block([code("taper_off")]);
+      tapering = false;
+    }
+    block(["G1", wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
+    return;
+  }
   if (w !== null) {
     if ((taper === 0 && fourAxis === "") || !taperOk || !has(w[1])) {
       refuse("uv" + opName, who() + "a leaning move in a section that states no taper - refused");
@@ -362,6 +413,10 @@ function onSectionEnd() {
   fourAxis = "";
   uv = null;
   tapering = false;
+  dialect = "";
+  corner = "";
+  plane = null;
+  angleNext = null;
 }
 
 // ------------------------------------------------------------ footer

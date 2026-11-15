@@ -37,7 +37,7 @@ usually makes it worse because the chip gets too thin.
 - **Stock to leave** on the Passes tab is the finishing allowance: roughing
   stops short of the model by that amount, and a later operation finishes it.
   Order the finish last; see
-  [Order of operations](@/guide/order-of-operations.md).
+  [Order of operations](@/guide/check-and-post/order-of-operations.md).
 - **Contour tabs** (tab count, width and height) keep a profiled part
   attached to the stock while its outline is cut.
 - **Stepover, stepdown and engagement** are per operation, so a light finish
@@ -46,7 +46,7 @@ usually makes it worse because the chip gets too thin.
   are checked ([Tool selection](@/guide/fundamentals/tool-selection.md)).
 - **Workholding** and fixtures belong to the setup, and fixture collisions are
   checked; see
-  [Workholding](@/guide/workholding.md).
+  [Workholding](@/guide/set-up/workholding.md).
 
 CamCraft does not model tool deflection, part flex or chatter. It cannot warn
 you that a wall is too thin or a tool too long for a cut. That judgement,

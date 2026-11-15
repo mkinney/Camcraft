@@ -4,7 +4,9 @@
 //! history both ways (the op goes Stale against the new plan), saved
 //! and loaded - and a plan the mounted insert cannot cut is refused by
 //! name at the command door, never first at Generate. A default plan is
-//! absent from the project file (no version step). The kernel's own
+//! absent from the project file (no version step). The repeat of each
+//! roughing depth (issue #418) rides the same doors: an edit undoes,
+//! the key is written only when set. The kernel's own
 //! laws are pinned one crate down (camcraft-motion's
 //! turning_thread_infeed suite).
 //!
@@ -210,6 +212,7 @@ fn the_plan_rides_the_project_file_and_a_default_one_is_absent() {
         min_depth: 0.08,
         finish_allowance: 0.03,
         spring_passes: 2,
+        repeat_each_depth: true,
     };
     create(&world, &mut history, "TH1", plan);
     // Fresh before the save, so a Stale after the load can only be the
@@ -217,6 +220,8 @@ fn the_plan_rides_the_project_file_and_a_default_one_is_absent() {
     assert_eq!(status(&world, "TH1"), OpStatus::Ok, "TH1: fresh before the save");
     let b = dir.join(format!("camcraft-infeed-b-{}.json", std::process::id()));
     camcraft_app::project::save(&world, &b).expect("saved");
+    let text = std::fs::read_to_string(&b).expect("read");
+    assert_eq!(text.matches("repeat_each_depth").count(), 2, "the plan and its record carry the flag, nothing else");
     let other = new_world();
     camcraft_app::project::load(&other, &b).expect("loaded");
     let _ = std::fs::remove_file(&b);
@@ -227,8 +232,48 @@ fn the_plan_rides_the_project_file_and_a_default_one_is_absent() {
         assert_eq!(*infeed_plan, want, "{name}");
         let saved = model::find_by_name(&world, name).and_then(|e| model::operation_of(&world, &e)).expect("saved op");
         assert_eq!(o.stamp, saved.stamp, "{name}: the stored stamp survives the round trip");
+        // TH0's contribution to TH1's program-ahead digest: equal before
+        // the save and after the load. It moves only when TH0's cached
+        // path lands off the 1 um lattice the save snaps to (a main
+        // defect, reported apart from this PR; the radial ladder here
+        // lands on it on macOS, not on every platform's libm).
+        assert_eq!(
+            camcraft_app::rest::prior_digest(&other, name, o.setup.as_deref()),
+            camcraft_app::rest::prior_digest(&world, name, saved.setup.as_deref()),
+            "{name}: the program ahead digests as before the save"
+        );
         let now = camcraft_app::operation::op_stamp(&other, &o, name);
         assert_eq!(now, camcraft_app::operation::op_stamp(&world, &saved, name), "{name}: the loaded inputs digest as before");
         assert_eq!(status(&other, name), OpStatus::Ok, "{name}: the loaded cache matches its plan");
     }
+}
+
+fn plan_of(world: &World, name: &str) -> ThreadInfeed {
+    let e = model::find_by_name(world, name).expect("op");
+    let o = model::operation_of(world, &e).expect("operation");
+    let OpParams::Threading { infeed_plan, .. } = &o.params else { unreachable!() };
+    *infeed_plan
+}
+
+fn plunge_count(world: &World, name: &str) -> usize {
+    let path = cache(world, name).path;
+    path.moves.iter().filter(|m| m.kind == camcraft_app::cl::MoveKind::Feed && m.arc.is_none()).count()
+}
+
+#[test]
+fn the_repeat_toggle_rides_the_history_both_ways() {
+    let (world, mut history) = thread_world();
+    create(&world, &mut history, "TH1", ThreadInfeed::default());
+    assert_eq!(plunge_count(&world, "TH1"), 3, "0.4, 0.8, 1.2");
+    let on = ThreadInfeed { repeat_each_depth: true, ..ThreadInfeed::default() };
+    history.execute(&world, EditOperationParams::new(&world, "TH1", params(on)).expect("a legal plan"));
+    assert_eq!(status(&world, "TH1"), OpStatus::Stale, "the cached passes cut each depth once");
+    history.execute(&world, GenerateOperation::new(&world, "TH1").expect("regenerate"));
+    assert_eq!(status(&world, "TH1"), OpStatus::Ok, "{:?}", cache(&world, "TH1").warnings);
+    assert!(cache(&world, "TH1").warnings.is_empty());
+    assert_eq!(plunge_count(&world, "TH1"), 5, "0.4 twice, 0.8 twice, the root once");
+    assert!(history.undo(&world) && history.undo(&world), "undo generate and edit");
+    assert_eq!(plan_of(&world, "TH1"), ThreadInfeed::default(), "the repeat is off again");
+    assert!(history.redo(&world));
+    assert_eq!(plan_of(&world, "TH1"), on);
 }

@@ -266,7 +266,7 @@ fn fanuc_lathe_seats_an_off_seat_face_cycle_by_the_hop_law() {
     assert_eq!(holes, 1, "{}", out.program);
     assert!(faults.is_empty(), "{faults:#?}\n{}", out.program);
     assert!(
-        out.program.contains("G00 X30 Z18\nG00 Z22\nG00 X0\nG83 Z10 F0.1\nG80\nG00 X0 Z40\n"),
+        out.program.contains("G00 X30. Z18.\nG00 Z22.\nG00 X0.\nG83 Z10. F0.1\nG80\nG00 X0. Z40.\n"),
         "Z out to R, X onto the centre, the cycle: {}",
         out.program
     );
@@ -274,7 +274,7 @@ fn fanuc_lathe_seats_an_off_seat_face_cycle_by_the_hop_law() {
     let stream = cnc::serialize(&off_seat_stream(Some((15.0, 30.0)), 22.0));
     let out = engine::run(FANUC_CPS, &lathe_mch(), &stream).expect("the lathe script runs");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.contains("G00 X30 Z30\nG00 X0\nG00 Z22\nG83 Z10"), "{}", out.program);
+    assert!(out.program.contains("G00 X30. Z30.\nG00 X0.\nG00 Z22.\nG83 Z10."), "{}", out.program);
     assert_eq!(check(&out.program, 10.0, 22.0, 40.0), (vec![], 1), "{}", out.program);
 }
 
@@ -297,14 +297,27 @@ fn fanuc_lathe_refuses_a_face_cycle_it_cannot_seat_by_name() {
 fn tormach_lathe_adds_no_positioning_move_to_an_off_seat_face_cycle() {
     // #1026: the PathPilot post writes no cycle and no positioning
     // block of its own - every motion line is one of the stream's
-    // moves, in order, so no diagonal the stream does not state.
-    let records = off_seat_stream(Some((15.0, 18.0)), 22.0);
+    // moves, in order, so no diagonal the stream does not state. The
+    // one exception is #1604's G30 law: the first rapid after G30 is
+    // split X then Z, and the tool leaves +X to the stock's diameter
+    // before the closing G30 (a Ø20 bar, its face at Z15, stated here).
+    let mut records = off_seat_stream(Some((15.0, 18.0)), 22.0);
+    let p = |name: &str, v: f64| cnc::Record::Param { name: name.into(), value: serde_json::json!(v) };
+    let stock = [
+        p("StockXYLeft", -10.0),
+        p("StockXYRight", 10.0),
+        p("StockXYFront", -10.0),
+        p("StockXYBack", 10.0),
+        p("StockZTop", 15.0),
+        p("ClearancePlane", 40.0),
+    ];
+    records.splice(0..0, stock);
     let out = engine::run(TORMACH_CPS, &lathe_mch(), &cnc::serialize(&records)).expect("the lathe script runs");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     let motion: Vec<&str> = out.program.lines().filter(|l| l.starts_with("G0 ") || l.starts_with("G1 ")).collect();
     assert_eq!(
         motion,
-        ["G0 X30 Z18", "G0 X0 Z22", "G1 X0 Z10 F0.1", "G0 X0 Z22", "G0 X0 Z40"],
+        ["G0 X30", "G0 Z18", "G0 X0 Z22", "G1 X0 Z10 F0.1", "G0 X0 Z22", "G0 X0 Z40", "G0 X20"],
         "{}",
         out.program
     );

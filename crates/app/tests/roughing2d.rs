@@ -110,6 +110,7 @@ fn text_hsm(params: OpParams, tag: &str) -> String {
 /// whatever the pin replaces.
 fn pocket(strategy: PocketStrategy, eng: f64) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 3.0,
         stock_to_leave: 0.0,
@@ -132,6 +133,7 @@ fn pocket(strategy: PocketStrategy, eng: f64) -> OpParams {
 
 fn adaptive(eng: f64) -> OpParams {
     OpParams::Adaptive2D {
+        blend_radius: None, blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 3.0,
         stock_to_leave: 0.0,
@@ -147,12 +149,14 @@ fn adaptive(eng: f64) -> OpParams {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::load_of_degrees(eng),
         method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
+        troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         tilt: None,
     }
 }
 
 fn offset() -> OpParams {
     OpParams::Offset2D {
+        blend_radius: None, blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 3.0,
         stock_to_leave: 0.0,

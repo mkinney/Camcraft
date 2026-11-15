@@ -85,6 +85,7 @@ pub(super) fn cross_drill(
     cutter: &crate::verify::Cutter,
     tool_name: &str,
     unit: Unit,
+    excess: f64,
 ) -> Result<Toolpath, GenError> {
     let Solids { source: facets, stock, kept, neighbours } = solids;
     let (ox, oy) = (origin[0], origin[1]);
@@ -95,7 +96,7 @@ pub(super) fn cross_drill(
     // Z is the spindle's own coordinate - no shift. A Z top known lets
     // the kernel route an opposite-station travel over the end face
     // (M5.2 G); a solid with no vertices says so honestly.
-    let st = super::cross_stock::standoff(facets, stock, ox, oy);
+    let st = super::cross_stock::standoff(facets, stock, ox, oy, excess);
     let on_origin = ox == 0.0 && oy == 0.0;
     let local: Vec<CrossHole> = if on_origin {
         p.holes.to_vec()
@@ -113,7 +114,8 @@ pub(super) fn cross_drill(
     };
     // Issue #84: no hole deeper from the stock surface than the flute
     // (the wider of drill and shank sets where the stock surface is).
-    super::drill_reach::cross_reach(&local, &extra, p.holes, p.cycle, p.tool, tool_name, unit)?;
+    let part_grow = if st.raw.is_some() { 0.0 } else { st.grow };
+    super::drill_reach::cross_reach(&local, &extra, part_grow, p.holes, p.cycle, p.tool, tool_name, unit)?;
     // A shank wider than the drill raises the planes to clear it.
     let (clearance_d, hop_d) = super::cross_stock::body_clear(p.clearance_d, p.hop_d, p.tool);
     let mut t = drilling::cross_drill(&CrossParams {
@@ -128,13 +130,13 @@ pub(super) fn cross_drill(
     // #1015: these laws judge the chain in the spindle frame; their
     // refusals carry it back to the world by the same shift (`back`).
     super::cross_stock::rapids_clear(&t, &st, p.tool, unit).map_err(|e| shifted_ghost(e, &t, ox, oy))?;
-    super::drill_reach::cross_holder(&t, facets, stock, (ox, oy), p.tool, cutter.body.as_ref(), tool_name, unit)
+    super::drill_reach::cross_holder_excess(&t, facets, stock, (ox, oy), p.tool, cutter.body.as_ref(), tool_name, unit, excess)
         .map_err(|e| shifted_ghost(e, &t, ox, oy))?;
     if on_origin {
         // Issue #117: what the chain leaves is judged against the part.
-        super::cross_part::part_clear(&t, kept, p.tool, cutter, p.holes).map_err(|e| e.with_ghost(&t))?;
+        super::cross_part::part_clear(&t, kept, p.tool, cutter, p.holes, excess).map_err(|e| e.with_ghost(&t))?;
         // #1641: and against the setup's other parts, nothing excused.
-        super::cross_part::neighbours_clear(&t, neighbours, p.tool, cutter, p.holes).map_err(|e| e.with_ghost(&t))?;
+        super::cross_part::neighbours_clear(&t, neighbours, p.tool, cutter, p.holes, excess).map_err(|e| e.with_ghost(&t))?;
         return Ok(t);
     }
     // The kernel's chain is straight, cycle-free and computer-
@@ -156,8 +158,8 @@ pub(super) fn cross_drill(
     if !t.is_chained() || !t.all_finite() {
         return Err(GenError::Invalid("cross-drill chain self-check failed after the spindle shift".into()));
     }
-    super::cross_part::part_clear(&t, kept, p.tool, cutter, p.holes).map_err(|e| e.with_ghost(&t))?;
-    super::cross_part::neighbours_clear(&t, neighbours, p.tool, cutter, p.holes).map_err(|e| e.with_ghost(&t))?;
+    super::cross_part::part_clear(&t, kept, p.tool, cutter, p.holes, excess).map_err(|e| e.with_ghost(&t))?;
+    super::cross_part::neighbours_clear(&t, neighbours, p.tool, cutter, p.holes, excess).map_err(|e| e.with_ghost(&t))?;
     Ok(t)
 }
 

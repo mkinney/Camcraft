@@ -120,6 +120,15 @@ fn profile(world: &World, g: &GeoSel) -> Result<Picked, GenError> {
 
 fn read(world: &World, items: &[GeoSel]) -> Result<RuledPicks, GenError> {
     let mut found = items.iter().map(|g| profile(world, g)).collect::<Result<Vec<_>, _>>()?;
+    for pick in found.iter().filter(|p| !p.chains.is_empty()) {
+        let runs = found.iter().filter(|p| !p.chains.is_empty() && (p.z - pick.z).abs() <= FLAT).count();
+        if runs > 1 {
+            return Err(invalid(format!(
+                "a profile stitched from {runs} open runs at Z{:.3} is not supported - pick one face or closed edge chain on that plane",
+                pick.z
+            )));
+        }
+    }
     if found.len() != 2 {
         return Err(invalid(format!(
             "a 4-axis cut pairs two profiles, and {} are picked - pick the upper profile and the lower profile, one face or edge chain each",

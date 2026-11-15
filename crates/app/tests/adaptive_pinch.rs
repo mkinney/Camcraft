@@ -77,7 +77,14 @@ fn closest_to_axis(t: &Toolpath, top: f64) -> (f64, Point3) {
 fn retyped(kind: OpType, top: f64, bottom: f64) -> OpParams {
     let mut p = operation::seed_params(kind.ordinal());
     match &mut p {
-        OpParams::Adaptive2D { top_z, bottom_z, .. } | OpParams::Offset2D { top_z, bottom_z, .. } => {
+        OpParams::Adaptive2D { top_z, bottom_z, optimal_load, .. } => {
+            *top_z = Height::fixed(top);
+            *bottom_z = Height::fixed(bottom);
+            // Issue #1716: 40% of D keeps the HSM plan fast in debug. The
+            // chord law judges every link between pieces at any ring step.
+            *optimal_load = 0.4;
+        }
+        OpParams::Offset2D { top_z, bottom_z, .. } => {
             *top_z = Height::fixed(top);
             *bottom_z = Height::fixed(bottom);
         }

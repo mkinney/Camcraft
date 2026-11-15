@@ -15,7 +15,7 @@
 
 use flecs_ecs::prelude::World;
 
-use camcraft_app::commands::{CreateOperation, GenerateOperation, History, ImportModel, LoadMachine};
+use camcraft_app::commands::{CreateOperation, EditOperationParams, GenerateOperation, History, ImportModel, LoadMachine};
 use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::parse_mch;
 use camcraft_app::model;
@@ -76,7 +76,11 @@ fn punch_with(text: &str, taper: f64, burnout: Option<f64>) -> (World, Result<()
         clearance: camcraft_app::operation::DEFAULT_CLEARANCE,
         skims: Vec::new(),
     };
-    let c = CreateOperation::new(&world, "Punch1", "", SrcRef::Entity("block".into()), OpParams::WireContour(op)).expect("op");
+    // #1800: the taper door refuses at the command, so its words come back as `made`.
+    let c = match CreateOperation::new(&world, "Punch1", "", SrcRef::Entity("block".into()), OpParams::WireContour(op)) {
+        Ok(c) => c,
+        Err(e) => return (world, Err(e.to_string())),
+    };
     h.execute(&world, c);
     let made = GenerateOperation::new(&world, "Punch1").map(|g| h.execute(&world, g)).map_err(|e| e.to_string());
     (world, made)
@@ -138,27 +142,28 @@ fn a_zero_taper_is_the_vertical_golden_byte_for_byte() {
 }
 
 /// Done means: a 30 degree request on a 15 degree machine is refused by
-/// name, and a machine stating no maximum refuses any taper.
+/// name, and a machine stating no maximum refuses any taper - at the
+/// command door since #1800, before any generate.
 #[test]
 fn a_taper_past_the_machines_maximum_is_refused_by_name() {
     let (_, made) = punch(FIXTURE, 30.0);
     let err = made.expect_err("30 degrees on a 15 degree machine");
-    assert!(err.contains("Punch1") && err.contains("30.000 degree taper") && err.contains("at most 15.000 degrees"), "{err}");
+    assert!(err.contains("30.000 degree taper") && err.contains("at most 15.000 degrees"), "{err}");
     let (_, made) = punch(&FIXTURE.replace("\"max_taper_deg\": 15.0,", ""), 3.0);
     let err = made.expect_err("no stated maximum");
     assert!(err.contains("states no edm.max_taper_deg"), "{err}");
 }
 
 /// Done means: a U/V offset outside the stroke, a machine with no U
-/// axis or no guide planes, and a plane outside the guides' reach each
-/// block the post by name.
+/// axis, and a plane outside the guides' reach each block the post by
+/// name. (No guide planes at all is refused earlier, at the command
+/// door: `a_taper_the_machine_cannot_post_is_refused_at_the_command_door`.)
 #[test]
 fn a_uv_offset_past_the_stroke_or_the_guides_is_refused_by_name() {
     let cases = [
         (FIXTURE.replace("\"min\": -5.0, \"max\": 5.0", "\"min\": -0.5, \"max\": 0.5"), "outside the U stroke -0.500..0.500"),
         (FIXTURE.replace("\"lower_guide_z\": -5.0,", "\"lower_guide_z\": 1.0,"), "outside the guides' reach"),
         (FIXTURE.replace("\"name\": \"U\"", "\"name\": \"W\""), "states no U axis"),
-        (FIXTURE.replace("\"upper_guide_z\": 25.0,", ""), "states no edm.lower_guide_z and edm.upper_guide_z"),
     ];
     for (i, (text, want)) in cases.iter().enumerate() {
         let (world, made) = punch(text, 3.0);
@@ -189,4 +194,42 @@ fn a_taper_with_a_no_core_burnout_is_refused_by_name() {
     assert!(err.contains("Punch1") && err.contains("3.000 degree taper is asked with a no-core burnout"), "{err}");
     let (_, made) = punch_with(FIXTURE, 0.0, Some(0.5));
     assert!(made.as_ref().map_or_else(|e| !e.contains("taper"), |()| true), "a vertical burnout is not refused for a taper: {made:?}");
+}
+
+/// #1800 Done means: a non-zero taper on a machine that cannot post it is
+/// refused by the operation's create AND edit commands (the doors the GUI
+/// page and MCP's `edit_operation` both pass), in the words of
+/// `app::machine::wire_edm::taper_door`; nothing is generated or posted
+/// first. The same op at 0 degrees is admitted, and an angle-word machine
+/// (no U/V moves) needs no guide planes.
+#[test]
+fn a_taper_the_machine_cannot_post_is_refused_at_the_command_door() {
+    let no_guides = FIXTURE.replace("\"upper_guide_z\": 25.0,", "");
+    let cases = [
+        (FIXTURE.replace("\"max_taper_deg\": 15.0,", ""), "3.000 degree taper is asked, and machine SYNTHETIC WIRE EDM (FICTIONAL CODES) states no edm.max_taper_deg"),
+        (FIXTURE.replace("\"max_taper_deg\": 15.0,", "\"max_taper_deg\": 2.0,"), "leans the wire at most 2.000 degrees"),
+        (no_guides.clone(), "3.000 degree taper is asked, and machine SYNTHETIC WIRE EDM (FICTIONAL CODES) states no edm.lower_guide_z and edm.upper_guide_z"),
+    ];
+    for (text, want) in &cases {
+        // Create: refused by name, no op enters the document.
+        let (world, made) = punch(text, 3.0);
+        let err = made.expect_err(want);
+        assert!(err.contains(want), "{want}: {err}");
+        assert!(model::find_by_name(&world, "Punch1").is_none(), "{want}: a refused op never enters the document");
+        // Edit: the vertical op is admitted, its taper edit is refused.
+        let (world, made) = punch(text, 0.0);
+        made.expect("a vertical cut needs no taper limits");
+        let e = model::find_by_name(&world, "Punch1").expect("op");
+        let Some(OpParams::WireContour(mut w)) = model::operation_of(&world, &e).map(|o| o.params) else { panic!("a wire op") };
+        w.taper_deg = -3.0;
+        let err = EditOperationParams::new(&world, "Punch1", OpParams::WireContour(w)).map(|_| ()).expect_err(want).to_string();
+        assert!(err.contains(want), "{want}: {err}");
+    }
+    // An angle-word machine states its lean as a word, not by guide
+    // positions: no guide planes is admitted there.
+    let angle = no_guides
+        .replace("\"uv\": \"U{u} V{v}\"", "\"taper_angle\": \"FX-ANGLE A{angle}\"")
+        .replace("\"max_taper_deg\": 15.0,", "\"max_taper_deg\": 15.0,\n    \"taper_angle\": { \"positive\": \"top_left\", \"corner\": \"mitre\" },");
+    let (world, _) = punch(&angle, 3.0);
+    assert!(model::find_by_name(&world, "Punch1").is_some(), "an angle-word machine needs no guide planes for a taper");
 }

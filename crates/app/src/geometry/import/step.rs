@@ -128,7 +128,18 @@ pub fn parse_with_chord_budget(data: &[u8], budget: usize) -> Result<(Mesh, f64)
 /// [`parse_with_chord_budget`], and what the importer changed on the way,
 /// one line each, for the import result (#1573 review: a face flipped to
 /// agree with its neighbours is said by name, not only logged).
+/// A closed shell that meshes open is refused by name here.
 pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>), ImportError> {
+    match parse_open(data, budget)? {
+        (_, _, _, Some(hole)) => Err(super::step_closed::open_refusal(&hole)),
+        (mesh, chord, notes, None) => Ok((mesh, chord, notes)),
+    }
+}
+
+/// [`parse_noted`], with a closed shell that meshes open kept and its hole
+/// named instead of refused (#1610; one line per open shell, joined), for
+/// a caller that lands the model incomplete.
+pub fn parse_open(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>, Option<String>), ImportError> {
     super::step_depth::check(data)?; // #1075: refuse before ruststep can overflow
     if data.is_empty() {
         return Err(ImportError::Empty);
@@ -170,6 +181,7 @@ pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>
     let mut facets: Vec<Triangle> = Vec::new();
     let mut chord = 0.0f64;
     let mut notes = Vec::new();
+    let mut holes: Vec<String> = Vec::new();
     // Shells in id order, not the table's hash order: the facets, the notes
     // and the first refusal are the same on every run (#1576 review).
     let mut shells: Vec<(&u64, &truck_stepio::r#in::ShellHolder)> = table.shell.iter().collect();
@@ -187,7 +199,7 @@ pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>
             let closed = closed.contains(shell_id);
             shell_facets(&table, (*shell_id, shell), closed, budget, mm_per_unit.unwrap_or(1.0))
         }));
-        let (tris, tol, said) = match per_shell {
+        let (tris, tol, judged) = match per_shell {
             Err(_) => {
                 tracing::error!("step: truck kernel panicked on a shell; import aborted");
                 return Err(ImportError::Step(
@@ -199,7 +211,8 @@ pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>
         };
         chord = chord.max(tol);
         facets.extend(tris);
-        notes.extend(said);
+        notes.extend(judged.notes);
+        holes.extend(judged.open);
     }
     if facets.is_empty() {
         return Err(ImportError::Empty);
@@ -217,7 +230,8 @@ pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>
     if !(chord.is_finite() && chord >= 0.0) {
         return Err(ImportError::Step(format!("tessellation reported a chord error of {chord} mm")));
     }
-    Ok((Mesh::from_facets(facets), chord, notes))
+    let open = (!holes.is_empty()).then(|| holes.join("; "));
+    Ok((Mesh::from_facets(facets), chord, notes, open))
 }
 
 /// Tessellate one STEP shell into triangles, staying inside `budget` facets.
@@ -230,7 +244,7 @@ fn shell_facets(
     closed: bool,
     budget: usize,
     mm_per_unit: f64,
-) -> Result<(Vec<Triangle>, f64, Vec<String>), ImportError> {
+) -> Result<(Vec<Triangle>, f64, super::step_closed::Judged), ImportError> {
     let cshell = table
         .to_compressed_shell(shell)
         .map_err(|e| ImportError::Step(format!("shell conversion failed: {e}")))?;
@@ -281,6 +295,15 @@ fn shell_facets(
                 .collect();
             polys
         }));
+        if let Some(i) = cshell.edges.iter().position(|e| e.curve.meter.refused()) {
+            return Err(PassError::Unconverged {
+                continuous: false,
+                refusal: ImportError::Step(format!(
+                    "edge {} of {} in shell #{shell_id} could not be tessellated: its curve subdivision did not converge within {cap} evaluations (a discontinuous or degenerate curve) - re-export the model, or import an STL",
+                    i + 1, cshell.edges.len()
+                )),
+            });
+        }
         if let Some(trip) = guarded.tripped() {
             // A face that may jump is refused even when a coarser pass
             // met: it converges at any tolerance wider than its gap, and
@@ -354,7 +377,7 @@ fn shell_facets(
     let ends = owners.borrow_mut().iter_mut().rev().find(|(t, _)| *t == kept.tol).map(|(_, e)| std::mem::take(e));
     let names = |i: usize| face_ids.as_ref().and_then(|ids| ids.get(i));
     let seam = super::step_closed::Shell { id: shell_id, faces, closed, mm_per_unit: k };
-    let notes = super::step_closed::judge(&mut kept.facets, ends.as_deref(), kept.tol, &seam, names, dropped)?;
+    let judged = super::step_closed::judge(&mut kept.facets, ends.as_deref(), kept.tol, &seam, names, dropped)?;
     if kept.tol > wanted {
         // The cause, so the advice fits it: a larger facet budget does
         // nothing for a face that ran out of evaluations (#1568 review).
@@ -370,5 +393,5 @@ fn shell_facets(
             kept.facets.len()
         );
     }
-    Ok((kept.facets, kept.tol, notes))
+    Ok((kept.facets, kept.tol, judged))
 }

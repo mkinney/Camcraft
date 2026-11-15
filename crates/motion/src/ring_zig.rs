@@ -41,7 +41,8 @@ pub fn arc_chord(rho: f64, phi: f64) -> f64 {
 /// of radius `rho` in the sense `sense` (+1 CCW, -1 CW): every vertex
 /// but the last within [`ON_RING_TOL`] of the circle; the last (cut
 /// part-way along a chord of the ring's polygon) inside it by at most
-/// that polygon's own sagitta ([`ARC_FIT_TOL`]); its first step turning
+/// that polygon's own sagitta ([`ARC_FIT_TOL`]); every chord stays within
+/// that sagitta too (plus lattice tolerance); its first step turning
 /// in `sense`; and the leg's arc end (`a0 + sense * phi`) landing on the
 /// prefix's end within the arc-versus-chord length difference of a
 /// polygon held to [`ARC_FIT_TOL`] (under `2 pi / 3` of it, plus the
@@ -58,6 +59,22 @@ fn on_ring(pre: &[Point2], center: Point2, rho: f64, sense: f64, end: Point2) ->
     }
     let rl = r(last);
     if !(rl <= rho + ON_RING_TOL && rl >= rho - ARC_FIT_TOL - ON_RING_TOL) {
+        return false;
+    }
+    if !pre.windows(2).all(|w| {
+        let dx = w[1].x - w[0].x;
+        let dy = w[1].y - w[0].y;
+        let len = dx.hypot(dy);
+        if len == 0.0 {
+            return true;
+        }
+        // The closest point also covers a final chord cut short of the circle.
+        let ux = dx / len;
+        let uy = dy / len;
+        let along = ((center.x - w[0].x) * ux + (center.y - w[0].y) * uy).clamp(0.0, len);
+        let nearest = Point2::new(w[0].x + along * ux, w[0].y + along * uy);
+        rho - r(&nearest) <= ARC_FIT_TOL + ON_RING_TOL
+    }) {
         return false;
     }
     let Some(next) = pre.get(1) else {

@@ -242,3 +242,21 @@ fn the_shipped_catalog_asset_reads_the_same_through_the_library_reader() {
         assert_eq!(l.tool, *t, "{name}");
     }
 }
+
+/// #1152: a body electrode's outline rides the library file both ways,
+/// and the shipped-catalog reader of the tools crate reads the same row.
+#[test]
+fn a_body_electrodes_outline_roundtrips_through_the_library() {
+    let ell = vec![[-5.0, -4.0], [5.0, -4.0], [5.0, 0.0], [-1.0, 0.0], [-1.0, 4.0], [-5.0, 4.0]];
+    let e = camcraft_tools::electrode::electrode_outline_tool(&ell, 16.0, 15.0);
+    let (src, _h) = world_with(&[("E-L", e.clone())]);
+    let text = export_tool_library(&src).expect("export");
+    assert!(text.contains("\"outline\""), "{text}");
+    let lib = parse_tool_library(&text).expect("the library reads back");
+    assert_eq!(lib[0].tool, e);
+    // A row whose sizes leave its outline refuses the whole file by name.
+    let mut v: Value = serde_json::from_str(&text).expect("json");
+    v["tools"][0]["definition"]["diameter"] = json!(12.0);
+    let why = parse_tool_library(&v.to_string()).expect_err("sizes off the outline");
+    assert!(why.contains("tool 'E-L' is refused") && why.contains("the outline's X and Y extents"), "{why}");
+}

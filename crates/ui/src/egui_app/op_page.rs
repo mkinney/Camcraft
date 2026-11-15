@@ -39,10 +39,17 @@ const BAR_RESERVE: f32 = 120.0;
 /// nothing is selected (M9.1): the kind comes from the button you
 /// pressed, so this page points at the doors that press it.
 pub(super) fn no_operation_page(ui: &mut Ui) {
-    ui.heading("Operations");
-    ui.separator();
-    ui.label("No operation to show.");
-    ui.label("Click one in the browser, or pick a kind from the ribbon's family doors - the new operation opens its own page straight away.");
+    ui.add_space(8.0);
+    ui.heading("No operation selected");
+    ui.add_space(4.0);
+    ui.label("Select an operation in the browser to edit its parameters, or create a new one.");
+    ui.add_space(10.0);
+    ui.strong("Get started");
+    ui.label("1. Set up stock, WCS, and tools in the Setup section.");
+    ui.label("2. Create an operation from the ribbon (2D, 3D, Drill, or Multi-axis).");
+    ui.label("3. Pick geometry, adjust parameters, then Generate and Simulate.");
+    ui.add_space(8.0);
+    ui.small("Tip: keep the Browser and Properties panes open while you work.");
 }
 
 pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &Tokens) {

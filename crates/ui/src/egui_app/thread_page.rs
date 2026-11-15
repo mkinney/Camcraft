@@ -17,7 +17,7 @@ use camcraft_app::drilling::Hole;
 use camcraft_app::machining2d::{PassSchedule, ThreadPasses};
 use camcraft_app::units::{self, Unit};
 
-use super::fields::{check_row, field, hint, num, prop_row};
+use super::fields::{button, check_row, field, hint, int_range_row, list_row, num, prop_row, radio_pair, small_button};
 
 /// The Geometry tab's rows: whether the thread is external, the feature
 /// list and its detect button. Returns whether the button was clicked
@@ -30,7 +30,7 @@ pub(super) fn geometry_rows(ui: &mut Ui, u: Unit, features: &mut Vec<Hole>, exte
     if *external != was {
         features.clear();
     }
-    let (title, none, button, note) = if *external {
+    let (title, none, button_label, note) = if *external {
         (
             "Bosses",
             "none yet - Detect bosses reads them from the model",
@@ -60,16 +60,19 @@ pub(super) fn geometry_rows(ui: &mut Ui, u: Unit, features: &mut Vec<Hole>, exte
             (false, false) => format!("floor {}", units::len(h.floor_z, u, 3)),
         };
         ui.horizontal(|ui| {
-            ui.label(format!(
-                "{}  X {}  Y {}  Ø{}  {} {}  {foot}",
-                i + 1,
-                units::len(h.xy.x, u, 3),
-                units::len(h.xy.y, u, 3),
-                units::len(2.0 * h.radius, u, 3),
-                if *external { "top" } else { "entry" },
-                units::len(h.entry_z, u, 3),
-            ));
-            if ui.small_button(format!("Remove {}", i + 1)).clicked() {
+            list_row(
+                ui,
+                format!(
+                    "{}  X {}  Y {}  Ø{}  {} {}  {foot}",
+                    i + 1,
+                    units::len(h.xy.x, u, 3),
+                    units::len(h.xy.y, u, 3),
+                    units::len(2.0 * h.radius, u, 3),
+                    if *external { "top" } else { "entry" },
+                    units::len(h.entry_z, u, 3),
+                ),
+            );
+            if small_button(ui, format!("Remove {}", i + 1)).clicked() {
                 drop = Some(i);
             }
         });
@@ -77,7 +80,7 @@ pub(super) fn geometry_rows(ui: &mut Ui, u: Unit, features: &mut Vec<Hole>, exte
     if let Some(i) = drop.filter(|i| *i < features.len()) {
         features.remove(i);
     }
-    let clicked = ui.button(button).clicked();
+    let clicked = button(ui, button_label).clicked();
     hint(ui, note);
     clicked
 }
@@ -106,8 +109,7 @@ pub(super) fn thread_rows(ui: &mut Ui, u: Unit, pitch: &mut Option<f64>, hand: &
     hint(ui, "unstated reads a multi-form thread mill's own pitch; a single-form mill needs the pitch stated, inside its range");
     // The row lays right to left: Left first reads "Right hand  Left hand".
     prop_row(ui, "Hand", |ui| {
-        ui.radio_value(hand, ThreadHand::Left, "Left hand");
-        ui.radio_value(hand, ThreadHand::Right, "Right hand");
+        radio_pair(ui, hand, (ThreadHand::Left, "Left hand"), (ThreadHand::Right, "Right hand"));
     });
     hint(ui, "climb milling winds a right-hand thread up from the bottom of a hole, a left-hand one down from the top; on a boss the other way round");
 }
@@ -116,13 +118,17 @@ pub(super) fn thread_rows(ui: &mut Ui, u: Unit, pitch: &mut Option<f64>, hand: &
 /// pass of its own depth, spring passes and the fit allowance.
 pub(super) fn pass_rows(ui: &mut Ui, u: Unit, passes: &mut ThreadPasses) {
     prop_row(ui, "Pass depths", |ui| {
-        ui.radio_value(&mut passes.schedule, PassSchedule::ConstantArea, "Decreasing");
-        ui.radio_value(&mut passes.schedule, PassSchedule::Equal, "Equal");
+        radio_pair(
+            ui,
+            &mut passes.schedule,
+            (PassSchedule::ConstantArea, "Decreasing"),
+            (PassSchedule::Equal, "Equal"),
+        );
     });
     hint(ui, "decreasing: every pass takes the same chip area - the infeed is the first, deepest pass");
     prop_row(ui, "Finishing pass depth", |ui| num(ui, u, &mut passes.finish));
     prop_row(ui, "Spring passes", |ui| {
-        ui.add(egui::DragValue::new(&mut passes.spring).range(0..=camcraft_app::machining2d::MAX_SPRING_PASSES));
+        int_range_row(ui, &mut passes.spring, 0..=camcraft_app::machining2d::MAX_SPRING_PASSES);
     });
     prop_row(ui, "Depth allowance", |ui| num(ui, u, &mut passes.allowance));
     hint(ui, "0 finishes on the standard depth; a positive allowance leaves that much radially for a tighter fit (at most a quarter of the depth)");
@@ -133,8 +139,12 @@ pub(super) fn pass_rows(ui: &mut Ui, u: Unit, passes: &mut ThreadPasses) {
 /// spindle is refused by name at Apply.
 pub(super) fn spindle_rows(ui: &mut Ui, passes: &mut ThreadPasses) {
     prop_row(ui, "Spindle", |ui| {
-        ui.radio_value(&mut passes.spindle_reverse, true, "M4 (counter-clockwise)");
-        ui.radio_value(&mut passes.spindle_reverse, false, "M3 (clockwise)");
+        radio_pair(
+            ui,
+            &mut passes.spindle_reverse,
+            (true, "M4 (counter-clockwise)"),
+            (false, "M3 (clockwise)"),
+        );
     });
     check_row(ui, "Left-hand-cut thread mill", &mut passes.cutter_left);
     hint(ui, "a right-hand-cut mill runs M3, a left-hand-cut one M4; climb milling follows the spindle");

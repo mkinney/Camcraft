@@ -255,3 +255,62 @@ fn full_fidelity_grows_nothing() {
     let past = VerifyContext { gouge_tol: TOL, model_excess: 0.02, ..Default::default() };
     assert_eq!(past.band_growth(), 0.0, "past the bound the gate refuses; the laws read untightened");
 }
+
+// ---- (d), radial rapids (#1053) -------------------------------------------
+
+fn radial_past(into: f64, excess: f64) -> Vec<Warning> {
+    let y = BOSS_R + 6.0 - into;
+    let p = path(vec![mv(MoveKind::Rapid, (-3.5, y, 5.0), (3.5, y, 5.0), Some([0.0, 0.0, 1.0]))]);
+    let boss = coarse_boss();
+    let tool = ToolGeom { radius: 6.0, nose_radius: 0.0, flute_len: 20.0, shank_radius: 6.0, shank_len: 20.0, holder_radius: 6.0, holder_len: 10.0 };
+    let cx = VerifyContext {
+        region: &boss,
+        stock: Some(&boss),
+        tool: &tool,
+        mode: Mode::Radial,
+        stock_top_z: 10.0,
+        clearance_z: 20.0,
+        gouge_tol: TOL,
+        z_tol: 1e-6,
+        model_excess: excess,
+        ..Default::default()
+    };
+    verify(&p, &cx)
+}
+
+#[test]
+fn a_radial_rapid_grazing_a_coarse_bar_inside_the_excess_is_convicted_only_on_a_coarse_model() {
+    let excess = chord() - CAP;
+    // 0.018 mm into the real boss (0.0058 mm inside the 90-gon facet):
+    // clean at full fidelity, convicted on the coarse model.
+    assert!(radial_past(0.018, 0.0).is_empty(), "{:?}", radial_past(0.018, 0.0));
+    assert_eq!(radial_past(0.018, excess), vec![Warning::RapidInStock { at: 0 }]);
+    // Tangent to the true circle: clean both ways; 0.1 mm in: convicted both ways.
+    assert!(radial_past(0.0, 0.0).is_empty() && radial_past(0.0, excess).is_empty());
+    assert!(!radial_past(0.1, 0.0).is_empty() && !radial_past(0.1, excess).is_empty());
+    // Past the tolerance: untightened.
+    for excess in [TOL, 0.5] {
+        assert!(radial_past(0.018, excess).is_empty(), "excess {excess}");
+    }
+    // Over the stock's Z top: disc grazing within excess is convicted too.
+    let boss = coarse_boss();
+    let tool = ToolGeom { radius: 6.0, nose_radius: 0.0, flute_len: 20.0, shank_radius: 6.0, shank_len: 20.0, holder_radius: 6.0, holder_len: 10.0 };
+    let over = path(vec![mv(MoveKind::Rapid, (-5.0, 0.0, 10.0 + 6.0 - 0.005), (5.0, 0.0, 10.0 + 6.0 - 0.005), Some([1.0, 0.0, 0.0]))]);
+    let judge_over = |ex: f64| {
+        verify(&over, &VerifyContext {
+            region: &boss,
+            stock: Some(&boss),
+            tool: &tool,
+            mode: Mode::Radial,
+            stock_top_z: 10.0,
+            clearance_z: 20.0,
+            gouge_tol: TOL,
+            z_tol: 1e-6,
+            model_excess: ex,
+            ..Default::default()
+        })
+    };
+    assert!(judge_over(0.0).is_empty(), "full fidelity clears by disc slack");
+    assert_eq!(judge_over(excess), vec![Warning::RapidInStock { at: 0 }]);
+    assert!(judge_over(0.5).is_empty(), "past the bound: untightened");
+}

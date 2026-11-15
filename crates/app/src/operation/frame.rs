@@ -92,6 +92,14 @@ impl OpFrame {
 
     // ---- S-frame reads: the alignment applied, never the tilt ----
 
+    /// A part entity's pose in S (#763 Phase 2: an aligned part reads
+    /// composed with the setup's alignment; fixtures, furniture, and an
+    /// unaligned setup read `transform_of` unchanged).
+    #[must_use]
+    pub fn pose_in_setup(&self, world: &World, entity: &Entity) -> Option<crate::schema::Location> {
+        crate::setup_align::pose_in(world, entity, self.setup.as_deref())
+    }
+
     /// A part entity's facets in S (#326: an aligned part reads turned;
     /// an unaligned setup reads exactly the world facets it always
     /// did). This is the door Phase 2 reads picks through too.
@@ -209,8 +217,8 @@ impl OpFrame {
     /// Top/BottomOfStock the furniture's local bounds, WorkOffset the
     /// WCS origin's [`Self::z_local`], Fixed passes through as spoken
     /// along the tool axis. A Selection reference stays `None` here —
-    /// picks are refused in an aligned setup until Phase 2 reads them
-    /// through the seam, and a height is never guessed.
+    /// a tilted op refuses picked selections until Phase 3, and a height
+    /// is never guessed.
     #[must_use]
     pub fn height_z_local(&self, world: &World, h: Height) -> Option<f64> {
         let base = match h.reference {

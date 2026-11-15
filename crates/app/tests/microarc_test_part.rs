@@ -101,6 +101,8 @@ fn flat(tilt: Option<Tilt>) -> OpParams {
         helix_radius: 1.0,
         links: camcraft_app::links::Links::PLANAR,
         tilt,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 
@@ -126,6 +128,8 @@ fn cross() -> OpParams {
         helix_radius: 0.5,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 

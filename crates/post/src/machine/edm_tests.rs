@@ -142,6 +142,16 @@ fn an_edm_section_on_another_kind_or_with_the_other_kinds_keys_is_refused() {
     }
 }
 
+/// #1164 review (PR #1218): the angle-word dialect is a wire key by
+/// name - a sinker stating it is refused, a wire reads it.
+#[test]
+fn a_sinker_stating_taper_angle_is_refused_as_a_wire_key() {
+    let rules = r#"{ "taper_angle": { "positive": "top_left", "corner": "mitre" } }"#;
+    let err = parse_mch(&with_edm(SINKER, rules)).err().unwrap_or_default();
+    assert!(err.contains("edm.taper_angle is a wire_edm key; this is a sinker_edm machine"), "{err}");
+    assert!(parse_mch(&with_edm(WIRE, rules)).is_ok(), "a wire machine states it");
+}
+
 /// Review #551 request 3: an EDM states no spindle, live tool or
 /// coolant, refused by the key's name like plasma.
 #[test]

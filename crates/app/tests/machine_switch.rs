@@ -141,6 +141,7 @@ fn tilted_on(via: Via) -> (World, History) {
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 40.0, dy: 30.0, dz: 10.0 }, loc).expect("stock"));
     mount_builtin(&world, &mut h, via, "Tilt-head 5-axis");
     let params = OpParams::Pocket {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: Some(Tilt { a_deg: 0.0, b_deg: 90.0, origin: [-25.0, 0.0, -15.0] }),
         stepover: 3.0,

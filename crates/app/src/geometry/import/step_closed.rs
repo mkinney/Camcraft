@@ -71,11 +71,13 @@ pub(super) fn closed_shells(section: &DataSection) -> HashSet<u64> {
 /// entity id. In a closed shell, faces wound against their neighbours are
 /// flipped in place (an open shell's winding is left as the kernel made it)
 /// and said in the returned notes, by name, for the import result.
-/// Refused: a closed shell with a real gap (a boundary edge farther than
-/// [`GAP_CHORDS`] tolerances from any other face); a closed shell with a
+/// A closed shell with a real gap (a boundary edge farther than
+/// [`GAP_CHORDS`] tolerances from any other face) is not refused here: its
+/// hole is returned, named ([`Judged::open`], #1610), and the caller
+/// refuses it or lands the model incomplete. Refused: a closed shell with a
 /// shared edge still running the same way in both its faces after the
-/// flips (more than [`UNRESOLVED_EDGES`]); and in any shell a face the
-/// kernel gave no mesh (`dropped`, already named).
+/// flips (more than [`UNRESOLVED_EDGES`]); and in a shell with no gap a
+/// face the kernel gave no mesh (`dropped`, already named).
 pub(super) fn judge(
     tris: &mut [Triangle],
     ends: Option<&[usize]>,
@@ -83,7 +85,7 @@ pub(super) fn judge(
     shell: &Shell,
     names: impl Fn(usize) -> Option<u64>,
     dropped: Option<String>,
-) -> Result<Vec<String>, ImportError> {
+) -> Result<Judged, ImportError> {
     let id = shell.id;
     let mut notes = Vec::new();
     let face = |f: usize| match names(f) {
@@ -129,7 +131,7 @@ pub(super) fn judge(
             tracing::error!("step: closed shell #{id} meshes open ({} boundary edges with a gap)", seams.gaps);
             let first = seams.first_gap.map(|(a, b)| (mm(a), mm(b)));
             let gap = Gap { edges: seams.gaps, tol_mm: gap * k, widest_mm: seams.widest * k, face: seams.gap_face.map(face), first };
-            return Err(open_refusal(shell, &gap, dropped));
+            return Ok(Judged { notes, open: Some(hole(shell, &gap, dropped)) });
         }
         if seams.unresolved_edges > UNRESOLVED_EDGES {
             let between = seams.unresolved_pair.map(|(f, g)| format!(", most between {} and {}", face(f), face(g))).unwrap_or_default();
@@ -145,7 +147,23 @@ pub(super) fn judge(
         tracing::error!("step: {face} of shell #{id} got no mesh from the kernel");
         return Err(dropped_refusal(&face, id));
     }
-    Ok(notes)
+    Ok(Judged { notes, open: None })
+}
+
+/// What [`judge`] found of a shell it did not refuse.
+pub(super) struct Judged {
+    /// What it changed on the way, one line each.
+    pub notes: Vec<String>,
+    /// A closed shell's real gap, named (#1610): where the mesh has walls
+    /// the file has not.
+    pub open: Option<String>,
+}
+
+/// The refusal for a mesh with a hole, where the caller cannot land the
+/// model incomplete (a fixture, a tool body, a mesh-only import).
+#[must_use]
+pub(super) fn open_refusal(hole: &str) -> ImportError {
+    ImportError::Step(format!("{hole} - the model would import with walls missing; re-export the model, or import an STL"))
 }
 
 /// A closed shell's real gap, in mm.
@@ -160,9 +178,9 @@ struct Gap {
     first: Option<(Point3, Point3)>,
 }
 
-/// The refusal for a closed shell meshing with a real gap. `dropped` names
-/// a face the kernel returned no mesh for, if any.
-fn open_refusal(shell: &Shell, gap: &Gap, dropped: Option<String>) -> ImportError {
+/// A closed shell's real gap, said: where it is and how wide. `dropped`
+/// names a face the kernel returned no mesh for, if any.
+fn hole(shell: &Shell, gap: &Gap, dropped: Option<String>) -> String {
     let on = gap.face.as_ref().map(|f| format!(", most on {f}")).unwrap_or_default();
     let widest = if gap.widest_mm > 0.0 { format!(", up to {:.3} mm", gap.widest_mm) } else { String::new() };
     let at = gap
@@ -170,11 +188,10 @@ fn open_refusal(shell: &Shell, gap: &Gap, dropped: Option<String>) -> ImportErro
         .map(|(a, b)| format!("; the first from ({:.4}, {:.4}, {:.4}) to ({:.4}, {:.4}, {:.4}) mm", a.x, a.y, a.z, b.x, b.y, b.z))
         .unwrap_or_default();
     let cause = dropped.map(|f| format!("; {f} got no mesh from the kernel")).unwrap_or_default();
-    ImportError::Step(format!(
-        "closed shell #{} ({} faces) meshes open: {} boundary edges lie more than {:.2e} mm from any other face{on}{widest}{at}{cause} - \
-         the model would import with walls missing; re-export the model, or import an STL",
+    format!(
+        "closed shell #{} ({} faces) meshes open: {} boundary edges lie more than {:.2e} mm from any other face{on}{widest}{at}{cause}",
         shell.id, shell.faces, gap.edges, gap.tol_mm
-    ))
+    )
 }
 
 /// The refusal for a face the kernel returned no mesh for, in a shell the

@@ -9,7 +9,8 @@
 //!   counter-clockwise at the same fraction of their own length;
 //! - **by sync points**: each stated pair is an anchor; between two
 //!   neighbouring anchors both spans are walked at the same fraction of
-//!   their own length.
+//!   their own length. Two neighbouring anchors may share one point:
+//!   that end stays at the cone apex while the other walks its span.
 //!
 //! A ruling is laid at every vertex of either ring, so both profiles
 //! are traced exactly and the wire between two rulings sweeps one
@@ -152,7 +153,7 @@ pub(super) struct Anchor {
 /// the lower ring) a ruling is laid there and the walk starts from it.
 ///
 /// # Errors
-/// Two anchors on one point, or anchors whose order on the upper ring
+/// Two identical rulings, or anchors whose order on the upper ring
 /// is not their order on the lower (crossed sync points) - by name.
 pub(super) fn pair(upper: &Ring, lower: &Ring, anchors: &[Anchor], seam: Option<f64>) -> Result<Vec<(Point2, Point2)>, GenError> {
     let mut a: Vec<Anchor> = anchors.to_vec();
@@ -163,23 +164,33 @@ pub(super) fn pair(upper: &Ring, lower: &Ring, anchors: &[Anchor], seam: Option<
     };
     let same = |p: Anchor, q: Anchor, which: &str| {
         invalid(format!(
-            "sync pairs #{} and #{} state the same point of the {which} profile - each sync pair fixes its own ruling",
+            "sync pairs #{} and #{} state the same point of the {which} profile - state distinct rulings and anchors around both closed profiles; a whole-ring fan is ambiguous",
             p.no.min(q.no),
             p.no.max(q.no)
         ))
     };
+    // A fan holds one end still while the other walks a stated span.
+    // It still needs anchors at different points on both rings: otherwise
+    // the return span would ambiguously mean zero or one whole turn.
+    if m > 1 && a.iter().all(|p| (p.lower - first.lower).abs() < SYNC_GAP) {
+        return Err(same(first, a[1], "lower"));
+    }
+    if m > 1 && a.iter().all(|p| (p.upper - first.upper).abs() < SYNC_GAP) {
+        return Err(same(first, a[1], "upper"));
+    }
     let mut off_prev = 0.0;
     for j in 1..m {
         let (p, q) = (a[j - 1], a[j]);
-        if q.lower - p.lower < SYNC_GAP || (j == m - 1 && first.lower + lower.total - q.lower < SYNC_GAP) {
-            return Err(same(if q.lower - p.lower < SYNC_GAP { p } else { first }, q, "lower"));
+        let mut off = (q.upper - first.upper).rem_euclid(upper.total);
+        // A fan may straddle the seam: after advancing, a return to
+        // the first upper point is the end of this turn, not its start.
+        if off == 0.0 && off_prev > 0.0 {
+            off = upper.total;
         }
-        let off = (q.upper - first.upper).rem_euclid(upper.total);
-        if off < SYNC_GAP || upper.total - off < SYNC_GAP {
-            return Err(same(first, q, "upper"));
-        }
-        if (off - off_prev).abs() < SYNC_GAP {
-            return Err(same(p, q, "upper"));
+        let same_lower = q.lower - p.lower < SYNC_GAP;
+        let same_upper = (off - off_prev).abs() < SYNC_GAP;
+        if same_lower && same_upper {
+            return Err(same(p, q, "lower and upper"));
         }
         if off < off_prev {
             return Err(invalid(format!(

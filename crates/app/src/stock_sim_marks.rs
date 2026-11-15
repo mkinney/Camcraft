@@ -1,14 +1,14 @@
 //! The marks the program declares (#1595): the program sim credits an
 //! Engrave's or a Trace's cut into the finished part only as the mark
 //! its OWN operation carries a law for - its cutter's sweep, no deeper
-//! than the operation's mark budget (`operation::mark_law`). The budget
-//! is computed here from the operation's parameters and tool as they
-//! stand, never read from a cached record, so file data cannot state a
-//! deeper mark than the operation does (the #529 bound, by
-//! construction). An operation on any other kind declares no mark and
-//! is judged against the sharp model - stricter, never looser. Since
-//! #1607 a stock-source Engrave or Trace declares its mark too: its
-//! operation holds it to the same budget against the setup's parts.
+//! than the operation's mark budget (`operation::mark_law`), and only on
+//! the part(s) the operation marks (#1627: its source entities for a
+//! part source; every setup part for a stock source, #1607). The budget
+//! and target are computed here from the operation as it stands, never
+//! read from a cached record, so file data cannot state a deeper mark
+//! than the operation does (the #529 bound, by construction). An
+//! operation on any other kind declares no mark and is judged against
+//! the sharp model - stricter, never looser.
 //!
 //! Provenance: our own wiring of this repo's mark law onto the sim
 //! crate's `credit_marks`. No vendor material consulted.
@@ -30,8 +30,12 @@ pub(super) fn program_marks<'a>(
         .iter()
         .filter(|p| !spanned || crate::setup::effective(world, p.setup.as_deref()) == *frame)
         .filter_map(|p| {
-            let budget = p.mark?;
-            Some(Mark { op: SimOp { moves: &p.moves, radius: p.radius, ball: p.ball, cone: p.cone, corner: p.corner }, budget })
+            let mark = p.mark.as_ref()?;
+            Some(Mark {
+                op: SimOp { moves: &p.moves, radius: p.radius, ball: p.ball, cone: p.cone, corner: p.corner },
+                budget: mark.budget,
+                target: mark.target.as_deref(),
+            })
         })
         .collect()
 }

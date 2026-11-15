@@ -90,6 +90,8 @@ fn under_flat() -> OpParams {
         helix_radius: 1.0,
         links: camcraft_app::links::Links::PLANAR,
         tilt: Some(UNDER),
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 

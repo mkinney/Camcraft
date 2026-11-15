@@ -95,9 +95,24 @@ fn retyped(to: OpType, top: f64, bottom: f64) -> OpParams {
     p
 }
 
+/// A kind's label and its params.
+type Kind = (&'static str, OpParams);
+
+fn pocket_k(top: f64, bottom: f64) -> Kind {
+    ("2D Pocket", pocket(top, bottom))
+}
+
+fn adaptive_k(top: f64, bottom: f64) -> Kind {
+    ("2D Adaptive", retyped(OpType::Adaptive2D, top, bottom))
+}
+
+fn offset_k(top: f64, bottom: f64) -> Kind {
+    ("2D Offset", retyped(OpType::Offset2D, top, bottom))
+}
+
 /// The two kinds #1603 names, cut from `top` to `bottom`.
-fn kinds(top: f64, bottom: f64) -> [(&'static str, OpParams); 2] {
-    [("2D Pocket", pocket(top, bottom)), ("2D Adaptive", retyped(OpType::Adaptive2D, top, bottom))]
+fn kinds(top: f64, bottom: f64) -> [Kind; 2] {
+    [pocket_k(top, bottom), adaptive_k(top, bottom)]
 }
 
 /// Create "P1" with `area`, generate it; its cached warnings.
@@ -147,188 +162,129 @@ fn whole() -> SrcRef {
     SrcRef::Entity("part".into())
 }
 
-/// A whole-model `area` case: convicted on the op and never posted, on
-/// both stocks.
-fn refused_on_both_stocks(area: &AreaControls, tag: &str) {
-    for (label, params) in kinds(20.0, 5.0) {
-        for rotated in [false, true] {
-            let (world, mut h) = job(Some(block_with_boss()), rotated);
-            let warns = generated(&world, &mut h, whole(), params.clone(), area.clone());
-            assert!(gouges(&warns) > 0, "{label} {tag} rotated {rotated}: convicted on the op: {warns:?}");
-            assert_post_refused(&world, &format!("{tag}-{label}-{rotated}"), rotated);
-        }
+// #1715: each test below was one loop over the kinds and the two stocks
+// (5 of the 8 tests ran over 60 s in debug). Each (kind, stock) case is
+// its own test now, in a module with the old test's name, so libtest
+// runs the cases in parallel. Each case builds its own world.
+
+/// A whole-model `area` case: convicted on the op and never posted.
+fn refused((label, params): Kind, rotated: bool, area: &AreaControls, tag: &str) {
+    let (world, mut h) = job(Some(block_with_boss()), rotated);
+    let warns = generated(&world, &mut h, whole(), params, area.clone());
+    assert!(gouges(&warns) > 0, "{label} {tag} rotated {rotated}: convicted on the op: {warns:?}");
+    assert_post_refused(&world, &format!("{tag}-{label}-{rotated}"), rotated);
+}
+
+/// Offset +3: the boundary grows 3 mm into the part's own section.
+fn offset_3() -> AreaControls {
+    AreaControls { offset: 3.0, ..Default::default() }
+}
+
+// Offset +3 into the part. Before #1603: 0 findings, and it POSTED with
+// the stock turned.
+mod a_whole_model_area_offset_into_the_part_gouges_and_never_posts {
+    use super::*;
+
+    #[test]
+    fn pocket_aligned() {
+        refused(pocket_k(20.0, 5.0), false, &offset_3(), "offset");
+    }
+
+    #[test]
+    fn pocket_turned() {
+        refused(pocket_k(20.0, 5.0), true, &offset_3(), "offset");
+    }
+
+    #[test]
+    fn adaptive_aligned() {
+        refused(adaptive_k(20.0, 5.0), false, &offset_3(), "offset");
+    }
+
+    #[test]
+    fn adaptive_turned() {
+        refused(adaptive_k(20.0, 5.0), true, &offset_3(), "offset");
     }
 }
 
-#[test]
-fn a_whole_model_area_offset_into_the_part_gouges_and_never_posts() {
-    // Offset +3: the boundary grows 3 mm into the part's own section.
-    // Before #1603: 0 findings, and it POSTED with the stock turned.
-    refused_on_both_stocks(&AreaControls { offset: 3.0, ..Default::default() }, "offset");
-}
+mod a_whole_model_extension_into_the_part_gouges_and_never_posts {
+    use super::*;
 
-#[test]
-fn a_whole_model_extension_into_the_part_gouges_and_never_posts() {
-    refused_on_both_stocks(&AreaControls { extension: 5.0, ..Default::default() }, "extension");
-}
+    fn extension_5() -> AreaControls {
+        AreaControls { extension: 5.0, ..Default::default() }
+    }
 
-/// The feed points whose tool centre stands over the part's own section
-/// (the block, or the boss above it) closer than the cutter radius, below
-/// that section's top. A path that keeps the part has none.
-fn over_the_part(t: &Toolpath) -> Vec<Point3> {
-    let near = |p: &Point3, half: f64| (p.x.abs() - half).max(0.0).hypot((p.y.abs() - half).max(0.0)) < R - 0.05;
-    feeds(t)
-        .into_iter()
-        .filter(|p| (near(p, 15.0) && p.z < 10.0 - EPS) || (near(p, 6.0) && p.z < 20.0 - EPS))
-        .collect()
-}
+    #[test]
+    fn pocket_aligned() {
+        refused(pocket_k(20.0, 5.0), false, &extension_5(), "extension");
+    }
 
-#[test]
-fn a_stock_source_clearing_goes_around_the_part_and_posts() {
-    // #1554: the stock as the source cleared its whole footprint, the
-    // part's own section included; generate said ok and only the keep
-    // law (#1603) or verify stopped it. Now the region is the stock
-    // minus the setup's parts (the #12 island law): no move over the
-    // part, nothing on the op, and the program posts on both stocks.
-    let all = [("2D Pocket", pocket(20.0, 5.0)), ("2D Adaptive", retyped(OpType::Adaptive2D, 20.0, 10.0))];
-    for (label, params) in all {
-        for rotated in [false, true] {
-            let (world, mut h) = job(Some(block_with_boss()), rotated);
-            let warns = generated(&world, &mut h, SrcRef::Stock, params.clone(), AreaControls::default());
-            let blocking: Vec<_> = warns.iter().filter(|w| w.blocks_post()).collect();
-            assert!(blocking.is_empty(), "{label} rotated {rotated}: {blocking:?}");
-            let e = model::find_by_name(&world, "P1").expect("op");
-            let tp = model::toolpath_of(&world, &e).expect("cached path");
-            let over = over_the_part(&tp.path);
-            assert!(over.is_empty(), "{label} rotated {rotated}: {} feed point(s) over the part, first {:?}", over.len(), over.first());
-            assert_posts(&world, &format!("stock-around-{label}-{rotated}"));
-        }
+    #[test]
+    fn pocket_turned() {
+        refused(pocket_k(20.0, 5.0), true, &extension_5(), "extension");
+    }
+
+    #[test]
+    fn adaptive_aligned() {
+        refused(adaptive_k(20.0, 5.0), false, &extension_5(), "extension");
+    }
+
+    #[test]
+    fn adaptive_turned() {
+        refused(adaptive_k(20.0, 5.0), true, &extension_5(), "extension");
     }
 }
 
-#[test]
-fn a_stock_source_area_offset_into_the_part_gouges_and_never_posts() {
-    // The keep law stays the backstop for a stock source: an offset of
-    // +3 grows the region 3 mm into the part's own section again.
-    for (label, params) in kinds(20.0, 5.0) {
-        for rotated in [false, true] {
-            let (world, mut h) = job(Some(block_with_boss()), rotated);
-            let area = AreaControls { offset: 3.0, ..Default::default() };
-            let warns = generated(&world, &mut h, SrcRef::Stock, params.clone(), area);
-            assert!(gouges(&warns) > 0, "{label} rotated {rotated}: the part under the stock is convicted: {warns:?}");
-            assert_post_refused(&world, &format!("stock-offset-{label}-{rotated}"), rotated);
-        }
+/// Default area controls: every ring stands outside the part. A turned
+/// stock must not refuse it - that would be a false refusal.
+fn legal_whole_model_posts((label, params): Kind, rotated: bool) {
+    let (world, mut h) = job(Some(block_with_boss()), rotated);
+    let warns = generated(&world, &mut h, whole(), params, AreaControls::default());
+    let blocking: Vec<_> = warns.iter().filter(|w| w.blocks_post()).collect();
+    assert!(blocking.is_empty(), "{label} rotated {rotated}: {blocking:?}");
+    assert_posts(&world, &format!("legal-{label}-{rotated}"));
+}
+
+// 2D Adaptive cuts two levels, the last on the block's top: around the
+// boss and tangent to the shoulder (the Z5 ring round the block costs a
+// debug build a minute per run and adds no other contact).
+mod a_legal_whole_model_clearing_stays_clean_and_posts_on_both_stocks {
+    use super::*;
+
+    #[test]
+    fn pocket_aligned() {
+        legal_whole_model_posts(pocket_k(20.0, 5.0), false);
+    }
+
+    #[test]
+    fn pocket_turned() {
+        legal_whole_model_posts(pocket_k(20.0, 5.0), true);
+    }
+
+    #[test]
+    fn adaptive_aligned() {
+        legal_whole_model_posts(adaptive_k(20.0, 10.0), false);
+    }
+
+    #[test]
+    fn adaptive_turned() {
+        legal_whole_model_posts(adaptive_k(20.0, 10.0), true);
+    }
+
+    #[test]
+    fn offset_aligned() {
+        legal_whole_model_posts(offset_k(20.0, 5.0), false);
+    }
+
+    #[test]
+    fn offset_turned() {
+        legal_whole_model_posts(offset_k(20.0, 5.0), true);
     }
 }
 
-#[test]
-fn a_legal_whole_model_clearing_stays_clean_and_posts_on_both_stocks() {
-    // Default area controls: every ring stands outside the part. A
-    // turned stock must not refuse it - that would be a false refusal.
-    let all = [
-        ("2D Pocket", pocket(20.0, 5.0)),
-        // Two levels, the last on the block's top: around the boss and
-        // tangent to the shoulder (the Z5 ring round the block costs a
-        // debug build a minute per run and adds no other contact).
-        ("2D Adaptive", retyped(OpType::Adaptive2D, 20.0, 10.0)),
-        ("2D Offset", retyped(OpType::Offset2D, 20.0, 5.0)),
-    ];
-    for (label, params) in all {
-        for rotated in [false, true] {
-            let (world, mut h) = job(Some(block_with_boss()), rotated);
-            let warns = generated(&world, &mut h, whole(), params.clone(), AreaControls::default());
-            let blocking: Vec<_> = warns.iter().filter(|w| w.blocks_post()).collect();
-            assert!(blocking.is_empty(), "{label} rotated {rotated}: {blocking:?}");
-            assert_posts(&world, &format!("legal-{label}-{rotated}"));
-        }
-    }
-}
-
-#[test]
-fn a_stock_source_cut_that_stops_on_the_part_stays_clean_and_posts() {
-    // A plain 30 x 30 x 10 block under 10 mm of stock: clearing the
-    // stock down to the block's top touches it and no more.
-    let block = || Mesh::from_facets(cube(Point3::new(-15.0, -15.0, 0.0), Point3::new(15.0, 15.0, 10.0)).facets.to_vec());
-    for (label, params) in kinds(20.0, 10.0) {
-        for rotated in [false, true] {
-            let (world, mut h) = job(Some(block()), rotated);
-            let warns = generated(&world, &mut h, SrcRef::Stock, params.clone(), AreaControls::default());
-            let blocking: Vec<_> = warns.iter().filter(|w| w.blocks_post()).collect();
-            assert!(blocking.is_empty(), "{label} rotated {rotated}: {blocking:?}");
-            assert_posts(&world, &format!("stock-legal-{label}-{rotated}"));
-        }
-    }
-}
-
-#[test]
-fn a_stock_source_cut_with_no_part_in_the_setup_judges_nothing() {
-    for (label, params) in kinds(20.0, 5.0) {
-        let (world, mut h) = job(None, false);
-        let warns = generated(&world, &mut h, SrcRef::Stock, params, AreaControls::default());
-        assert_eq!(gouges(&warns), 0, "{label}: no part, no part law: {warns:?}");
-    }
-}
+#[path = "keep_law/stock_source.rs"]
+mod stock_source;
 
 // ---- MCP parity -----------------------------------------------------
 
-fn call(s: &mut Server, id: &mut i64, name: &str, args: Value) -> Value {
-    *id += 1;
-    let msg = json!({ "jsonrpc": "2.0", "id": *id, "method": "tools/call",
-        "params": { "name": name, "arguments": args } });
-    let reply = s.handle(&msg).expect("a request gets a response");
-    let result = &reply["result"];
-    assert_ne!(result["isError"], json!(true), "{name} refused: {}", result["content"][0]["text"]);
-    result["structuredContent"].clone()
-}
-
-/// The boss job over MCP: a `kind` clearing from `source` with `area`;
-/// verify's reply.
-fn mcp_verify(tag: &str, kind: &str, source: &str, area: Option<Value>) -> Value {
-    let dir = std::env::temp_dir().join(format!("camcraft-keep-law-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("temp dir");
-    let stl = dir.join("part.stl");
-    pocket_support::write_stl(&block_with_boss(), &stl);
-    let (mut s, mut id) = (Server::new(), 0);
-    let _ = s.handle(&json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {} }));
-    call(&mut s, &mut id, "import_model", json!({ "name": "part", "path": stl.display().to_string() }));
-    call(&mut s, &mut id, "set_stock", json!({ "box": { "dx": SIDE, "dy": SIDE, "dz": 20.0 } }));
-    call(&mut s, &mut id, "add_tool", json!({ "catalog": TOOL }));
-    let params = json!({ "top_z": 20.0, "bottom_z": 5.0, "stepdown": 5.0, "stepover": 4.0, "stock_to_leave": 0.0 });
-    call(&mut s, &mut id, "add_operation", json!({ "kind": kind, "tool": TOOL, "source": source, "name": "P1", "params": params }));
-    if let Some(area) = area {
-        call(&mut s, &mut id, "set_operation_area", json!({ "operation": "P1", "area": area }));
-    }
-    let g = call(&mut s, &mut id, "generate", json!({}));
-    assert_eq!(g["generated"][0]["status"], json!("ok"), "{g}");
-    let ver = call(&mut s, &mut id, "verify", json!({}));
-    let _ = std::fs::remove_dir_all(&dir);
-    ver
-}
-
-/// The operation's own blocking gouge findings (not the program gate's).
-fn op_gouges(ver: &Value) -> usize {
-    ver["findings"]
-        .as_array()
-        .map_or(0, |f| f.iter().filter(|x| x["kind"] == json!("gouge") && x["op"] == json!("P1") && x["blocks_post"] == json!(true)).count())
-}
-
-#[test]
-fn over_mcp_the_pocket_family_keeps_the_part_the_same() {
-    // One kind over the wire: the law is the kinds' shared arm, pinned
-    // per kind above; this pins that the tools reach it.
-    let kind = "2D Pocket";
-    let offset = mcp_verify("offset", kind, "part", Some(json!({ "offset": 3.0 })));
-    assert!(op_gouges(&offset) > 0, "an offset into the part is the op's own gouge: {offset}");
-    assert_eq!(offset["ok"], json!(false), "{offset}");
-    // #1554: the stock source clears around the part, and verifies ok.
-    let stock = mcp_verify("stock", kind, "stock", None);
-    assert_eq!(op_gouges(&stock), 0, "the stock source keeps the part: {stock}");
-    assert_eq!(stock["ok"], json!(true), "a stock-source clearing around the part verifies ok: {stock}");
-    let into = mcp_verify("stock-offset", kind, "stock", Some(json!({ "offset": 3.0 })));
-    assert!(op_gouges(&into) > 0, "a stock-source offset into the part is the op's own gouge: {into}");
-    assert_eq!(into["ok"], json!(false), "{into}");
-    let good = mcp_verify("legal", kind, "part", None);
-    assert_eq!(op_gouges(&good), 0, "{good}");
-    assert_eq!(good["ok"], json!(true), "a legal clearing verifies ok: {good}");
-}
+#[path = "keep_law/mcp.rs"]
+mod mcp;

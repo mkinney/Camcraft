@@ -82,6 +82,15 @@ fn the_wcs_page_shows_the_work_offset_dropdown_and_no_setups_page_pointer() {
         crate::actions::target(st, UiTarget::Wcs);
     }
     h.run_steps(3);
+    for _ in 0..6 {
+        if super::structural::painted(&h)
+            .iter()
+            .any(|(t, _)| t == "Work offset: the G54-G59 slot this setup posts. It does not move the origin.")
+        {
+            break;
+        }
+        wheel(&mut h, egui::pos2(1100.0, 500.0), -220.0);
+    }
     let texts = super::structural::painted(&h);
     assert!(
         texts.iter().any(|(t, _)| t == "Work offset: the offset this setup posts, as its post names it. It does not move the origin."),

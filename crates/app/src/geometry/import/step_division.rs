@@ -142,3 +142,123 @@ fn halve(div: &[f64], split: &[bool]) -> Vec<f64> {
 #[cfg(test)]
 #[path = "step_division_tests.rs"]
 mod tests;
+
+// #1545: curve division keeps truck's probes and order, with a work
+// budget and a refusal instead of accepting an unresolved leaf at depth 100.
+#[derive(Clone, Debug)]
+pub(super) struct CurveGuard {
+    pub inner: truck_stepio::r#in::alias::Curve3D,
+    pub meter: std::sync::Arc<super::step_guard::Meter>,
+    fallback: Point3,
+}
+
+impl CurveGuard {
+    pub(super) fn new(inner: truck_stepio::r#in::alias::Curve3D, cap: u64) -> Self {
+        Self { inner, meter: std::sync::Arc::new(super::step_guard::Meter::new(cap)), fallback: Point3::new(0.0, 0.0, 0.0) }
+    }
+
+    fn divide(&self, range: (f64, f64), tol: f64) -> Option<(Vec<f64>, Vec<Point3>)> {
+        use truck_stepio::r#in::alias::ParametricCurve;
+        let at = |t| {
+            if !self.meter.spend_many(1) { return None; }
+            let p = self.inner.subs(t);
+            (p.x.is_finite() && p.y.is_finite() && p.z.is_finite()).then_some(p)
+        };
+        fn split(
+            at: &impl Fn(f64) -> Option<Point3>,
+            (a, b): (f64, f64),
+            (pa, pb): (Point3, Point3),
+            tol2: f64,
+            depth: usize,
+        ) -> Option<(Vec<f64>, Vec<Point3>)> {
+            let p = 0.5 + (0.2 * HashGen::hash1(pa.midpoint(pb)) - 0.1);
+            let t = a * (1.0 - p) + b * p;
+            let mid = pa + (pb - pa) * p;
+            if at(t)?.distance2(mid) < tol2 {
+                return Some((vec![a, b], vec![pa, pb]));
+            }
+            let m = (a + b) / 2.0;
+            if depth == 0 || m == a || m == b { return None; }
+            let pm = at(m)?;
+            let (mut ts, mut ps) = split(at, (a, m), (pa, pm), tol2, depth - 1)?;
+            let _ = (ts.pop(), ps.pop());
+            let (right_t, right_p) = split(at, (m, b), (pm, pb), tol2, depth - 1)?;
+            ts.extend(right_t);
+            ps.extend(right_p);
+            Some((ts, ps))
+        }
+        if !(tol.is_finite() && tol > 0.0 && range.0.is_finite() && range.1.is_finite()) {
+            return None;
+        }
+        split(&at, range, (at(range.0)?, at(range.1)?), tol * tol, 100)
+    }
+}
+
+impl truck_stepio::r#in::alias::ParametricCurve for CurveGuard {
+    type Point = Point3;
+    type Vector = truck_stepio::r#in::alias::Vector3;
+    fn subs(&self, t: f64) -> Point3 { self.inner.subs(t) }
+    fn der(&self, t: f64) -> Self::Vector { self.inner.der(t) }
+    fn der2(&self, t: f64) -> Self::Vector { self.inner.der2(t) }
+    fn parameter_range(&self) -> truck_stepio::r#in::alias::ParameterRange { self.inner.parameter_range() }
+    fn period(&self) -> Option<f64> { self.inner.period() }
+}
+impl truck_stepio::r#in::alias::BoundedCurve for CurveGuard {}
+impl truck_stepio::r#in::alias::ParameterDivision1D for CurveGuard {
+    type Point = Point3;
+    fn parameter_division(&self, range: (f64, f64), tol: f64) -> (Vec<f64>, Vec<Point3>) {
+        use truck_stepio::r#in::alias::Curve3D;
+        let split = match &self.inner {
+            Curve3D::BSplineCurve(b) if jumps(b.knot_vec(), b.control_points(), range) => None,
+            Curve3D::NurbsCurve(n) if {
+                let b = n.non_rationalized();
+                let points: Vec<_> = b.control_points().iter().map(|p| Point3::new(p.x / p.w, p.y / p.w, p.z / p.w)).collect();
+                jumps(b.knot_vec(), &points, range)
+            } => None,
+            Curve3D::BSplineCurve(_) | Curve3D::NurbsCurve(_) | Curve3D::PCurve(_) => self.divide(range, tol),
+            other => return other.parameter_division(range, tol),
+        };
+        match split {
+            Some(div) => div,
+            None => {
+                self.meter.exhaust();
+                (vec![range.0, range.1], vec![self.fallback; 2])
+            }
+        }
+    }
+}
+
+/// A full-multiplicity knot with unequal one-sided control points jumps.
+/// Equal endpoints still describe a continuous composite curve and stay legal.
+fn jumps(knots: &truck_stepio::r#in::alias::KnotVec, points: &[Point3], range: (f64, f64)) -> bool {
+    let Some(degree) = knots.len().checked_sub(points.len()).and_then(|n| n.checked_sub(1)) else { return true; };
+    let (values, mults) = knots.to_single_multi();
+    let mut start = 0usize;
+    for (i, &mult) in mults.iter().enumerate() {
+        if i > 0 && i + 1 < values.len() && mult > degree
+            && values[i] > range.0.min(range.1) && values[i] < range.0.max(range.1)
+            && (mult != degree + 1 || start == 0 || points.get(start - 1) != points.get(start)) {
+            return true;
+        }
+        start = start.saturating_add(mult);
+    }
+    false
+}
+
+/// Rebuild only the swept curve's division adapter; truck keeps its own
+/// extrusion/revolution rules, including transforms and reversed parameters.
+pub(super) fn swept_division(
+    swept: &truck_stepio::r#in::alias::SweptCurve,
+    meter: &std::sync::Arc<super::step_guard::Meter>,
+    range: ((f64, f64), (f64, f64)),
+    tol: f64,
+) -> (Vec<f64>, Vec<f64>) {
+    use truck_stepio::r#in::alias::{ExtrudedCurve, ParameterDivision2D, RevolutedCurve, SweptCurve};
+    let wrap = |inner, fallback| CurveGuard { inner, meter: std::sync::Arc::clone(meter), fallback };
+    match swept {
+        SweptCurve::ExtrudedCurve(e) => ExtrudedCurve::by_extrusion(wrap(e.entity_curve().clone(), Point3::new(0.0, 0.0, 0.0)), e.extruding_vector()).parameter_division(range, tol),
+        // A refused generator collapses onto the axis, giving truck no
+        // fictitious radius from which to allocate an angular grid.
+        SweptCurve::RevolutedCurve(p) => p.map_ref(|r| RevolutedCurve::by_revolution(wrap(r.entity_curve().clone(), r.origin()), r.origin(), r.axis())).parameter_division(range, tol),
+    }
+}

@@ -114,6 +114,18 @@ const ROWS: &[Row] = &[
         mesh: "watertight, within tolerance",
     },
     Row {
+        file: "modular_clamp_unit.step",
+        mm_per_unit: 1.0,
+        import: "agree",
+        mesh: "watertight, within tolerance",
+    },
+    Row {
+        file: "modular_lathe_head.step",
+        mm_per_unit: 1.0,
+        import: "agree",
+        mesh: "watertight, within tolerance",
+    },
+    Row {
         file: "sample_ap214.step",
         mm_per_unit: 1000.0,
         import: "agree",
@@ -376,22 +388,64 @@ fn read_one(file: &str, unit: f64) -> Reading {
     reading
 }
 
+/// One file's reading against its pinned row.
+fn check_row(file: &str) {
+    let row = ROWS.iter().find(|r| r.file == file);
+    assert!(row.is_some(), "{file}: no pinned row - re-triage");
+    let Some(row) = row else { return };
+    let r = read_one(file, row.mm_per_unit);
+    assert_eq!(r.file, file);
+    assert_eq!(
+        (r.import.as_str(), r.mesh.as_str()),
+        (row.import, row.mesh),
+        "{file}: STEP verdicts changed - re-triage"
+    );
+}
+
+// #1715: the bench was one test, a serial loop over every file (90 s in
+// debug, v0.20.0 cut). Each file is its own test now, so libtest reads
+// them in parallel; the file-set test below keeps "a file with no row
+// fails the bench" and keeps this list in step with ROWS.
+macro_rules! per_file {
+    ($($name:ident => $file:literal),* $(,)?) => {
+        /// The files that have a test of their own, in ROWS order.
+        const TESTED: &[&str] = &[$($file),*];
+        $(
+            #[test]
+            fn $name() {
+                check_row($file);
+            }
+        )*
+    };
+}
+
+per_file! {
+    step_milling_test_inch => "Milling-test-inch.step",
+    step_milling_test => "Milling-test.step",
+    step_bad_entity_mid_data => "bad_entity_mid_data.step",
+    step_box => "box.step",
+    step_bspline_discontinuous => "bspline_discontinuous.step",
+    step_bspline_dome => "bspline_dome.step",
+    step_empty_list => "empty_list.step",
+    step_fillet_corner => "fillet_corner.step",
+    step_lathe_holder_offset => "lathe_holder_offset.step",
+    step_modular_clamp_unit => "modular_clamp_unit.step",
+    step_modular_lathe_head => "modular_lathe_head.step",
+    step_sample_ap214 => "sample_ap214.step",
+    step_tool_csys_box_iso13399 => "tool_csys_box_iso13399.step",
+    step_tool_csys_degenerate => "tool_csys_degenerate.step",
+    step_tool_csys_iso13399 => "tool_csys_iso13399.step",
+    step_tool_csys_none => "tool_csys_none.step",
+}
+
+/// Every STEP fixture has exactly one pinned row, and every row has a
+/// test of its own: a new file with no row, or a row with no test,
+/// fails the bench.
 #[test]
 fn step_files_agree_or_refuse_by_name() {
     let files = step_files();
     assert!(!files.is_empty(), "no STEP fixtures under {:?}", models_dir());
-    let mut observed = Vec::new();
-    for f in &files {
-        let unit = ROWS.iter().find(|r| r.file == f).map_or(1.0, |r| r.mm_per_unit);
-        let r = read_one(f, unit);
-        observed.push((r.file, r.import, r.mesh));
-    }
-    let pinned: Vec<(String, String, String)> = ROWS
-        .iter()
-        .map(|r| (r.file.to_string(), r.import.to_string(), r.mesh.to_string()))
-        .collect();
-    assert_eq!(
-        observed, pinned,
-        "STEP verdicts changed, or a fixture has no row - re-triage"
-    );
+    let pinned: Vec<&str> = ROWS.iter().map(|r| r.file).collect();
+    assert_eq!(files, pinned, "a fixture has no row, or a row has no fixture - re-triage");
+    assert_eq!(TESTED, pinned.as_slice(), "every row needs its own test in per_file!");
 }

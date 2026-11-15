@@ -26,8 +26,9 @@
 //! (`serves = ["plasma"];`, #1266): it then posts to exactly those
 //! kinds. One that states none is accepted only where its dialect
 //! proves it (turning serves a lathe and a mill-turn, a non-turning
-//! one a mill and a mill-turn); a plasma table and an EDM are refused
-//! for it, and the refusal says to declare `serves`.
+//! one a mill and a mill-turn). A script declaring `wireEdm = true`
+//! serves only a wire EDM (#1335). Other undeclared scripts are refused
+//! on a plasma table or EDM, with a request to declare `serves`.
 //!
 //! And per section (maintainer, 2026-11-12, on a mill-turn): a section
 //! that turns the work - a turning op or an on-centre drill, as
@@ -55,6 +56,9 @@ fn serves(cps: &str, kind: Kind) -> Result<bool, String> {
     }
     if let Some(kinds) = declared_serves(cps).map_err(|e| format!("post engine: {e}"))? {
         return Ok(kinds.contains(&kind));
+    }
+    if crate::post::js::Script::load(cps).map_err(|e| format!("post engine: {e}"))?.voices_wire_edm() {
+        return Ok(kind == Kind::WireEdm);
     }
     let turning = work_voice(cps).map_err(|e| format!("post engine: {e}"))? == WorkVoice::WorkSpindle;
     Ok(match kind {
@@ -133,3 +137,7 @@ pub(super) fn refusal(
         }
     )))
 }
+
+#[cfg(test)]
+#[path = "posting_serves/tests.rs"]
+mod tests;

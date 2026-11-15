@@ -14,12 +14,12 @@
 //! Pocket3D arm), app::commands, sim::verify.
 
 use camcraft_app::cl::{MoveKind, Toolpath};
-use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, SetStock};
+use camcraft_app::commands::{AddTool, CreateOperation, EditOperationParams, GenerateOperation, History, ImportModel, SetStock};
 use camcraft_app::geometry::Point3;
 use camcraft_app::links::Links;
 use camcraft_app::machining2d::PocketStrategy;
 use camcraft_app::machining3d::Entry3D;
-use camcraft_app::operation::{self, Height, HeightReference, OpParams, SrcRef};
+use camcraft_app::operation::{self, AreaControls, Containment, Height, HeightReference, OpParams, SrcRef};
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
@@ -54,6 +54,18 @@ fn pocket_op(strategy: PocketStrategy) -> OpParams {
 
 /// The user's part in a 70 x 70 block from Z -7, the 10 mm tool, one op
 /// generated through the commands: its path and its warnings.
+///
+/// The op's area is the part's own silhouette, the whole tool inside it
+/// (Tool containment: Inside). Since #1774 (PR #1780) a whole-model 3D
+/// Pocket with no area control also clears the block around the part,
+/// out to the stock's outline. That is right for the user's job, but it
+/// is not the bore: around the 60 mm disc the 70 x 70 block is one wide
+/// ring with the part as its island, and the planner budgets of #850
+/// were never set for it. The control keeps the pocket on the footprint
+/// this test pins (the source-built silhouette exactly, as before #1749:
+/// `boundary::resolve` gives it back unchanged, and a controlled region
+/// skips the open-side growth), so the triple below still reads the
+/// bore's plan.
 fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     let world = new_world();
     let mut h = History::default();
@@ -65,7 +77,9 @@ fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 70.0, dy: 70.0, dz: 27.0 }, loc).expect("stock"));
     let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
-    h.execute(&world, CreateOperation::new(&world, "Op1", TOOL, SrcRef::Entity(name), params).expect("create"));
+    h.execute(&world, CreateOperation::new(&world, "Op1", TOOL, SrcRef::Entity(name), params.clone()).expect("create"));
+    let inside = AreaControls { containment: Some(Containment::Inside), ..Default::default() };
+    h.execute(&world, EditOperationParams::with_area(&world, "Op1", params, inside).expect("area"));
     h.execute(&world, GenerateOperation::new(&world, "Op1").expect("generate"));
     let e = model::find_by_name(&world, "Op1").expect("op");
     let tp = model::toolpath_of(&world, &e).expect("cached path");

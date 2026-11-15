@@ -24,6 +24,14 @@ workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (
 workOffsetMax = 9;      // LinuxCNC G-code reference: G54-G59.3 select coordinate systems 1-9 (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 afterModes = true; // #1532: reads PARAM AfterOperation (stop / optional stop) and PARAM SetupChange; a trip home is refused by name
+explains = "paren"; // #1387: LinuxCNC parenthesized comments; shared helper keeps them inert
+// Original wording; inherited mill meanings cite RS-274 / LinuxCNC in explain.rs.
+explainWords = {
+  "G38.2": "PROBE TOWARD CONTACT", // LinuxCNC G-code reference, G38.2-G38.5: probing toward contact
+  "G59.1": "WORK OFFSET 7", // LinuxCNC G-code reference, G54-G59.3: coordinate system 7
+  "G59.2": "WORK OFFSET 8", // LinuxCNC G-code reference, G54-G59.3: coordinate system 8
+  "G59.3": "WORK OFFSET 9"  // LinuxCNC G-code reference, G54-G59.3: coordinate system 9
+};
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
@@ -35,6 +43,7 @@ var sRpm = 0;              // spindle/T order follows the stream: PARAMs,
 var spindleWait = false;   // TOOL, SECTION - the preamble writes them
 var toolWait = false;      // when the first motion needs them legal
 var tNo = 0;
+var loadedTool = null;     // #1626: only the tool this program emitted M6 for is known
 var inCycle = false;       // a cycle group is open; its chain is suppressed
 var cycleSig = "";         // g|Z|R|Q of the open group (modal X Y holes)
 var cycX = 0, cycY = 0, cycR = 0; // the open group's hole XY and R plane (world, #994)
@@ -77,7 +86,10 @@ function block(words) {  // join the non-empty words onto one line
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var c = explain(a);
+    writeln(a.join(" ") + (c ? " " + c : ""));
+  }
 }
 function xyz(p) {
   if (indexed()) {  // #785: the whole tip, turned into the indexed frame
@@ -435,9 +447,14 @@ function startPreamble() {
   planeG = 17;              // the preamble states the plane
   if (toolWait) {
     toolNote();
-    retract();
-    xyUnknown = true;        // G30 (or the changer) may have moved X and Y
-    block(["T" + ni(tNo), "M6"]);
+    // The initial spindle tool is unknown. Only a repeated tool that this
+    // program already loaded can skip the trip to G30 and the tool change.
+    if (loadedTool !== tNo) {
+      retract();
+      block(["T" + ni(tNo), "M6"]);
+      loadedTool = tNo;
+    }
+    xyUnknown = true;        // restate clearance after G43/lift, even without a change
     block(["G43", "H" + ni(tNo)]);
     // #1596: Z straight up again (G53, so the G43 just applied does not
     // shift it) before the section's first X/Y or A move. The G30 above
@@ -506,6 +523,8 @@ function afterOp() {
     block(["(MSG, SETUP CHANGE - NEXT: " + next + ")"]);
   }
   block([ask === "stop" ? "M0" : "M1"]);
+  // The operator may remove the tool at either stop, even an optional one.
+  loadedTool = null;
 }
 
 function onSection() { seatKnown = false; startPreamble(); }
@@ -1032,6 +1051,7 @@ function onProbeResult() {
   } else {
     block(["(MSG, CHECK PROBE RESULT #" + dev + "..)"]);
     block(["M0"]);
+    loadedTool = null;       // a probe check gives the operator access to the tool
   }
 }
 
