@@ -45,6 +45,8 @@ Simulate does not remove stock for wire work: the wire checks judge it.
 
 ## Wire Contour
 
+{{ icon(name="op-wire-contour") }} *Operation icon in the toolbar and browser.*
+
 ![Top view of wire travel from a start hole around a die profile.](../../../operation-paths.svg#WireContour)
 
 **For:** cutting one profile through the workpiece with a vertical or tapered
@@ -236,6 +238,8 @@ atom) judges the burn".
 
 ## Sinker Burn
 
+{{ icon(name="op-sinker-burn") }} *Operation icon in the toolbar and browser.*
+
 ![Side view of an electrode plunging into a cavity and retracting.](../../../operation-paths.svg#SinkerBurn)
 
 **For:** burning a cavity the shape of the electrode's face, straight
@@ -300,6 +304,8 @@ remaining electrode length. Compensation still obeys the floor and
 electrode-length checks.
 
 ## Sinker Side Burn
+
+{{ icon(name="op-sinker-side-burn") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of an electrode plunging, moving toward one wall and returning.](../../../operation-paths.svg#SinkerSideBurn)
 

@@ -68,6 +68,8 @@ cannot, so post multi-axis work with a machine that states its rotaries.
 
 ## 5-Axis Contour
 
+{{ icon(name="op-contour5d") }} *Operation icon in the toolbar and browser.*
+
 ![View of waterline passes with a leaning tool axis.](../../../operation-paths.svg#Contour5D)
 
 **For:** finishing steep walls with waterline rings, with the tool leaning
@@ -86,6 +88,8 @@ shank would rub a deep wall at a vertical pose.
 | Feeds | Feed / Plunge feed / Climb milling | 1200 / 300 / on |
 
 ## 5-Axis Parallel
+
+{{ icon(name="op-parallel5d") }} *Operation icon in the toolbar and browser.*
 
 ![View of parallel surface passes with a leaning tool axis.](../../../operation-paths.svg#Parallel5D)
 
@@ -108,6 +112,8 @@ terrain's cosine.
 
 ## 5-Axis Flow
 
+{{ icon(name="op-flow5d") }} *Operation icon in the toolbar and browser.*
+
 ![View of curved surface passes following the surface direction.](../../../operation-paths.svg#Flow5D)
 
 **For:** the 5-Axis Parallel's lines, but following the surface's own
@@ -117,6 +123,8 @@ is cut in straight passes. The settings and defaults are 5-Axis
 Parallel's; the direction is read from the model, not set.
 
 ## Multi-Axis Contour
+
+{{ icon(name="op-multiaxis-contour") }} *Operation icon in the toolbar and browser.*
 
 ![View of a leaning tool following a picked spatial chain.](../../../operation-paths.svg#MultiAxisContour)
 
@@ -142,6 +150,8 @@ a ..."; "picked chain ... stands at z ..., outside the window [..., ...]
 model to ride".
 
 ## Swarf
+
+{{ icon(name="op-swarf") }} *Operation icon in the toolbar and browser.*
 
 ![View of passes along a ruled flank with a leaning tool.](../../../operation-paths.svg#Swarf)
 
@@ -170,6 +180,8 @@ refine it or finish with 5-Axis Parallel".
 
 ## Advanced Swarf
 
+{{ icon(name="op-advanced-swarf") }} *Operation icon in the toolbar and browser.*
+
 ![View of successive coarse and fine passes along a ruled flank.](../../../operation-paths.svg#AdvancedSwarf)
 
 **For:** Swarf run coarse to fine. Each rough pass relaxes the tolerance
@@ -181,6 +193,8 @@ Settings as Swarf, plus **Pass count** on the Passes tab: 2 on a new
 operation, 1 to 4 (the panel clamps it). Refusals as Swarf.
 
 ## Rotary Contour
+
+{{ icon(name="op-rotary-contour") }} *Operation icon in the toolbar and browser.*
 
 ![View of ring passes around the fitted rotation axis.](../../../operation-paths.svg#RotaryContour)
 
@@ -206,6 +220,8 @@ along it: Rotary Parallel".
 
 ## Rotary Parallel
 
+{{ icon(name="op-rotary-parallel") }} *Operation icon in the toolbar and browser.*
+
 ![View of passes along a bar at successive rotary positions.](../../../operation-paths.svg#RotaryParallel)
 
 **For:** finishing a turned bar with passes along its fitted axis, spaced
@@ -221,6 +237,8 @@ standing bar are its rings: Rotary Contour"; "Rotary Parallel reads its
 work's ... mm radius - raise it".
 
 ## Rotary Offset
+
+{{ icon(name="op-rotary-offset") }} *Operation icon in the toolbar and browser.*
 
 ![View of roughing passes wrapping around a turned workpiece.](../../../operation-paths.svg#RotaryOffset)
 
@@ -246,6 +264,8 @@ wrap's seam ..."; "the wrapped work has no radial extent to rough"; "the
 height window leaves no station of the work to rough".
 
 ## Multi-Axis Rough
+
+{{ icon(name="op-multiaxis-rough") }} *Operation icon in the toolbar and browser.*
 
 ![View of roughing levels with tool axes that lean near walls.](../../../operation-paths.svg#MultiAxisRough)
 

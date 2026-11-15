@@ -39,6 +39,8 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## Face
 
+{{ icon(name="op-face") }} *Operation icon in the toolbar and browser.*
+
 ![Top view of parallel facing passes across the stock top.](../../../operation-paths.svg#Face)
 
 **For:** skimming the top of the stock flat, usually the first operation.
@@ -60,6 +62,8 @@ bound it to a smaller area.
 first cut level".
 
 ## 2D Contour
+
+{{ icon(name="op-contour") }} *Operation icon in the toolbar and browser.*
 
 ![Top view of one offset profile followed around a wall.](../../../operation-paths.svg#Contour)
 
@@ -97,6 +101,8 @@ narrower than the tool's ... diameter"; "a Contour's open boundary must be
 an open chain".
 
 ## 2D Pocket
+
+{{ icon(name="op-pocket") }} *Operation icon in the toolbar and browser.*
 
 ![Top view of passes clearing the inside of a pocket.](../../../operation-paths.svg#Pocket)
 
@@ -138,6 +144,8 @@ already supply the arc motion.
 
 ## 2D Adaptive
 
+{{ icon(name="op-adaptive2d") }} *Operation icon in the toolbar and browser.*
+
 ![Top view of looping pocket passes with small radial engagement.](../../../operation-paths.svg#Adaptive2D)
 
 **For:** roughing a pocket with a constant side load on the tool, so it can
@@ -158,6 +166,8 @@ spacing set by the load.
 
 ## 2D Offset
 
+{{ icon(name="op-offset2d") }} *Operation icon in the toolbar and browser.*
+
 ![Top view of concentric offset passes inside a pocket.](../../../operation-paths.svg#Offset2D)
 
 **For:** roughing a pocket in concentric rings from the boundary inward at a
@@ -168,6 +178,8 @@ wanted rather than a constant load.
 0, Entry Helix radius 1. **Common refusals:** as Pocket.
 
 ## Slot
+
+{{ icon(name="op-slot") }} *Operation icon in the toolbar and browser.*
 
 ![Top view of straight passes between the slot endpoints.](../../../operation-paths.svg#Slot)
 
@@ -193,6 +205,8 @@ Extensions still pass through the part checks. An extension into kept
 material blocks posting.
 
 ## Trochoidal slot
+
+{{ icon(name="op-trochoidal-slot") }} *Operation icon in the toolbar and browser.*
 
 ![Top view of overlapping loops progressing along a slot.](../../../operation-paths.svg#TrochoidalSlot)
 
@@ -221,6 +235,8 @@ use the Retract return to hop higher".
 
 ## Trace
 
+{{ icon(name="op-trace") }} *Operation icon in the toolbar and browser.*
+
 ![Top view of a centreline path following a picked chain.](../../../operation-paths.svg#Trace)
 
 **For:** running the tool's centre exactly along picked edges at a depth:
@@ -233,6 +249,8 @@ region" when nothing usable is picked.
 
 ## Engrave
 
+{{ icon(name="op-engrave") }} *Operation icon in the toolbar and browser.*
+
 ![Top view of an engraving path following the marking centreline.](../../../operation-paths.svg#Engrave)
 
 **For:** the same centreline ride as Trace, named for engraving text and
@@ -242,6 +260,8 @@ it is a functional groove; the path is the same.
 **Picks and settings:** as Trace.
 
 ## 2D Chamfer
+
+{{ icon(name="op-chamfer2d") }} *Operation icon in the toolbar and browser.*
 
 ![Section view of the chamfer tool cone lying along the chamfer face.](../../../operation-paths.svg#Chamfer2D)
 
@@ -269,6 +289,8 @@ this face stands at".
 
 ## Circular
 
+{{ icon(name="op-circular") }} *Operation icon in the toolbar and browser.*
+
 ![Top view of concentric passes clearing a circular pocket.](../../../operation-paths.svg#Circular)
 
 **For:** a round pocket of a given centre and radius, cut in rings, with a
@@ -288,6 +310,8 @@ when the circle is a dimension, not a model face.
 within the cutter radius - the last ring could leave an uncut core".
 
 ## Thread
+
+{{ icon(name="op-thread") }} *Operation icon in the toolbar and browser.*
 
 ![View of the helical tool travel around an internal thread.](../../../operation-paths.svg#Thread)
 
@@ -309,6 +333,8 @@ needs a positive pitch to time its helix against"; "infeed must sit between
 0 and the ... mm thread depth this pitch stands at".
 
 ## Drill
+
+{{ icon(name="op-drill") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of an axial drilling stroke and retract.](../../../operation-paths.svg#Drill)
 
@@ -337,6 +363,8 @@ mouth, short of the ... mm asked - ... match the depth and size to the
 model"; "tap leaves no thread core".
 
 ## Bore
+
+{{ icon(name="op-bore") }} *Operation icon in the toolbar and browser.*
 
 ![View of circular interpolation inside a hole.](../../../operation-paths.svg#Bore)
 

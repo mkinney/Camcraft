@@ -16,21 +16,21 @@ machine the other side.
 
 Each setup appears in the browser with its own pages:
 
-- **Settings:** whether it is the active setup, where its stock comes from,
+- {{ icon(name="tree-setup") }} **Settings:** whether it is the active setup, where its stock comes from,
   how the part is aligned, and the WCS label the post writes.
-- **Machine:** the setup's machine. It can follow the document's machine
+- {{ icon(name="tree-machine") }} **Machine:** the setup's machine. It can follow the document's machine
   or carry its own. **Load machine (.mch)** loads a machine file.
-- **Post:** the post processor the setup writes with: a built-in post, or
+- {{ icon(name="act-post") }} **Post:** the post processor the setup writes with: a built-in post, or
   **Load post (.cps)** for a script of your own.
-- **Fixtures:** vises, clamps and other workholding, imported or placed
+- {{ icon(name="tree-fixture") }} **Fixtures:** vises, clamps and other workholding, imported or placed
   from the fixture library. See [Workholding and fixtures](@/guide/set-up/workholding.md).
-- **Tools:** the tools this setup's operations use, in change order.
+- {{ icon(name="tools") }} **Tools:** the tools this setup's operations use, in change order.
 
-Below the pages, **Operations** lists the setup's operations.
+Below the pages, {{ icon(name="tree-op-group") }} **Operations** lists the setup's operations.
 
 ## Work offset
 
-Each setup owns one work coordinate system. G54 to G59 is only the label
+Each setup owns one {{ icon(name="tree-wcs") }} work coordinate system. G54 to G59 is only the label
 the post writes for it. Heights that are measured from the work offset read
 the setup's offset.
 

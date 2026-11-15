@@ -7,7 +7,7 @@ aliases = ["guide/tools/"]
 
 ## Create and edit a tool
 
-Open **Tools** in the Setup ribbon group. Choose **New tool…**, give the
+Open {{ icon(name="tools") }} **Tools** in the Setup ribbon group. Choose **New tool…**, give the
 tool a unique name, and select its type. Enter its cutter, flute, shank,
 holder, speed and feed values. Choose **Add tool** to save it.
 

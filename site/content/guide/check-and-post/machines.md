@@ -49,7 +49,7 @@ Tormach PathPilot, Doosan DNM and Makera Carvera. Machine files:
 table** is the separate rotary configuration. Pick the one that matches
 your installed hardware.
 
-The Machine page has a **Library** picker and **Load other**, **Edit** and
+The {{ icon(name="tree-machine") }} Machine page has a **Library** picker and **Load other**, **Edit** and
 **Clear** actions. The overview shows the file's stated limits. A blank
 means **not stated**. The editor names invalid inputs and blocks saving
 until all refusals are fixed.

@@ -1,0 +1,4 @@
+{%- set alt_text = alt | default(value="") -%}
+{%- set icon_title = title | default(value=alt_text) -%}
+{%- set px = size | default(value=18) -%}
+<img class="ui-icon" src="{{ get_url(path='icons/' ~ name ~ '.png') }}" width="{{ px }}" height="{{ px }}" alt="{{ alt_text }}"{% if icon_title %} title="{{ icon_title }}"{% endif %}{% if not alt_text %} aria-hidden="true"{% endif %} loading="lazy">

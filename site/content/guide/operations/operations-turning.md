@@ -74,6 +74,8 @@ the tool turning and the work held on C.
 
 ## Facing
 
+{{ icon(name="op-facing") }} *Operation icon in the toolbar and browser.*
+
 ![Side view of radial passes facing the end of a rotating bar.](../../../operation-paths.svg#Facing)
 
 **For:** facing the end of the bar square to the axis, stepping in from
@@ -98,6 +100,8 @@ stock"; "the facing ladder would run ... stations - the stepdown is far
 too fine ...".
 
 ## Profile Rough
+
+{{ icon(name="op-profile-rough") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of successive roughing passes outside a turned profile.](../../../operation-paths.svg#ProfileRough)
 
@@ -125,6 +129,8 @@ ladder would run ... radial rungs - the stepdown is far too ...".
 
 ## Profile Finish
 
+{{ icon(name="op-profile-finish") }} *Operation icon in the toolbar and browser.*
+
 ![Side view of one finishing pass along a turned profile.](../../../operation-paths.svg#ProfileFinish)
 
 **For:** one ride of the insert's nose along the finished profile.
@@ -144,6 +150,8 @@ to turn - the height window holds no length of the bar"; "the turned
 profile has nothing to ride".
 
 ## Groove Rough
+
+{{ icon(name="op-groove-rough") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of successive blade plunges across a groove.](../../../operation-paths.svg#GrooveRough)
 
@@ -172,6 +180,8 @@ than ... passes - the blade is far too narrow for the window ...".
 
 ## Groove Finish
 
+{{ icon(name="op-groove-finish") }} *Operation icon in the toolbar and browser.*
+
 ![Side view of blade plunges to the finished groove floor.](../../../operation-paths.svg#GrooveFinish)
 
 **For:** one plunge per centre to the groove's floor, with no leave.
@@ -187,6 +197,8 @@ Choose it after Groove Rough.
 "nothing to groove - the height window holds no length of the bar".
 
 ## Part
+
+{{ icon(name="op-part-off") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of one radial parting path toward the spindle axis.](../../../operation-paths.svg#Part)
 
@@ -215,6 +227,8 @@ end of the bar"; "nothing to part - the parting plane stands in the air
 past the bar's top"; "parting needs a positive stepdown".
 
 ## Threading
+
+{{ icon(name="op-threading") }} *Operation icon in the toolbar and browser.*
 
 ![View of synchronized helical threading passes on a rotating bar.](../../../operation-paths.svg#Threading)
 
@@ -248,6 +262,8 @@ the spindle ..."; "the thread would run more than ... turns ...";
 
 ## Chamfer
 
+{{ icon(name="op-chamfering") }} *Operation icon in the toolbar and browser.*
+
 ![Side view of a turning pass across a modeled chamfer.](../../../operation-paths.svg#Chamfering)
 
 **For:** riding a chamfer the model already has, at a stated angle, with
@@ -268,6 +284,8 @@ a face - facing is its own kind"; "a chamfer of ... degrees is a
 cylinder - the kind only speaks a cone ...".
 
 ## Taper
+
+{{ icon(name="op-taper-turning") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of a turning pass along a modeled taper.](../../../operation-paths.svg#TaperTurning)
 
@@ -290,6 +308,8 @@ taper's ends stand on the axis or ..."; "a taper that stands on the axis
 at both ends is a line, not a part ...".
 
 ## Multi-Pass
+
+{{ icon(name="op-multipass-turning") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of roughing and finishing passes along a turned profile.](../../../operation-paths.svg#MultiPassTurning)
 
@@ -314,6 +334,8 @@ ladders at 64"; the stepdown and stock-to-leave refusals of Profile
 Rough.
 
 ## Form
+
+{{ icon(name="op-form-turning") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of a form tool plunging into a curved groove.](../../../operation-paths.svg#FormTurning)
 
@@ -340,6 +362,8 @@ station ... stands on the axis or through it - that is a hole, and holes
 are boring work".
 
 ## Bore
+
+{{ icon(name="op-boring-turning") }} *Operation icon in the toolbar and browser.*
 
 ![Side view of a boring bar following an existing hole wall.](../../../operation-paths.svg#BoringTurning)
 

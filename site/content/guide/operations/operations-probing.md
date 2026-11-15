@@ -16,6 +16,8 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## Probe
 
+{{ icon(name="op-probe") }} *Operation icon in the toolbar and browser.*
+
 ![View of a probe approaching a surface, measuring and backing off.](../../../operation-paths.svg#Probe)
 
 **For:** measuring the part on the machine with a spindle touch probe and

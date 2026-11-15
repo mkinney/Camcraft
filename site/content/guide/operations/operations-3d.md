@@ -33,6 +33,8 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## 3D Pocket
 
+{{ icon(name="op-pocket3d") }} *Operation icon in the toolbar and browser.*
+
 ![View of roughing passes at successive levels around a 3D model.](../../../operation-paths.svg#Pocket3D)
 
 **For:** roughing a 3D part level by level, from Top Z down to Bottom Z.
@@ -79,6 +81,8 @@ only if the job permits it. This differs from a model that fills every
 level, where there is no target to clear.
 
 ## 3D Finish
+
+{{ icon(name="op-finish3d") }} *Operation icon in the toolbar and browser.*
 
 ![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
 
@@ -144,6 +148,8 @@ inside the programmed depths"; "pencil reference diameter ... does not
 exceed the op's ball".
 
 ## Deburr
+
+{{ icon(name="op-deburr") }} *Operation icon in the toolbar and browser.*
 
 ![View of a toolpath following exposed edges of a 3D model.](../../../operation-paths.svg#Deburr)
 
