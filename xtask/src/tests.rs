@@ -174,10 +174,11 @@ fn batch_skips_slow_binaries_and_release_runs_everything() {
     assert_eq!(b[b.len() - 2], "[ui] ui suites (cwd crates/ui) | test -j 6 -p camcraft-ui --no-fail-fast -- --test-threads=6");
     assert!(b[b.len() - 1].starts_with("clippy -D warnings | clippy -j 6 -p camcraft-geometry -p camcraft-cl"));
     let r: Vec<String> = plan::release(&fx.0).steps.iter().map(line).collect();
-    assert_eq!(r.len(), 8 + 1 + 1 + 2 + 1 + 1);
+    // 8 suites, ui, clippy, the heavy build + lib+bins+doc of motion, and of app with its ops binary (the only fixture binary holding an ignore), 2 snapshot lanes.
+    assert_eq!(r.len(), 8 + 1 + 1 + (1 + 3 + 4) + 2);
     assert!(r.iter().any(|s| s.starts_with("kernel suites")));
-    assert_eq!(r[12], "[ui] ui snapshot lane (debug --ignored, cwd crates/ui) | test -j 6 -p camcraft-ui --lib --no-fail-fast -- --test-threads=6 --ignored snapshot");
-    assert_eq!(r[13], "[ui] ui gpu_render snapshot lane (debug --ignored) | test -j 6 -p camcraft-ui --test gpu_render --no-fail-fast -- --test-threads=6 --ignored snapshot");
+    assert_eq!(r[18], "[ui] ui snapshot lane (debug --ignored, cwd crates/ui) | test -j 6 -p camcraft-ui --lib --no-fail-fast -- --test-threads=6 --ignored snapshot");
+    assert_eq!(r[19], "[ui] ui gpu_render snapshot lane (debug --ignored) | test -j 6 -p camcraft-ui --test gpu_render --no-fail-fast -- --test-threads=6 --ignored snapshot");
 }
 
 #[test]
@@ -189,7 +190,7 @@ fn release_without_snapshots_drops_only_the_pixel_lanes() {
     let r: Vec<String> = p.steps.iter().map(line).collect();
     assert_eq!(r, full[..full.len() - 2].to_vec());
     assert!(r.iter().all(|s| !s.contains("snapshot")), "{r:#?}");
-    assert!(r.iter().any(|s| s.starts_with("app heavy lane")));
+    assert!(r.iter().any(|s| s.starts_with("app heavy: lib")));
     assert!(p.notes.iter().any(|n| n.contains("--no-snapshots")));
     let a = |s: &str| s.split_whitespace().map(String::from).collect::<Vec<_>>();
     assert!(parse_gate(&a("release --no-snapshots --dry-run")).expect("release").no_snapshots);

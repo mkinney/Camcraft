@@ -240,10 +240,15 @@ impl Run {
     }
 }
 
-/// The step's note from its log: a compile error, the suites that failed, or a bare exit code.
+/// The step's note from its log: a compile error, the suites that failed (with the failed tests by name,
+/// #1714), or a bare exit code. A test that libtest reports as "has been running for over N seconds" is
+/// added as `slow: <name>` so a long heavy test shows up by name.
 pub fn read_log(text: &str, code: i32) -> Result<String, String> {
     let running = re(r"^\s+Running (\S+)")?;
+    let failed_test = re(r"^test (\S+) \.\.\. FAILED")?;
+    let slow_test = re(r"^test (\S+) has been running for over (\d+) seconds")?;
     let (mut cur, mut fails, mut compile) = (String::new(), Vec::new(), false);
+    let (mut tests, mut slow) = (Vec::new(), Vec::new());
     for l in text.lines() {
         if let Some(c) = running.captures(l) {
             cur = c[1].to_string();
@@ -251,15 +256,30 @@ pub fn read_log(text: &str, code: i32) -> Result<String, String> {
             fails.push(cur.clone());
         } else if l.starts_with("error: could not compile") {
             compile = true;
+        } else if let Some(c) = failed_test.captures(l) {
+            tests.push(c[1].to_string());
+        } else if let Some(c) = slow_test.captures(l) {
+            slow.push(format!("{} (>{}s)", &c[1], &c[2]));
         }
     }
-    Ok(if compile {
+    let mut note = if compile {
         "compile error".into()
     } else if !fails.is_empty() {
-        format!("failed: {}", fails.join(", "))
+        let mut n = format!("failed: {}", fails.join(", "));
+        if !tests.is_empty() {
+            n.push_str(&format!(" [tests: {}]", tests.join(", ")));
+        }
+        n
     } else if code != 0 {
         format!("exit {code}")
     } else {
         String::new()
-    })
+    };
+    if !slow.is_empty() {
+        if !note.is_empty() {
+            note.push(' ');
+        }
+        note.push_str(&format!("slow: {}", slow.join(", ")));
+    }
+    Ok(note)
 }
