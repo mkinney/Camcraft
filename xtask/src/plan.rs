@@ -228,7 +228,7 @@ pub fn release(root: &Path) -> Plan {
 pub fn release_with(root: &Path, snapshots: bool) -> Plan {
     let mut plan = Plan::default();
     plan.notes.push(
-        "release: every debug suite, ui, clippy, then the --ignored heavy lanes in release and the ui snapshot lane"
+        "release: prebuild both profiles, then up to four debug/release lanes; app, kernel, ui and clippy run alone"
             .into(),
     );
     if !snapshots {
@@ -237,10 +237,21 @@ pub fn release_with(root: &Path, snapshots: bool) -> Plan {
         );
     }
     let non_ui: Vec<&str> = ALL_CRATES.iter().copied().filter(|d| *d != "ui").collect();
+    let mut build = vec!["test", "-j", J];
+    let packages: Vec<String> = ALL_CRATES.iter().map(|d| pkg(d)).collect();
+    for p in &packages {
+        build.extend(["-p", p]);
+    }
+    build.push("--no-run");
+    plan.steps.push(Step::new("debug build (--no-run)", &build, ""));
+    let mut heavy = heavy_steps(root).into_iter();
+    if let Some(build) = heavy.next() {
+        plan.steps.push(build);
+    }
     plan.steps.extend(run_suites(root, &non_ui, false));
     plan.steps.extend(run_suites(root, &["ui"], false));
     plan.steps.push(clippy());
-    plan.steps.extend(heavy_steps(root));
+    plan.steps.extend(heavy);
     if !snapshots {
         return plan;
     }
