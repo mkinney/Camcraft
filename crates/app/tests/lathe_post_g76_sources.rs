@@ -91,8 +91,6 @@ fn every_pass_runs_to_the_posted_end_z_inside_the_root_pass() {
     let world = g76_world(0.4, flank_area());
     let (text, refused) = post(&world);
     assert!(refused.is_empty(), "{refused:?}");
-    let (_, a, _, _, k, _) = g76_words(&text);
-    let tan = (a * 0.5).to_radians().tan();
     let end_z = z_of(&text, "G76", "F");
     let (ends, record_end) = laid_ends(&world);
     let (passes, _) = laid(&world);
@@ -101,14 +99,9 @@ fn every_pass_runs_to_the_posted_end_z_inside_the_root_pass() {
     assert!((end_z - record_end).abs() < 1e-3, "G76 Z{end_z} vs the record end {record_end}");
     let last = ends.last().copied().expect("ends");
     assert!((last - end_z).abs() < 1e-3, "the root pass ends at D: {ends:?}");
-    // The control runs EVERY pass to D. The kernel lays a shallower pass
-    // short of D by (k - depth) x tan(a/2): the control's extra length is
-    // that much, at that depth, inside the groove the root pass cuts to
-    // D. No pass ends past D toward the chuck.
+    // The control runs every pass to D, so the verified laid path must too.
     for (end, (_, depth)) in ends.iter().zip(&passes) {
-        let short = (k - depth) * tan;
-        assert!((end - (end_z + short)).abs() < 1e-3, "pass at {depth}: ends {end}, D {end_z}, short {short}");
-        assert!(*end >= end_z - 1e-3, "a pass ends past D: {ends:?}");
+        assert!((end - end_z).abs() < 1e-3, "pass at {depth}: ends {end}, D {end_z}");
     }
 }
 
