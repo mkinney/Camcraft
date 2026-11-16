@@ -10,6 +10,7 @@ use crate::machining2d::pocket::{PocketParams, PocketStrategy};
 
 use super::super::raster::Raster;
 use super::canon::Canon;
+use super::entry::Entries;
 use super::stock::Guards;
 use super::{RestStock, StockFloor, guarded};
 
@@ -198,4 +199,35 @@ fn the_phase_radii_fall_gently_and_end_sharp() {
     }
     assert!(open.iter().all(|&rho| rho > r / 8.0));
     assert_eq!(super::peel::radii(r, w, 0.1), vec![0.0], "a center area too small to open is cut sharp");
+}
+
+/// The raster half of the entry proof stands on its own (issue 2113):
+/// a raster holding material the polygon bound does not (a sliver the
+/// polygon offset lost, say) refuses a plunge whose footprint reaches it,
+/// though the polygon half alone passes it. Goes red when the raster
+/// half is dropped from `Entries::proved`, or its footprint is 0.
+#[test]
+fn the_raster_half_of_the_entry_proof_refuses_on_its_own() {
+    let (region, _) = pocket();
+    let r = D * 0.5;
+    let Ok(center) = region.offset(-r) else { panic!("fixture center") };
+    let Ok(reach) = center.offset(r) else { panic!("fixture reach") };
+    let Ok(mut ras) = Raster::from_region(&reach, D / 120.0, r) else { panic!("fixture grid") };
+    let grow = ras.conservative_growth();
+    // The raster's pillar: 1 mm round (20, 15). The polygon bound: none.
+    let Ok(pillar) = disc(Point2::new(20.0, 15.0), 1.0).offset(grow) else { panic!("fixture pillar") };
+    ras.keep(&pillar);
+    let margin = super::peel::ENTRY_MARGIN.max(4.0 * ras.h);
+    let Ok(entries) = Entries::new(&center, &Region::empty(), ras, (r, grow, margin, r / 8.0), true) else {
+        panic!("fixture entries")
+    };
+    // The cutter's rim at 1.8 mm from the pillar's edge would stand
+    // 0.2 mm inside it: refused. (Off any cell center, so a footprint of
+    // 0 holds no cell.)
+    let over = Point2::new(22.8 + 1e-3, 15.0 + 1e-3);
+    assert!(!entries.proved(over), "a plunge onto the raster's material was proved clear");
+    // Clear of it by more than the margin: proved.
+    let clear = Point2::new(23.6, 15.0);
+    assert!(entries.proved(clear), "a plunge clear of the raster's material was refused");
+    assert!(entries.any());
 }

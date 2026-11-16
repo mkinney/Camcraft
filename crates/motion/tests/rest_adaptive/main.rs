@@ -19,8 +19,8 @@ use camcraft_motion::machining2d::{rest_adaptive, GenError, PocketParams, RestSt
 use camcraft_motion::quality::rest_area;
 
 use sim::{
-    assert_load_held, check, disc, filleted, poly, read, read_leaving, rect, refusal, rest_params, roughed, Sim, BOTTOM, FIRST, R,
-    TOP,
+    assert_load_held, assert_load_within, check, disc, filleted, poly, read, read_leaving, rect, refusal, rest_params, roughed, Sim, BOTTOM, FIRST,
+    LOAD_CEILING_D80, LOAD_SLACK, R, TOOL_D, TOP,
 };
 
 /// Two 30 x 30 bays joined by a neck `w` wide and 10 long, inside
@@ -237,4 +237,47 @@ fn degenerate_input_errors_and_never_panics() {
         let _ = rest_adaptive(&tiny, &p, &some(&tiny));
     }
     let _ = rest_adaptive(&region, &p, &some(&rect(100.0, 100.0, 110.0, 110.0)));
+}
+
+/// The load as the default measuring stock reads it (D/80, `quality`'s
+/// own grid): in a concave corner its rim, a cell and a half outside the
+/// cutter, takes in more wall than the planner's D/120 reading, so the
+/// same paths read higher. They are held to a ceiling of their own there
+/// (`LOAD_CEILING_D80`), so an over-engagement the coarse grid would hide
+/// behind its yardstick still fails.
+#[test]
+fn on_the_default_measuring_grid_the_load_stays_under_its_documented_ceiling() {
+    for (cr, leave, climb) in [(3.0, 0.0, true), (3.5, 0.3, false)] {
+        let region = filleted(&rect(0.0, 0.0, 60.0, 40.0), cr);
+        let mut sim = Sim::on_grid(&region, TOOL_D / 80.0);
+        let stock = roughed(&region, &mut sim, BOTTOM);
+        let p = PocketParams { climb, stock_to_leave: leave, ..rest_params() };
+        let path = rest_adaptive(&region, &p, &stock).unwrap();
+        let r = read_leaving(&path, &region, &mut sim, leave);
+        assert_load_within(&r, LOAD_CEILING_D80);
+        assert!(r.left < 0.05, "{:.3} mm2 of rest material in reach is left standing", r.left);
+    }
+}
+
+/// On a fine grid (D/240; a pocket small enough for the measuring
+/// stock's 4096 cells a side) the rim stands only a sixtieth of a
+/// millimetre past the cutter, and the corners - the worst place, cut
+/// the conventional way with stock left on the walls - read within the
+/// planner's own margin: the coarse grid's excess is the yardstick's,
+/// not the path's.
+#[test]
+fn on_a_fine_grid_the_corners_read_within_the_planning_margin() {
+    let region = filleted(&rect(0.0, 0.0, 26.0, 22.0), 3.5);
+    let mut sim = Sim::on_grid(&region, TOOL_D / 240.0);
+    let stock = roughed(&region, &mut sim, BOTTOM);
+    let p = PocketParams { climb: false, stock_to_leave: 0.3, ..rest_params() };
+    let path = rest_adaptive(&region, &p, &stock).unwrap();
+    // Only corners: every feed within a corner's reach of two walls.
+    for m in path.moves.iter().filter(|m| m.kind == MoveKind::Feed) {
+        let (dx, dy) = (m.to.x.min(26.0 - m.to.x), m.to.y.min(22.0 - m.to.y));
+        assert!(dx < 11.0 && dy < 11.0, "a feed at ({}, {}) is outside the corners", m.to.x, m.to.y);
+    }
+    let r = read_leaving(&path, &region, &mut sim, 0.3);
+    assert_load_within(&r, LOAD_SLACK);
+    assert!(r.left < 0.05, "{:.3} mm2 of rest material in reach is left standing", r.left);
 }
