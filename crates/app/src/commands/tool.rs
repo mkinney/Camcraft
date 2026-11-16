@@ -124,7 +124,7 @@ impl AddTool {
             HolderPick::Bare => {}
             HolderPick::Named(entry) => {
                 let body = super::tool_body::library_body(&cmd.tool, name, &entry, None, None)?;
-                let canonical = camcraft_tools::holder_library::find(&entry).map(|e| e.name()).unwrap_or(entry);
+                let canonical = camcraft_tools::holder_library::resolve(&entry, cmd.tool.shank_d).map(|e| e.name()).unwrap_or(entry);
                 cmd.holder = Some((canonical, body));
             }
             HolderPick::MachineDefault => {
