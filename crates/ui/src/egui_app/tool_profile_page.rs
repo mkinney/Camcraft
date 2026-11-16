@@ -81,6 +81,11 @@ fn profile_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
     state.sync_tool_profile_ui();
     let landed = state.editor_tool_body();
     ui.label(match &landed {
+        // #2016: a library holder is the entry, not a copy of it.
+        Some(b) if b.library.is_some() => format!(
+            "landed: library holder {} - an edited point makes it a drawn profile",
+            b.library.as_ref().map_or("", |r| r.entry.as_str())
+        ),
         Some(b) if b.spun.is_some() => "landed: a drawn profile".to_owned(),
         Some(b) => format!("landed: imported body {} - Apply profile replaces it", b.source),
         None => "landed: the holder cylinder from the numbers".to_owned(),

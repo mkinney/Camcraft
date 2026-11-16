@@ -173,8 +173,11 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             }
             // #368: a body is a body this build's envelope law accepts,
             // on a tool it fits - or the file refuses by name.
-            if let Some(b) = &tool.body {
-                let body = b.to_body(&dto.name).map_err(corrupt)?;
+            // #2016: a library reference names an entry the library
+            // holds, or the file refuses by name.
+            if let Some(body) =
+                super::tool_body_wire::stated_body(tool.holder.as_ref(), tool.body.as_ref(), &dto.name).map_err(corrupt)?
+            {
                 crate::tool_body::fits(&tool.to_tool(), &body)
                     .map_err(|e| corrupt(format!("tool '{}': {e}", dto.name)))?;
             }

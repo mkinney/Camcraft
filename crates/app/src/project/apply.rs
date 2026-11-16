@@ -514,6 +514,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
         // v61 -> v62 (#1453): absent tap hand defaults to right-hand.
+        // v62 (#2016): absent `holder` is the body or cylinder as stated.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
@@ -754,8 +755,9 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     number: tdto.number,
                 });
                 // #368: validate_kind already refused a body that is no body.
-                if let Some(b) = &tdto.body {
-                    let body = b.to_body(&dto.name).map_err(corrupt)?;
+                if let Some(body) =
+                    super::tool_body_wire::stated_body(tdto.holder.as_ref(), tdto.body.as_ref(), &dto.name).map_err(corrupt)?
+                {
                     crate::tool_body::set_body(world, &entity, Some(&body));
                 }
                 // #93: validate_kind already refused a cutter that disagrees.

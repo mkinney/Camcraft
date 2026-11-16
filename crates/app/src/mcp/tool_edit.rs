@@ -13,8 +13,9 @@ use crate::script::Env;
 use serde_json::{json, Map, Value};
 
 /// Keys of a tool definition `ChangeTool` does not own: the number is
-/// `SetToolNumber`'s, the body and cutter outline their own commands.
-const NOT_HERE: [&str; 3] = ["number", "body", "cutter"];
+/// `SetToolNumber`'s, the body, the library holder (#2016) and the
+/// cutter outline their own commands.
+const NOT_HERE: [&str; 4] = ["number", "body", "holder", "cutter"];
 
 pub(super) fn edit_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
     let name = req_str(a, "name")?;

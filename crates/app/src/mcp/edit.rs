@@ -171,7 +171,15 @@ pub(super) fn add_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, S
                 .ok_or_else(|| format!("no catalog tool named '{c}' - see list_tool_catalog"))?;
             (Some(c.to_owned()), t)
         }
-        (None, Some(d)) => (None, project::tool_from_json(d).map_err(|e| format!("bad tool definition: {e}"))?),
+        (None, Some(d)) => {
+            // #2016: a definition's own holder reference (a tool library
+            // file's shape) is not read here; dropping it would land the
+            // tool with another holder, so it is refused by name.
+            if d.get("holder").is_some_and(|h| !h.is_null()) {
+                return Err("bad tool definition: its \"holder\" reference is not read by add_tool - name the library holder in add_tool's own \"holder\" (set_tool_holder sets the gauge length and projection)".into());
+            }
+            (None, project::tool_from_json(d).map_err(|e| format!("bad tool definition: {e}"))?)
+        }
         _ => return Err("give exactly one of \"catalog\" or \"definition\"".into()),
     };
     let name = match opt_str(a, "name")? {

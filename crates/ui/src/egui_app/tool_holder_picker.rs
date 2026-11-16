@@ -3,8 +3,9 @@
 //! Weldon, or a standalone ER chuck), set its gauge length and projection, and Apply
 //! holder - which queues the one undoable
 //! `SetToolBody::library`. #2018: one Weldon row for each taper, its
-//! bore the library's standard bore for the tool's shank. The holder lands as a drawn profile, so the
-//! Profile table above edits it like any other. Provenance: our own
+//! bore the library's standard bore for the tool's shank. #2016: the tool keeps a reference to the
+//! entry; the Profile table above shows its outline, and an edited
+//! point makes it a drawn profile of its own. Provenance: our own
 //! pane over `app::holder_library`; no vendor material consulted.
 
 use egui::{Color32, Ui};
@@ -77,7 +78,7 @@ pub(super) fn holder_picker(ui: &mut Ui, state: &mut State, u: Unit) {
     }
     if ui
         .add_enabled(pick.is_some(), egui::Button::new("Apply holder"))
-        .on_hover_text("drop the library holder into the tool's holder (one undo step); it then edits as a Custom profile")
+        .on_hover_text("set the library holder as the tool's holder (one undo step); the tool keeps the holder by name until its profile is edited")
         .clicked()
     {
         state.queue_apply_tool_holder();

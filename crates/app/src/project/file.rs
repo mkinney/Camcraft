@@ -95,6 +95,13 @@ use super::*;
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
 /// v62 (#1453): old readers must not discard a tap's thread hand.
+/// v62 also (#2016, the same unreleased step): a tool may name its
+/// library holder (`holder` on the tool) in place of a drawn `body`.
+/// Absent is what every older file states: a `body` (a drawn copy of a
+/// library holder included) or the holder cylinder, read and judged as
+/// before, so a v61 file steps up unchanged. An old reader must refuse
+/// a v62 file rather than drop the reference and judge the smaller
+/// cylinder in its place.
 pub const PROJECT_VERSION: u32 = 62;
 
 #[derive(Debug, thiserror::Error)]
@@ -372,6 +379,13 @@ pub struct ToolDto {
     /// holder cylinder, what every older tool judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<super::tool_body_wire::ToolBodyDto>,
+    /// #2016 (v62): the library holder the tool sits in, by reference
+    /// (`tool_body_wire::HolderRefDto`). Written in place of `body`,
+    /// never beside it; the body is drawn from the named entry on
+    /// load. An entry this build's library does not hold refuses the
+    /// file by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder: Option<super::tool_body_wire::HolderRefDto>,
     /// #93 slice 2, additive (no version step): the tool's drawn
     /// cutter outline, `[z, r, arc]` per point tip-up. Absent is the
     /// outline its numbers draw - every older file. A reader that
@@ -542,6 +556,7 @@ impl ToolDto {
             center_cutting: t.center_cutting,
             number: None,
             body: None,
+            holder: None,
             cutter: None,
             orientation: t.orientation,
             part_number: t.catalog.part_number.clone(),

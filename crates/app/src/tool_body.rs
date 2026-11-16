@@ -16,6 +16,10 @@
 //! - **Refusals by name**, at the command and again at use: a body that
 //!   is empty, non-finite, degenerate, flat, off the axis, below the
 //!   tip, too large, or reaching into the flutes.
+//! - **A library holder is a reference (#2016).** A body may name the
+//!   library entry it is ([`ToolBody::library`]); its outline is then
+//!   drawn by [`build_library`] alone, here, at the command and at
+//!   every file read, so each law reads the same shape.
 //! - **One body, one frame (#369).** A milling body is placed along the
 //!   spindle axis ([`BodyFrame::Spindle`]); a lathe steel's in the
 //!   turning tool frame ([`BodyFrame::Lathe`], `crate::tool_body_lathe`).
@@ -27,6 +31,7 @@ use std::sync::Arc;
 use flecs_ecs::core::EntityViewGet; // try_get is not re-exported in prelude (0.2.2)
 use flecs_ecs::prelude::{Entity, World};
 
+use camcraft_tools::holder_library::HolderRef;
 use camcraft_tools::holder_profile::{HolderProfile, HolderStack, MAX_BODY_HEIGHT};
 use camcraft_tools::spun::SpunProfile;
 use camcraft_tools::lathe_holder::{LatheClearance, LathePlacement};
@@ -114,7 +119,7 @@ pub fn build(source: &str, axis: [f64; 3], offset: f64, placed: Vec<Triangle>) -
         facets: Arc::clone(&facets),
         csys: Vec::new(),
     }];
-    Ok(ToolBody { source: source.to_owned(), facets, frame: BodyFrame::Spindle { axis, offset, profile }, spun: None, machine_default: false, pieces })
+    Ok(ToolBody { source: source.to_owned(), facets, frame: BodyFrame::Spindle { axis, offset, profile }, spun: None, machine_default: false, library: None, pieces })
 }
 
 /// What a drawn (spun) holder body is called where a file name would be.
@@ -134,8 +139,26 @@ pub fn build_spun(spun: SpunProfile) -> ToolBody {
         frame: BodyFrame::Spindle { axis: [0.0, 0.0, 1.0], offset: 0.0, profile: spun.holder_profile() },
         spun: Some(spun),
         machine_default: false,
+        library: None,
         pieces: Vec::new(),
     }
+}
+
+/// #2016: the body of a library holder reference - the one place a
+/// reference becomes a shape. The command that sets a library holder,
+/// the project loader and the tool library reader all come through
+/// here, so the collision laws, the simulation and the preview read
+/// the same outline: the entry's own, drawn at the reference's lengths
+/// exactly as a drawn copy of it was (`build_spun`). Refused by name:
+/// an entry the library does not hold (never another holder in its
+/// place, #808), and lengths the entry cannot be drawn at.
+pub fn build_library(reference: &HolderRef) -> Result<ToolBody, String> {
+    let entry = reference.resolve().map_err(|e| format!("holder: {e}"))?;
+    let points = reference.points().map_err(|e| format!("holder: {e}"))?;
+    let spun = SpunProfile::new(points).map_err(|e| format!("holder profile: {e}"))?;
+    let mut body = build_spun(spun);
+    body.library = Some(HolderRef::to(&entry, reference.gauge_len, reference.projection));
+    Ok(body)
 }
 
 /// Can `tool` carry `body`? A lathe-held insert takes a lathe-frame

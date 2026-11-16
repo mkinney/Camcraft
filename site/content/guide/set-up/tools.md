@@ -65,8 +65,11 @@ BT40, CAT40, Tormach TTS and straight-shank holders. Select **Library
 holder**, set the gauge length and projection, and choose **Apply holder**.
 Gauge length runs from the spindle gauge line to the holder nose.
 Projection runs from the tool tip to the holder nose. The picker checks
-that the tool shank fits the selected clamp. The applied holder becomes a
-custom profile that can be edited.
+that the tool shank fits the selected clamp. The tool stores the applied
+holder by its library name, and the Properties show the holder diameter
+and length of that entry. The profile table shows its outline. If you
+edit a point and choose **Apply profile**, the holder becomes a custom
+profile.
 
 Check the dimensions against the real assembly. A library entry does not
 measure the holder installed on your machine.

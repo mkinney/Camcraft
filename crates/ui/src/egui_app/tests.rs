@@ -150,6 +150,7 @@ mod tool_body_lathe;
 mod tool_profile;
 // #793: the tool editor's holder library picker.
 mod tool_holder;
+mod tool_holder_reference;
 // #889: the Tool library page's "Import tool holders" toggle.
 mod tool_library_import;
 // #93 slice 2: the Profile tab's drawn cutter.

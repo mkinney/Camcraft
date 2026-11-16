@@ -261,10 +261,22 @@ pub(super) fn contents(ui: &mut Ui, state: &mut State, wide: bool) {
             num(ui, u, &mut state.tool_ui.shank_d);
             field(ui, "Shank length");
             num(ui, u, &mut state.tool_ui.shank_len);
-            field(ui, "Holder diameter");
-            num(ui, u, &mut state.tool_ui.holder_d);
-            field(ui, "Holder length");
-            num(ui, u, &mut state.tool_ui.holder_len);
+            if let Some((entry, d, len)) = state.editor_library_holder() {
+                // #2016: a library holder sizes itself - the cylinder
+                // every law reads is the entry's, shown, never typed.
+                let from = format!("from the library holder {entry} (Profile tab)");
+                field(ui, "Holder diameter");
+                ui.label(format!("{} {}", units::len(d, u, 3), u.suffix()));
+                ui.label(&from);
+                field(ui, "Holder length");
+                ui.label(format!("{} {}", units::len(len, u, 3), u.suffix()));
+                ui.label(from);
+            } else {
+                field(ui, "Holder diameter");
+                num(ui, u, &mut state.tool_ui.holder_d);
+                field(ui, "Holder length");
+                num(ui, u, &mut state.tool_ui.holder_len);
+            }
             field(ui, "Material group");
             ui.add(
                 TextEdit::singleline(&mut state.tool_ui.material_group)
