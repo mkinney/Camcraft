@@ -21,6 +21,7 @@ fn run(state: &mut State, kind: CommandKind) {
 fn every_kind_with_a_shipped_machine_has_a_mode() {
     let shipped: Vec<Kind> = library::builtins().iter().filter_map(|e| e.kind).collect();
     assert!(shipped.contains(&Kind::Plasma), "the Tormach 1300PL ships");
+    assert!(shipped.contains(&Kind::SinkerEdm), "the sinker EDM template ships (#1135)");
     for kind in shipped {
         assert!(
             MACHINE_MODES.iter().any(|(k, _, _)| *k == kind),
@@ -40,6 +41,16 @@ fn every_mode_mounts_a_shipped_machine_of_its_own_kind() {
             "'{caption}' must mount the built-in '{name}' of its own kind"
         );
     }
+}
+
+#[test]
+fn the_sinker_template_has_its_own_mode_row() {
+    assert!(
+        MACHINE_MODES.contains(&(Kind::SinkerEdm, "Sinker EDM", "Sinker EDM 3-axis (template)")),
+        "the sinker mode mounts the shipped template (#1135)"
+    );
+    assert_eq!(machine_modes::short_caption(Kind::SinkerEdm), "Sinker");
+    assert!(machine_modes::modes_phrase().ends_with("Wire EDM or Sinker EDM"));
 }
 
 #[test]

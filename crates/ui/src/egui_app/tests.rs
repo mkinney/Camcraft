@@ -2838,7 +2838,7 @@ fn tips_match_the_imgui_table() {
         (Cmd::Tools, "Tool library"),
         (
             Cmd::Machine,
-            "Switch the workspace: Milling, Turning, Mill-turning, Plasma cutting or Wire EDM (mounts the kind's built-in machine, undoable)",
+            "Switch the workspace: Milling, Turning, Mill-turning, Plasma cutting, Wire EDM or Sinker EDM (mounts the kind's built-in machine, undoable)",
         ),
         (Cmd::Undo, undo.as_str()),
         (Cmd::Redo, redo.as_str()),
