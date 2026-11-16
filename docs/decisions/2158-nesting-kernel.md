@@ -1,0 +1,17 @@
+## #2158 - 2D NFP and bottom-left-fill true-shape nesting kernel in camcraft-geometry
+
+**Decided.** Add `camcraft_geometry::nesting` (`crates/geometry/src/nesting/`) with no ECS, world, or new crate dependencies:
+
+- **Convex decomposition + Minkowski NFP/IFP (`decompose.rs`, `nfp.rs`).** Decompose regions on the `geo2d::SCALE` (`1e6`) `i64` grid via `Region::triangles()` + Hertel-Mehlhorn convex merging, with a horizontal-slab trapezoidation fallback when multi-hole or tangent `Region::sweep` inputs cause ear-clipping to refuse a bridge. Compute `NFP(A, B) = union(A_i + (-B_j))` via exact `i64`/`i128` convex Minkowski sums (using upper-half-plane + cross-product edge-angle ordering), and retain zero-width pinch seams (`seam_points`, `seam_segments`) that `union_all` merges across exact-fit cavities. Compute `IFP` analytically on `i64` bounds for rectangular sheets and via `BBoxIFP \ NFP(frame \ container, part)` for arbitrary closed holes.
+- **Clearance and sheet bounds (`validate.rs`, `inflate.rs`).** Support `ClearanceMode::SeparateCuts` (`Outside`: `cut_width + part_gap / 2`, `OnLine`: `cut_width / 2 + part_gap / 2`, `Inside`: `part_gap / 2`, open chains via `Region::sweep`) and `ClearanceMode::RouterSingleSlot` (enforcing `part_gap >= cut_width`, inflating profiles by `part_gap / 2`). Shrink `usable_sheet` by `edge_margin` via `Region::offset_sharp` and constrain each part's `cut_footprint` (which includes outer `cut_width` kerf) inside `usable_sheet` so kerf is neither double-counted at the sheet edge nor omitted in `RouterSingleSlot`.
+- **Deterministic BLF and parts-in-holes (`blf.rs`, `candidates.rs`, `mod.rs`).** Sort parts by decreasing outer footprint area (then `part_id`, then `instance_index`) so enclosing holed parts are placed before smaller parts that nest inside their holes. Deduplicate symmetric orientations per `(obstacle_footprint, cut_footprint)` shape key, cache local NFPs by `(ShapeKey, ShapeKey)`, prefer placing inside usable holes (`IFP(hole_usable, part_inflated)`) using outer-filled `obstacle_footprint` for hole obstacles so nested sub-holes attribute cleanly to their immediate host, and verify top candidates with `Region::intersect` (plus up to 1-micron grid nudging for diagonal rounding grazes).
+
+**Why.** Convex decomposition + Minkowski sum union avoids fragile edge-edge sliding state machines around concavities, islands, and curved `Region::sweep` polygons, while keeping exact zero-slack boundary/cavity candidates via edge intersections and internal NFP seam tracking. Sorting by outer area prevents a solid small part from beating a larger hollow frame whose net area is smaller than the small part.
+
+**Dropped.**
+
+- **Orbital sliding NFP.** Harder to keep bug-free across multi-hole cavities, pinch points, and collinear tangent edges. Replaced by convex decomposition + `Region::union_all`, easily swappable behind `compute_nfp`.
+- **Sorting by net part area.** Fails to place a hollow frame before a solid part smaller than the frame's hole.
+- **Editing `geo2d::Region::triangles()`.** Kept `geo2d.rs` untouched by placing the slab fallback locally in `nesting/decompose.rs`.
+
+**Cost to change.** `compute_nfp`, `compute_ifp`, and `find_best_placement` sit behind `pub(crate)` seams in `nesting/`; adding local-search swap optimization (#2164) or cut-order forest generation (#2159) builds directly on `NestReport` and `PlacedPart` without breaking the public API.
