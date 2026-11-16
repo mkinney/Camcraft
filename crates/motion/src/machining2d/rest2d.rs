@@ -72,7 +72,23 @@ pub struct RestParams {
 }
 
 impl RestParams {
-    fn validate(&self, tool_diameter: f64) -> Result<(), GenError> {
+    /// The previous tool against this operation's tool: every check of
+    /// [`Self::validate_alone`], and the previous tool must be larger.
+    pub fn validate(&self, tool_diameter: f64) -> Result<(), GenError> {
+        self.validate_alone()?;
+        if self.previous_tool_diameter <= tool_diameter {
+            return Err(GenError::Invalid(format!(
+                "rest machining needs a previous tool larger than this one: the previous tool is {} mm, this tool is {} mm",
+                self.previous_tool_diameter, tool_diameter
+            )));
+        }
+        Ok(())
+    }
+
+    /// The checks that need no tool (#1489: the parameter door reads them
+    /// before a tool is known): finite values, a positive previous tool,
+    /// a corner radius within its radius, nothing negative.
+    pub fn validate_alone(&self) -> Result<(), GenError> {
         let all = [
             self.previous_tool_diameter,
             self.previous_corner_radius,
@@ -82,11 +98,8 @@ impl RestParams {
         if !all.into_iter().all(f64::is_finite) {
             return Err(GenError::Invalid("rest machining parameters must be finite".into()));
         }
-        if self.previous_tool_diameter <= tool_diameter {
-            return Err(GenError::Invalid(format!(
-                "rest machining needs a previous tool larger than this one: the previous tool is {} mm, this tool is {} mm",
-                self.previous_tool_diameter, tool_diameter
-            )));
+        if self.previous_tool_diameter <= 0.0 {
+            return Err(GenError::Invalid("the previous tool diameter must be positive".into()));
         }
         if self.previous_corner_radius < 0.0 || self.previous_corner_radius > self.previous_tool_diameter * 0.5 {
             return Err(GenError::Invalid(
@@ -184,21 +197,7 @@ pub fn rest_plan(
 /// left to cut; rest material this tool cannot reach either.
 pub fn rest_pocket(region: &Region, p: &PocketParams, rest: &RestParams) -> Result<Toolpath, GenError> {
     p.validate()?;
-    let strategy = match p.strategy {
-        PocketStrategy::Auto | PocketStrategy::Waterline => PocketStrategy::Waterline,
-        PocketStrategy::OffsetRings => PocketStrategy::OffsetRings,
-        PocketStrategy::Zigzag => {
-            return Err(GenError::Invalid(
-                "rest machining is not available with the Zigzag strategy: its rows leave cusps along the walls of a rest area; choose Waterline or Offset rings".into(),
-            ));
-        }
-        PocketStrategy::Adaptive => {
-            return Err(GenError::Invalid(
-                "rest machining is not available with the Adaptive strategy yet: choose Waterline or Offset rings".into(),
-            ));
-        }
-    };
-    let p = &PocketParams { strategy, ..*p };
+    let p = &PocketParams { strategy: rest_strategy(p.strategy)?, ..*p };
     let plan = rest_plan(region, p.tool_diameter, p.stock_to_leave, rest)?;
     if plan.rest.is_empty() {
         return Err(GenError::Empty(format!(
@@ -223,4 +222,21 @@ pub fn rest_pocket(region: &Region, p: &PocketParams, rest: &RestParams) -> Resu
         notes.push("the previous tool fits nowhere in this pocket: the whole pocket is cut".into());
     }
     pocket_over(region, &plan.center, p, notes, true, &[])
+}
+
+/// The strategy a rest pass runs for the asked `strategy`: `Auto` reads as
+/// `Waterline`; `Zigzag` and `Adaptive` are refused by name (see
+/// [`rest_pocket`]). Public so the operation's parameter door (#1489)
+/// refuses with the generator's own words.
+pub fn rest_strategy(strategy: PocketStrategy) -> Result<PocketStrategy, GenError> {
+    match strategy {
+        PocketStrategy::Auto | PocketStrategy::Waterline => Ok(PocketStrategy::Waterline),
+        PocketStrategy::OffsetRings => Ok(PocketStrategy::OffsetRings),
+        PocketStrategy::Zigzag => Err(GenError::Invalid(
+            "rest machining is not available with the Zigzag strategy: its rows leave cusps along the walls of a rest area; choose Waterline or Offset rings".into(),
+        )),
+        PocketStrategy::Adaptive => Err(GenError::Invalid(
+            "rest machining is not available with the Adaptive strategy yet: choose Waterline or Offset rings".into(),
+        )),
+    }
 }

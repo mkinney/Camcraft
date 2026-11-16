@@ -31,7 +31,7 @@ fn roundtrip(params: OpParams, key: Option<&str>) -> OpParams {
 
 #[test]
 fn links_round_trip_and_the_defaults_write_no_key() {
-    let pocket2d = |links: Links| OpParams::Pocket {
+    let pocket2d = |links: Links| OpParams::Pocket { rest: None,
         blend_radius: None,
         stepover: 3.0,
         stock_to_leave: 0.0,

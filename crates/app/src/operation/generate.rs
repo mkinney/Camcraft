@@ -537,6 +537,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             optimal_load,
             blend_turns,
             blend_radius,
+            rest,
             ..
         } => {
             let region = region_for_job(
@@ -553,9 +554,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             } else {
                 (Vec::new(), Vec::new())
             };
-            let mut path = machining2d::pocket_entered(
-                &region,
-                &PocketParams {
+            let pp = PocketParams {
                     links: lk,
                     tool_diameter: d,
                     stepover: *stepover,
@@ -574,9 +573,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     optimal_load: *optimal_load,
                     blend_turns: *blend_turns,
                     blend_radius: *blend_radius,
-                },
-                &holes,
-            )?;
+            };
+            // #1489: rest machining cuts only what the entered previous
+            // tool left (its note says it trusts that tool); the door
+            // refused pre-drilled entry beside it, and the generator
+            // refuses the rest by name, never cuts the plain pocket.
+            let mut path = match rest {
+                Some(r) => machining2d::rest_pocket(&region, &pp, r)?,
+                None => machining2d::pocket_entered(&region, &pp, &holes)?,
+            };
             super::predrilled_entry::say(&mut path, hole_notes);
             (region, path)
         }

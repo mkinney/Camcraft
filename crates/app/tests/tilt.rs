@@ -99,7 +99,7 @@ fn rotated_by_90(m: Mesh) -> Mesh {
 /// uncut collar the shank law (rightly) reports as a collision, and a
 /// test that generates a warning per level tests nothing.
 fn pocket(tilt: Option<Tilt>, top_z: f64) -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt,
@@ -130,7 +130,7 @@ fn pocket(tilt: Option<Tilt>, top_z: f64) -> OpParams {
 /// recorded in RECOMMENDED.md). A fixture meant to be a rigid parked copy
 /// must therefore choose heights by the door, not by hand.
 fn pocket_parked() -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: Some(tilt90_parked()),

@@ -179,7 +179,7 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
 
     let pocket = recognize::pockets_of(&world, "router-part").expect("pockets").into_iter().next().expect("pocket");
     let pocket_src = SrcRef::Selection(vec![GeoSel { entity: "router-part".into(), feature: FeatureSel::Face(pocket.floor) }]);
-    let pocket_params = OpParams::Pocket {
+    let pocket_params = OpParams::Pocket { rest: None,
         stepover: 3.0, stock_to_leave: 0.0, clearance_z: top_clr, retract_z: Some(top_ret),
         top_z: Height::of(HeightReference::TopOfModel, 0.0), bottom_z: Height::of(HeightReference::TopOfModel, -4.0),
         stepdown: 2.0, feed: 1800.0, plunge_feed: 400.0, climb: true, strategy: PocketStrategy::Waterline,

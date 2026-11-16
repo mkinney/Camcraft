@@ -168,6 +168,10 @@ pub enum ParamsDto {
         /// earlier file - no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend_radius: Option<f64>,
+        /// #1489 rest machining: absent is off on every earlier file -
+        /// no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rest: Option<RestDto>,
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,

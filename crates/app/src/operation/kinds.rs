@@ -748,6 +748,7 @@ fn seed_contour(c: &Carried) -> OpParams {
 fn seed_pocket(c: &Carried) -> OpParams {
     OpParams::Pocket {
         blend_radius: None,
+        rest: None,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,

@@ -37,7 +37,7 @@ fn setup() -> State {
         &state.world,
         ImportModel::from_mesh("part", cube(Point3::new(-10.0, -10.0, 0.0), Point3::new(10.0, 10.0, 5.0))),
     );
-    let pocket = OpParams::Pocket {
+    let pocket = OpParams::Pocket { rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,

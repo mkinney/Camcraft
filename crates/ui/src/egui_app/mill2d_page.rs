@@ -238,6 +238,9 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             helix_radius,
             optimal_load,
             blend_turns, blend_radius,
+            // #1489: the rest group is set through MCP and the project
+            // file for now; its page group is a follow-up.
+            rest: _,
             tilt,
         } => {
             if tab == SEC_LEADS {

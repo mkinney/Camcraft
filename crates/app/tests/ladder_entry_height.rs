@@ -116,7 +116,7 @@ fn floor_pick(world: &World) -> SrcRef {
 }
 
 fn pocket() -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 3.0,

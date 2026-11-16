@@ -113,6 +113,7 @@ impl ParamsDto {
                 optimal_load,
                 blend_turns,
                 blend_radius,
+                rest,
                 tilt,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
@@ -146,6 +147,7 @@ impl ParamsDto {
                 optimal_load: Some(*optimal_load),
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 tilt: (*tilt).map(Into::into),
             },
             // The twins drop the strategy tag - the variant itself
@@ -1347,6 +1349,7 @@ impl ParamsDto {
                 optimal_load,
                 blend_turns,
                 blend_radius,
+                rest,
                 tilt,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1379,6 +1382,7 @@ impl ParamsDto {
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Adaptive2D {

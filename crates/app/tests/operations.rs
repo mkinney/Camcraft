@@ -1985,7 +1985,7 @@ fn pocket_refuses_an_open_run() {
     let op = Operation {
         tool: "EM-0600-4FL".into(),
         src: sel("part", open),
-        params: OpParams::Pocket {
+        params: OpParams::Pocket { rest: None,
             blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tilt: None,

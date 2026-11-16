@@ -191,6 +191,10 @@ pub use carried_stock::{CARRIED_OUTSIDE_DECLARED, CARRIED_OUTSIDE_NOTED, carried
 pub(crate) use drill_prior::reads_prior;
 mod plunge_solid;
 mod predrilled_entry;
+pub mod rest_op;
+pub use rest_op::REST_PREDRILLED;
+#[cfg(test)]
+mod rest_op_tests;
 #[cfg(test)]
 mod predrilled_entry_tests;
 #[cfg(test)]

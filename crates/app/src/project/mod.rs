@@ -143,6 +143,8 @@ mod sinker_dto;
 pub use sinker_dto::*;
 mod trochoid_dto;
 pub use trochoid_dto::*;
+mod rest_dto;
+pub use rest_dto::*;
 mod approach;
 pub use approach::*;
 mod links;

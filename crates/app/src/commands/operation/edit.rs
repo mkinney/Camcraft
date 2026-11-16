@@ -122,6 +122,8 @@ impl EditOperationParams {
         heights_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
         // #894: a thread's pitch, infeed and holes against the mounted thread mill.
         super::gates::thread_gate(world, &params, &prev.tool)?;
+        // #1489: the rest group's previous tool against the mounted one.
+        super::gates::rest_gate(world, &params, &prev.tool)?;
         if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }

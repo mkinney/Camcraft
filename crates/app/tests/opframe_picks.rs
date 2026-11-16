@@ -141,7 +141,7 @@ fn face_params(cut: Height, clearance: f64) -> OpParams {
 }
 
 fn pocket_params(top: Height, bottom: Height, stepdown: f64) -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,

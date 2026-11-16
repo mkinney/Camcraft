@@ -220,7 +220,26 @@ pub(super) fn tool_gate(world: &World, params: &OpParams, tool: &str) -> Result<
     if let Some(msg) = operation::tool_gate::tool_refusal(world, params.kind().info(), tool) {
         return Err(CommandError::Invalid(msg));
     }
-    thread_gate(world, params, tool)
+    thread_gate(world, params, tool)?;
+    rest_gate(world, params, tool)
+}
+
+/// The rest machining door (#1489): a 2D Pocket's previous tool must be
+/// larger than the tool it mounts - refused by name when the operation
+/// is made, edited or re-tooled, in the rest generator's words. Open for
+/// every other kind, for rest machining off, and for a tool name that
+/// does not resolve (the tool door names that one).
+pub(super) fn rest_gate(world: &World, params: &OpParams, tool: &str) -> Result<(), CommandError> {
+    if operation::rest_op::rest_of(params).is_none() {
+        return Ok(());
+    }
+    match model::find_by_name(world, tool).and_then(|e| model::tool_of(world, &e)) {
+        Some(def) => match operation::rest_op::rest_tool_refusal(params, def.diameter) {
+            Some(msg) => Err(CommandError::Invalid(msg)),
+            None => Ok(()),
+        },
+        None => Ok(()),
+    }
 }
 
 /// The thread door (#894): a thread mill against the thread the

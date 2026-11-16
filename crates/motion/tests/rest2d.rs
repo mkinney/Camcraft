@@ -260,6 +260,7 @@ fn bad_rest_parameters_are_refused_by_name() {
         (RestParams { allowance: -0.1, ..prev() }, "rest allowance"),
         (RestParams { allowance: f64::NAN, ..prev() }, "must be finite"),
         (RestParams { previous_tool_diameter: f64::INFINITY, ..prev() }, "must be finite"),
+        (RestParams { previous_tool_diameter: 0.0, ..prev() }, "previous tool diameter must be positive"),
     ];
     for (rest, word) in cases {
         let msg = invalid(rest_pocket(&region, &p, &rest));

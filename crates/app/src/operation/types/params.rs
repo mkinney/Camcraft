@@ -4,7 +4,7 @@ use crate::drilling::{CycleChoice, Hole};
 use crate::finishing3d;
 use crate::geo2d::Point2;
 use crate::links::Links;
-use crate::machining2d::{FaceHoles, Lead, PocketStrategy, Side};
+use crate::machining2d::{FaceHoles, Lead, PocketStrategy, RestParams, Side};
 use crate::machining3d::Entry3D;
 
 use super::height::Height;
@@ -174,6 +174,10 @@ pub enum OpParams {
         /// `blend_turns`; `None` is the tool radius every earlier file
         /// blends at.
         blend_radius: Option<f64>,
+        /// Rest machining (#1489): cut only what the larger previous tool
+        /// described here could not reach (`machining2d::rest_pocket`).
+        /// `None` is off - every earlier file, and the plain pocket.
+        rest: Option<RestParams>,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },

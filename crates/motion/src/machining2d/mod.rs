@@ -125,7 +125,7 @@ pub use fillet_tally::{corner_arc_radius, fillet_floor, FilletTally};
 pub(crate) use levels::cut_levels;
 pub use pocket::{pocket, pocket_entered, PocketParams, PocketStrategy};
 pub use predrilled::PreHole;
-pub use rest2d::{rest_plan, rest_pocket, RestParams, RestPlan, REST_FILM, REST_MARGIN, REST_REACH};
+pub use rest2d::{rest_plan, rest_pocket, rest_strategy, RestParams, RestPlan, REST_FILM, REST_MARGIN, REST_REACH};
 pub use ring::{on_boundary, ring_is_circular};
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use slot_ends::extended_ends as slot_extended_ends;
