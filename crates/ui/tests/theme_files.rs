@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use camcraft_ui::egui_app::contrast;
-use camcraft_ui::egui_app::theme::Tokens;
+use camcraft_ui::egui_app::theme::{Tokens, clamp};
 use camcraft_ui::egui_app::theme_files as tf;
 use egui::Color32;
 
@@ -359,4 +359,30 @@ fn the_cache_holds_one_parse_per_unchanged_file() {
     let miss = cache.get(&gone);
     assert!(miss.is_err(), "a vanished file refuses by name");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn dropdown_tokens_parse_and_clamp() {
+    let custom = tf::parse_text(
+        r#"{"format":"camcraft-theme/1","descriptor":{"name":"Drops"},"base":"dark",
+            "geometry":{"menu_width":260,"recent_width":360,"menu_gap":10,"menu_pad_x":16}}"#,
+        "drops",
+    )
+    .expect("dropdown tokens must be known geometry keys");
+    assert_eq!(custom.tokens.menu_width, 260.0);
+    assert_eq!(custom.tokens.recent_width, 360.0);
+    assert_eq!(custom.tokens.menu_gap, 10.0);
+    assert_eq!(custom.tokens.menu_pad_x, 16.0);
+
+    let clamped = tf::parse_text(
+        r#"{"format":"camcraft-theme/1","descriptor":{"name":"HostileDrops"},"base":"light",
+            "geometry":{"menu_width":5,"recent_width":5000,"menu_gap":-9,"menu_pad_x":999}}"#,
+        "hostile_drops",
+    )
+    .expect("out-of-range dropdown geometry clamps rather than failing");
+    assert_eq!(clamped.tokens.ink, Tokens::LIGHT.ink);
+    assert_eq!(clamped.tokens.menu_width, clamp::MENU_W.0);
+    assert_eq!(clamped.tokens.recent_width, clamp::RECENT_W.1);
+    assert_eq!(clamped.tokens.menu_gap, clamp::MENU_GAP.0);
+    assert_eq!(clamped.tokens.menu_pad_x, clamp::MENU_PAD_X.1);
 }

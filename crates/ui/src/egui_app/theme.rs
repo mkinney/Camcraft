@@ -20,7 +20,9 @@ use egui::{Color32, CornerRadius, Margin, Stroke, Style, Visuals, vec2};
 
 use super::contrast;
 
+mod dropdown;
 mod tables;
+pub use dropdown::DropGeom;
 
 /// One theme's whole truth: colours, then geometry.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -89,6 +91,11 @@ pub struct Tokens {
     pub ribbon_caption_gap: f32,
     pub ribbon_caption_row_h: f32,
     pub ribbon_bottom_gap: f32,
+    /// Dropdown menu width, recent list width, trigger gap and row horizontal padding (#2065).
+    pub menu_width: f32,
+    pub recent_width: f32,
+    pub menu_gap: f32,
+    pub menu_pad_x: f32,
 }
 
 /// The painted path's clamps: geometry a theme file supplies can make
@@ -114,6 +121,14 @@ pub mod clamp {
     pub const RIBBON_ROW: (f32, f32) = (12.0, 48.0);
     /// Ribbon gaps between rows (px).
     pub const RIBBON_GAP: (f32, f32) = (0.0, 24.0);
+    /// Dropdown menu default width (px).
+    pub const MENU_W: (f32, f32) = (100.0, 480.0);
+    /// Recent-files dropdown width (px).
+    pub const RECENT_W: (f32, f32) = (120.0, 640.0);
+    /// Gap between a trigger button and its dropdown (px).
+    pub const MENU_GAP: (f32, f32) = (0.0, 24.0);
+    /// Horizontal text inset inside dropdown rows (px).
+    pub const MENU_PAD_X: (f32, f32) = (0.0, 32.0);
 
     #[must_use]
     pub fn range(v: f32, lo_hi: (f32, f32)) -> f32 {
@@ -135,6 +150,12 @@ pub const fn ribbon_h(t: &Tokens) -> f32 {
 }
 
 impl Tokens {
+    /// Clamped dropdown widths, trigger gap and item horizontal inset.
+    #[must_use]
+    pub fn dropdown(&self) -> DropGeom {
+        DropGeom::from_tokens(self)
+    }
+
     /// The panel ground behind the ribbon/browser strips (painted.rs).
     #[must_use]
     pub const fn strip_fill(&self) -> Color32 {
@@ -162,6 +183,7 @@ impl Tokens {
             font_row: _, font_row_suffix: _, ribbon_tab_h: _,
             ribbon_cell_top_gap: _, ribbon_caption_gap: _,
             ribbon_caption_row_h: _, ribbon_bottom_gap: _,
+            menu_width: _, recent_width: _, menu_gap: _, menu_pad_x: _,
         } = *self;
         let mut v = Visuals::dark();
         v.panel_fill = ink;
@@ -267,6 +289,7 @@ const fn geom_legal(t: &Tokens) -> bool {
         font_label, font_caption, font_row, font_row_suffix,
         ribbon_tab_h, ribbon_cell_top_gap, ribbon_caption_gap,
         ribbon_caption_row_h, ribbon_bottom_gap,
+        menu_width, recent_width, menu_gap, menu_pad_x,
     } = *t;
     radius_widget <= clamp::RADIUS
         && radius_window <= 24
@@ -303,6 +326,10 @@ const fn geom_legal(t: &Tokens) -> bool {
         && ribbon_caption_gap <= clamp::RIBBON_GAP.1
         && ribbon_bottom_gap >= clamp::RIBBON_GAP.0
         && ribbon_bottom_gap <= clamp::RIBBON_GAP.1
+        && menu_width >= clamp::MENU_W.0 && menu_width <= clamp::MENU_W.1
+        && recent_width >= clamp::RECENT_W.0 && recent_width <= clamp::RECENT_W.1
+        && menu_gap >= clamp::MENU_GAP.0 && menu_gap <= clamp::MENU_GAP.1
+        && menu_pad_x >= clamp::MENU_PAD_X.0 && menu_pad_x <= clamp::MENU_PAD_X.1
 }
 
 const _: () = assert!(geom_legal(&Tokens::DARK));

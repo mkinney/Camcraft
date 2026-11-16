@@ -117,6 +117,7 @@ mod work_envelope;
 mod camera_target;
 mod structural;
 mod ribbon_rows;
+mod dropdown_theme;
 mod waterjet_recipe;
 mod cycle_combo;
 mod radial_step_field;

@@ -89,6 +89,10 @@ mod names {
     pub const RIBBON_CAPTION_GAP: &str = "ribbon_caption_gap";
     pub const RIBBON_CAPTION_ROW_H: &str = "ribbon_caption_row_h";
     pub const RIBBON_BOTTOM_GAP: &str = "ribbon_bottom_gap";
+    pub const MENU_WIDTH: &str = "menu_width";
+    pub const RECENT_WIDTH: &str = "recent_width";
+    pub const MENU_GAP: &str = "menu_gap";
+    pub const MENU_PAD_X: &str = "menu_pad_x";
 }
 
 /// The colour vocabulary, in table order (refusals quote it).
@@ -109,6 +113,7 @@ pub const GEOM_NAMES: &[&str] = &[
     names::FONT_CAPTION, names::FONT_ROW, names::FONT_ROW_SUFFIX,
     names::RIBBON_TAB_H, names::RIBBON_CELL_TOP_GAP, names::RIBBON_CAPTION_GAP,
     names::RIBBON_CAPTION_ROW_H, names::RIBBON_BOTTOM_GAP,
+    names::MENU_WIDTH, names::RECENT_WIDTH, names::MENU_GAP, names::MENU_PAD_X,
 ];
 
 /// One theme, read and applied: what it is called, the token table it

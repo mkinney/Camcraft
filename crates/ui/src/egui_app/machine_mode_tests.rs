@@ -79,8 +79,12 @@ fn the_door_tip_lists_every_mode() {
 
 #[test]
 fn the_menu_is_as_wide_as_its_longest_row_and_never_narrower_than_the_door_menu() {
-    assert_eq!(panes::machine_menu_width(10.0), DROP_W, "short rows keep the usual width");
-    assert_eq!(panes::machine_menu_width(500.0), 516.0, "a long row sets the width, text not cut");
+    let dark = super::theme::Tokens::DARK;
+    assert_eq!(panes::machine_menu_width(10.0, &dark), DROP_W, "short rows keep the usual width");
+    assert_eq!(panes::machine_menu_width(500.0, &dark), 516.0, "a long row sets the width, text not cut");
+    let wide = super::theme::Tokens { menu_width: 260.0, menu_pad_x: 16.0, ..dark };
+    assert_eq!(panes::machine_menu_width(10.0, &wide), 260.0, "short rows follow theme menu_width");
+    assert_eq!(panes::machine_menu_width(500.0, &wide), 532.0, "long rows add 2 * menu_pad_x");
 }
 
 #[test]

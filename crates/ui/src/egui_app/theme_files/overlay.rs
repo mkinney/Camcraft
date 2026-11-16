@@ -28,7 +28,7 @@ pub(super) fn apply_overlay(
         control_height, row_height, cell_h, cell_w, glyph_px, font_label,
         font_caption, font_row, font_row_suffix, ribbon_ink, ribbon_tab_h,
         ribbon_cell_top_gap, ribbon_caption_gap, ribbon_caption_row_h,
-        ribbon_bottom_gap,
+        ribbon_bottom_gap, menu_width, recent_width, menu_gap, menu_pad_x,
     } = base;
     let c = |name: &str, keep: Color32| colors.get(name).copied().unwrap_or(keep);
     let f = |name: &str, keep: f32, win: (f32, f32)| {
@@ -77,5 +77,9 @@ pub(super) fn apply_overlay(
         ribbon_caption_gap: f(names::RIBBON_CAPTION_GAP, ribbon_caption_gap, clamp::RIBBON_GAP),
         ribbon_caption_row_h: f(names::RIBBON_CAPTION_ROW_H, ribbon_caption_row_h, clamp::RIBBON_ROW),
         ribbon_bottom_gap: f(names::RIBBON_BOTTOM_GAP, ribbon_bottom_gap, clamp::RIBBON_GAP),
+        menu_width: f(names::MENU_WIDTH, menu_width, clamp::MENU_W),
+        recent_width: f(names::RECENT_WIDTH, recent_width, clamp::RECENT_W),
+        menu_gap: f(names::MENU_GAP, menu_gap, clamp::MENU_GAP),
+        menu_pad_x: f(names::MENU_PAD_X, menu_pad_x, clamp::MENU_PAD_X),
     }
 }

@@ -14,7 +14,6 @@ use camcraft_app::commands::{color_vision_of, theme_of};
 use camcraft_app::schema::{ColorVision, ThemeRef};
 use egui::{Rect, Sense, Ui, Vec2};
 
-use super::panes::{DROP_GAP, DROP_W};
 use super::theme::Tokens;
 use crate::state::{CommandKind, State};
 
@@ -53,12 +52,14 @@ pub(super) fn rows_of(state: &State, button: Rect, strip: Rect, pal: &Tokens) ->
         .collect();
     rows.push(ThemeRow::VisionCaption);
     rows.extend(ColorVision::ALL.into_iter().map(ThemeRow::Vision));
-    let left = button.left().min(strip.right() - DROP_W).max(strip.left());
+    let g = pal.dropdown();
+    let w = g.fit_width(g.menu_width, strip.width());
+    let left = g.fit_left(button.left(), strip, w);
     rows.into_iter()
         .enumerate()
         .map(|(k, r)| {
-            let min = egui::Pos2::new(left, button.bottom() + DROP_GAP + k as f32 * pal.row_height);
-            (r, Rect::from_min_size(min, Vec2::new(DROP_W, pal.row_height)))
+            let min = egui::Pos2::new(left, button.bottom() + g.gap + k as f32 * pal.row_height);
+            (r, Rect::from_min_size(min, Vec2::new(w, pal.row_height)))
         })
         .collect()
 }
@@ -78,7 +79,9 @@ pub(super) fn show(
         state.ribbon_theme_open = false;
         return;
     };
-    let panel = Rect::from_min_size(top, Vec2::new(DROP_W, rows.len() as f32 * pal.row_height));
+    let g = pal.dropdown();
+    let w = rows.first().map_or(g.menu_width, |(_, r)| r.width());
+    let panel = Rect::from_min_size(top, Vec2::new(w, rows.len() as f32 * pal.row_height));
     let theme = theme_of(&state.world);
     let vision = color_vision_of(&state.world);
     let mut chose: Option<Option<CommandKind>> = None;
@@ -110,7 +113,7 @@ pub(super) fn show(
                 }
                 let text = if current { format!("{label}  (current)") } else { label };
                 p.text(
-                    r.left_center() + Vec2::new(8.0, 0.0),
+                    r.left_center() + Vec2::new(g.pad_x, 0.0),
                     egui::Align2::LEFT_CENTER,
                     text,
                     egui::FontId::proportional(pal.font_row),
@@ -138,7 +141,7 @@ pub(super) fn show(
             let outside = ui.input(|i| {
                 i.pointer.button_pressed(egui::PointerButton::Primary)
                     && i.pointer.interact_pos().is_none_or(|p| {
-                        !button.expand(DROP_GAP).contains(p) && !rows.iter().any(|(_, r)| r.contains(p))
+                        !button.expand(g.gap).contains(p) && !rows.iter().any(|(_, r)| r.contains(p))
                     })
             });
             if outside {
