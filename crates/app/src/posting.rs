@@ -248,9 +248,6 @@ pub const MACHINES: &[(&str, &str)] = &[
     // published nose_to_axis, so that one refuses until a setup states it).
     ("Doosan DNM 5700", include_str!("../../../assets/machines/doosan-dnm-3axis.mch")),
     ("Doosan DNM 5700 + rotary table", include_str!("../../../assets/machines/doosan-dnm.mch")),
-    // #1135: the empty sinker template (no `edm.codes`); pairs with the
-    // "Sinker EDM (ISO)" post, which refuses by name until the user fills the codes.
-    ("Sinker EDM 3-axis (template)", include_str!("../../../assets/machines/sinker-edm.mch")),
     // #1501: a Sodick wire EDM, X Y U V travels and taper from Sodick's published
     // ALC series specifications (docs/decisions/1501-sodick-alc400g.md).
     ("Sodick ALC400G", include_str!("../../../assets/machines/sodick-alc400g.mch")),
