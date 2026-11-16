@@ -62,6 +62,7 @@ const POSTS: &[(&str, &str, &str)] = &[
     ("TinyG", "tinyg", "tinyg"),
     ("Doosan DNM", "doosan-dnm", "doosan-dnm"),
     ("Makera Carvera", "carvera", "carvera"),
+    ("RichAuto DSP A11", "richauto", "richauto"),
 ];
 
 /// #1357: the Tormach goldens are runnable programs - posted for a real
@@ -103,6 +104,7 @@ const REFUSED: &[(&str, &str, &str)] = &[
     ("carvera", "tap_plate", "tapping"),
     ("grblhal", "tap_plate", "tapping"),
     ("tinyg", "tap_plate", "tapping"),
+    ("richauto", "tap_plate", "tapping"),
 ];
 
 /// The TURNING dialects (M13.5): their goldens are the lathe
@@ -360,6 +362,7 @@ fn the_synthesized_stream_locks_the_tool_and_spindle_words() {
         // #710: grblHAL has no G84, so its golden drops only the tap;
         // TinyG the same (its drill chains post as plain moves).
         let stream = match *cps_stem {
+            "richauto" => synth_stream_with("G54", false),
             "carvera" => synth_stream_with("G55", false),
             "grblhal" | "tinyg" => synth_stream_with("G55", false),
             _ => synth_stream(),
@@ -444,6 +447,15 @@ fn every_builtin_registry_entry_compiles() {
     }
 }
 
+#[test]
+fn richauto_is_a_named_builtin_post() {
+    let (_, script) = camcraft_app::posting::BUILTINS
+        .iter()
+        .find(|(name, _)| *name == "RichAuto DSP A11")
+        .expect("RichAuto DSP A11 must ship in the post picker");
+    assert_eq!(*script, read("assets/posts/richauto.cps"));
+}
+
 /// (.cps file, the file extension its manifest declares). The engine
 /// never reads `extension`, so nothing else would catch a wrong one:
 /// #52 - a TNC ISO program is a `.I` file (HEIDENHAIN "TNC 640 User's
@@ -459,6 +471,7 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("tinyg", "gcode"),
     ("doosan-dnm", "nc"),
     ("carvera", "nc"),
+    ("richauto", "nc"),
     ("fanuc-lathe", "nc"),
     ("tormach-lathe", "nc"),
     ("tormach-plasma", "nc"),
