@@ -79,6 +79,7 @@ mod feeds_page;
 mod spindle_row;
 mod approach_page;
 mod lead_page;
+mod start_exit_rows;
 pub(crate) mod op_tabs;
 mod painted;
 mod tree_badges;
