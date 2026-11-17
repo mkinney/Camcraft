@@ -80,6 +80,7 @@ pub use live::{
     LiveGate, LiveOptions,
 };
 pub use selection::{PickMode, SelectionContext};
+pub(crate) use tools::call;
 
 use crate::script::Env;
 

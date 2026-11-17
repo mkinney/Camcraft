@@ -73,7 +73,7 @@ pub fn find_sccache() -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-fn gate_cache_env() -> Vec<(&'static str, String)> {
+pub(crate) fn gate_cache_env() -> Vec<(&'static str, String)> {
     cache_env(
         find_sccache().as_deref(),
         std::env::var_os("RUSTC_WRAPPER").is_some(),

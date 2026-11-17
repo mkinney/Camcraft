@@ -98,7 +98,7 @@ pub(super) fn list() -> Vec<Value> {
 }
 
 /// Run one tool by name. An unknown name is a refusal like any other.
-pub(super) fn call(env: &mut Env, name: &str, args: &Value) -> Result<Value, String> {
+pub(crate) fn call(env: &mut Env, name: &str, args: &Value) -> Result<Value, String> {
     let Some(tool) = all().find(|t| t.name == name) else {
         let names: Vec<&str> = all().map(|t| t.name).collect();
         return Err(format!("unknown tool '{name}' - tools: {}", names.join(", ")));

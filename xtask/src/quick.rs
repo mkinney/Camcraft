@@ -168,6 +168,7 @@ pub fn plan(root: &Path, diff: &Diff, heavy: bool) -> Result<Quick, String> {
     p.mods.dedup();
     map_modules(root, &mut p, &mut plan.notes)?;
     let unmapped = map_assets(root, diff.changed, &mut p)?;
+    map_catalog(root, diff.changed, &mut p);
     describe(&p, heavy, xtask, &unmapped, &mut plan.notes);
     plan.steps = steps(p, heavy, xtask);
     Ok(Quick::Plan(plan))
@@ -262,6 +263,18 @@ fn map_assets(root: &Path, changed: &[String], p: &mut Picks) -> Result<Vec<Stri
         }
     }
     Ok(unmapped)
+}
+
+/// Changed catalog case files (`examples/catalog/...`) select `app:example_catalog` (#2393).
+fn map_catalog(root: &Path, changed: &[String], p: &mut Picks) {
+    if changed.iter().any(|f| f.starts_with("examples/catalog/"))
+        && root.join("crates/app/tests/example_catalog.rs").is_file()
+    {
+        p.whole.insert("app:example_catalog".into());
+        p.why
+            .entry("app:example_catalog".into())
+            .or_insert_with(|| "examples/catalog/ changed".into());
+    }
 }
 
 fn by_fn(set: &BTreeSet<(String, String)>) -> Vec<(String, String)> {
