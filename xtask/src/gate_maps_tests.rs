@@ -18,15 +18,55 @@ fn selected(file: &str, krate: &str) -> Vec<String> {
     let hunks = |_: &str| -> Vec<String> { Vec::new() };
     let diff = Diff { changed: &changed, untracked: &[], hunks: &hunks, before: &|_| None };
     let Ok(Quick::Plan(p)) = quick::plan(&root(), &diff, false) else { panic!("{file} did not plan") };
-    let step: Option<&Step> = p.steps.iter().find(|s| s.name == format!("{krate} suites"));
-    let Some(step) = step else { return Vec::new() };
-    let a = &step.args;
-    eprintln!("selection {file} -> {krate}: {} suite(s)", a.iter().filter(|x| *x == "--test").count());
-    a.iter().enumerate().filter(|(_, x)| *x == "--test").filter_map(|(i, _)| a.get(i + 1).cloned()).collect()
+    let steps: Vec<&Step> = p.steps.iter().filter(|s| s.name.starts_with(&format!("{krate} suites: "))).collect();
+    let got: Vec<String> = steps
+        .iter()
+        .flat_map(|s| s.args.iter().enumerate().filter(|(_, x)| *x == "--test").filter_map(|(i, _)| s.args.get(i + 1).cloned()))
+        .collect();
+    eprintln!("selection {file} -> {krate}: {} suite(s)", got.len());
+    got
 }
 
 fn count(file: &str, krate: &str) -> usize {
     selected(file, krate).len()
+}
+
+/// #2411: the DXF profile MCP suite must run when its app entry points change.
+#[test]
+fn tool_dxf_profile_mcp_is_selected_for_its_app_entry_points() {
+    for file in [
+        "crates/app/src/mcp/mod.rs",
+        "crates/app/src/tool_profile_dxf.rs",
+        "crates/app/src/commands/mod.rs",
+    ] {
+        let got = selected(file, "app");
+        assert!(got.iter().any(|b| b == "tool_dxf_profile_mcp"), "{file}: DXF profile MCP suite missing from {got:?}");
+    }
+}
+
+/// #2361: rotated WCS coverage must run when its app entry points change.
+#[test]
+fn wcs_rotation_control_is_selected_for_its_app_entry_points() {
+    let src = scan::read(&root().join("crates/app/tests/wcs_rotation_control.rs"));
+    assert_eq!(src.matches("Gate map").count(), 1, "the WCS suite must have one combined map");
+    let map = scan::gate_map(&src).expect("WCS control gate map");
+    let modules: Vec<_> = map.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == ':')).collect();
+    for must in [
+        "app::commands", "motion::drilling", "geometry::geo2d", "app::geometry",
+        "app::machine", "app::model", "app::operation", "app::posting", "app::schema",
+        "geometry::geometry::stock", "app::world", "tools::catalog", "app::stock_sim",
+    ] {
+        assert!(modules.contains(&must), "WCS control map must retain {must}: {map}");
+    }
+    for file in [
+        "crates/app/src/commands/mod.rs",
+        "crates/app/src/operation/mod.rs",
+        "crates/app/src/posting.rs",
+        "crates/app/src/stock_sim.rs",
+    ] {
+        let got = selected(file, "app");
+        assert!(got.iter().any(|b| b == "wcs_rotation_control"), "{file}: WCS suite missing from {got:?}");
+    }
 }
 
 #[test]
@@ -57,6 +97,22 @@ fn sim_verify_change_selects_the_verify_suites() {
         assert!(got.iter().any(|b| b == must), "{must} missing from {got:?}");
     }
     assert!(count("crates/sim/src/verify/mod.rs", "app") >= 20, "verify change selects too few app suites");
+}
+
+/// #2307: verification changes must select the fig8 regression suite.
+#[test]
+fn sim_verify_change_selects_the_fig8_regression_suite() {
+    let got = selected("crates/sim/src/verify/mod.rs", "app");
+    assert!(got.iter().any(|b| b == "adaptive_fig8_crossing"), "adaptive_fig8_crossing missing from {got:?}");
+}
+
+/// #2307: both posting modules must select their shipped-file regression suite.
+#[test]
+fn posting_changes_select_the_shipped_from_disk_suite() {
+    for file in ["crates/app/src/posting.rs", "crates/app/src/posting_files.rs"] {
+        let got = selected(file, "app");
+        assert!(got.iter().any(|b| b == "shipped_from_disk"), "{file}: shipped_from_disk missing from {got:?}");
+    }
 }
 
 #[test]

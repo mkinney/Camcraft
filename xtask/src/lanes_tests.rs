@@ -14,56 +14,135 @@ fn release_prebuilds_both_profiles_before_running_suites() {
     assert!(second.args.iter().any(|a| a == "--release"));
 }
 
-#[test]
-fn release_waves_mix_profiles_with_a_four_lane_bound_and_no_omissions() {
-    let mut steps = Vec::new();
-    for i in 0..7 {
-        steps.push(Step::new(format!("debug {i}"), &["test", "-p", "camcraft-motion"], ""));
-        steps.push(Step::new(format!("release {i}"), &["test", "--release", "-p", "camcraft-motion"], ""));
-    }
-    let waves = lanes::waves(&steps);
-    assert_eq!(waves[0].len(), 4, "independent suites must run concurrently");
-    assert!(waves.iter().all(|wave| !wave.is_empty() && wave.len() <= 4));
-    assert!(waves.iter().any(|wave| {
-        wave.iter().any(|&i| steps[i].args.iter().any(|a| a == "--release"))
-            && wave.iter().any(|&i| !steps[i].args.iter().any(|a| a == "--release"))
-    }), "debug and release suites must share a wave");
-    let mut seen: Vec<_> = waves.into_iter().flatten().collect();
-    seen.sort_unstable();
-    assert_eq!(seen, (0..steps.len()).collect::<Vec<_>>());
+fn none() -> std::collections::HashMap<String, u64> {
+    std::collections::HashMap::new()
 }
 
 #[test]
-fn release_builds_and_watchdog_or_window_suites_run_alone() {
+fn release_executor_finishes_heavy_steps_before_debug_despite_history() {
+    use std::{fs, process::Command};
+    let root = std::env::temp_dir().join(format!("xtask-heavy-first-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let logs = root.join("gate-logs/release-20261101-000000");
+    fs::create_dir_all(&logs).expect("timing fixture");
+    fs::write(logs.join(lanes::TIMINGS), "900\tdebug\n1\tmotion heavy: lib\n").expect("old timings");
+    for args in [vec!["init", "--quiet"], vec!["add", "."], vec!["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture"]] {
+        assert!(Command::new("git").args(args).current_dir(&root).status().expect("git fixture").success());
+    }
     let steps = vec![
-        Step::new("ordinary", &["test", "-p", "camcraft-motion"], ""),
+        Step::new("debug", &["test", "-p", "camcraft-motion", "--lib"], ""),
         Step::new("debug build", &["test", "--no-run"], ""),
-        Step::new("ui", &["test", "-p", "camcraft-ui"], ""),
-        Step::new("app", &["test", "-p", "camcraft-app"], ""),
-        Step::new("kernel", &["test", "-p", "camcraft-kernel"], ""),
+        Step::new("app heavy: lib", &["test", "--release", "-p", "camcraft-app", "--lib", "--", "--ignored"], ""),
+        Step::new("release build", &["test", "--release", "--no-run"], ""),
+        Step::new("motion heavy: lib", &["test", "--release", "-p", "camcraft-motion", "--lib", "--", "--ignored"], ""),
+        Step::new("ui", &["test", "-p", "camcraft-ui", "--lib"], "ui"),
+        Step::new("kernel heavy: step_import", &["test", "--release", "-p", "camcraft-kernel", "--test", "step_import", "--", "--ignored"], ""),
+        Step::new("clippy", &["clippy"], ""),
+        Step::new("release only", &["test", "--release", "-p", "camcraft-motion", "--lib"], ""),
+        Step::new("debug ignored", &["test", "-p", "camcraft-ui", "--lib", "--", "--ignored"], "ui"),
+    ];
+    assert!(!lanes::alone(&steps[4]), "motion heavy tests can share lanes");
+    for i in [1, 2, 3, 5, 6, 7, 9] {
+        assert!(lanes::alone(&steps[i]), "{} must run alone", steps[i].name);
+    }
+    let mut runner = crate::exec::Run::new(&root, "release", true).expect("dry runner");
+    runner.plan(&crate::plan::Plan { notes: Vec::new(), steps }).expect("dry plan");
+    let names: Vec<&str> = runner.done.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(names, [
+        "debug build", "release build", "motion heavy: lib", "app heavy: lib",
+        "kernel heavy: step_import", "debug", "release only", "ui", "clippy", "debug ignored",
+    ], "heavy targets, including isolated targets, must finish before debug despite longer debug history");
+    fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
+fn release_queue_holds_every_ordinary_suite_of_both_profiles_and_loses_none() {
+    let mut steps = Vec::new();
+    for i in 0..7 {
+        steps.push(Step::new(format!("debug {i}"), &["test", "-p", "camcraft-motion", "--test", "a"], ""));
+        steps.push(Step::new(format!("release {i}"), &["test", "--release", "-p", "camcraft-motion", "--test", "a"], ""));
+    }
+    let s = lanes::schedule(&steps, &none());
+    assert!(s.builds.is_empty() && s.alone.is_empty(), "{s:?}");
+    assert_eq!(s.queue, (0..steps.len()).collect::<Vec<_>>(), "no history keeps plan order");
+}
+
+#[test]
+fn release_builds_ui_clippy_and_isolated_targets_run_alone() {
+    let steps = vec![
+        Step::new("ordinary", &["test", "-p", "camcraft-motion", "--lib"], ""),
+        Step::new("debug build", &["test", "--no-run"], ""),
+        Step::new("ui", &["test", "-p", "camcraft-ui", "--lib"], ""),
+        Step::new("app whole crate", &["test", "-p", "camcraft-app"], ""),
+        Step::new("kernel whole crate", &["test", "-p", "camcraft-kernel"], ""),
         Step::new("clippy", &["clippy"], ""),
         Step::new("release build", &["test", "--release", "--no-run"], ""),
         Step::new("ui cwd", &["test"], "ui"),
+        Step::new("app watchdog", &["test", "-p", "camcraft-app", "--test", "import_step_guard", "--", "--test-threads=6"], ""),
+        Step::new("app lib", &["test", "--release", "-p", "camcraft-app", "--lib", "--", "--ignored"], ""),
+        Step::new("kernel watchdog", &["test", "-p", "camcraft-kernel", "--test", "step_import"], ""),
+        Step::new("app ordinary", &["test", "-p", "camcraft-app", "--test", "cmds", "--", "--test-threads=6"], ""),
+        Step::new("app doc", &["test", "-p", "camcraft-app", "--doc"], ""),
+        Step::new("kernel ordinary", &["test", "--release", "-p", "camcraft-kernel", "--test", "smb_roundtrip"], ""),
     ];
-    let waves = lanes::waves(&steps);
-    assert_eq!(&waves[..2], &[vec![1], vec![6]], "both builds precede every run");
-    for &i in &[1, 2, 3, 4, 5, 6, 7] {
-        assert!(waves.contains(&vec![i]), "{} must run alone", steps[i].name);
-    }
-    let mut seen: Vec<_> = waves.into_iter().flatten().collect();
-    seen.sort_unstable();
-    assert_eq!(seen, (0..steps.len()).collect::<Vec<_>>());
+    let s = lanes::schedule(&steps, &none());
+    assert_eq!(s.builds, vec![1, 6], "both builds come first, in plan order");
+    assert_eq!(s.alone, vec![2, 3, 4, 5, 7, 8, 9, 10]);
+    assert_eq!(s.queue, vec![0, 11, 12, 13], "ordinary app and kernel targets join the lanes");
 }
 
 #[test]
-fn selected_release_without_builds_still_keeps_watchdogs_alone() {
-    let steps = vec![
-        Step::new("ordinary", &["test", "-p", "camcraft-motion"], ""),
-        Step::new("selected app", &["test", "--release", "-p", "camcraft-app"], ""),
-        Step::new("selected ui", &["test"], "ui"),
-    ];
-    assert_eq!(lanes::waves(&steps), vec![vec![0], vec![1], vec![2]]);
-    assert!(lanes::waves(&[]).is_empty());
+fn every_isolated_entry_names_a_real_target() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("workspace");
+    for key in lanes::ISOLATED {
+        let (dir, target) = key.split_once(':').expect("crate-dir:target");
+        assert!(matches!(dir, "app" | "kernel"), "{key}: only app and kernel suites are listed");
+        if target != "lib" {
+            let file = root.join("crates").join(dir).join("tests").join(format!("{target}.rs"));
+            assert!(file.is_file(), "{key}: no {}", file.display());
+        }
+    }
+}
+
+#[test]
+fn target_keys_name_one_target_of_one_crate() {
+    let k = |args: &[&str]| lanes::target_key(&Step::new("s", args, ""));
+    assert_eq!(k(&["test", "-p", "camcraft-app", "--test", "x", "--", "--ignored"]).as_deref(), Some("app:x"));
+    assert_eq!(k(&["test", "-p", "camcraft-kernel", "--lib"]).as_deref(), Some("kernel:lib"));
+    assert_eq!(k(&["test", "-p", "camcraft-app"]), None, "a whole crate is not one target");
+    assert_eq!(k(&["test", "-p", "camcraft-app", "-p", "camcraft-cl", "--lib"]), None);
+    assert_eq!(k(&["run", "--", "--test", "x", "-p", "camcraft-app"]), None, "child args are not cargo's");
+}
+
+#[test]
+fn queue_runs_longest_first_and_unknown_steps_early() {
+    let steps: Vec<Step> = ["short", "long", "new", "mid"]
+        .iter()
+        .map(|n| Step::new(*n, &["test", "-p", "camcraft-motion", "--test", n], ""))
+        .collect();
+    let hist = lanes::parse_timings("3\tshort\n900\tlong\n40\tmid\nnot a row\nx\tbad secs\n");
+    assert_eq!(hist.len(), 3, "unreadable rows are skipped: {hist:?}");
+    assert_eq!(lanes::schedule(&steps, &hist).queue, vec![1, 2, 3, 0], "a step with no history ranks with the longest");
+    let text = lanes::format_timings([("a b", 5), ("c", 0)]);
+    assert_eq!(lanes::parse_timings(&text).get("a b"), Some(&5));
+}
+
+#[test]
+fn history_reads_the_newest_release_timings_only() {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!("xtask-history-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    assert!(lanes::history(&root).0.is_empty(), "no gate-logs: plan order");
+    for (dir, body) in [("release-20261101-000000", "1\told\n"), ("release-20261102-000000", "2\tnew\n"), ("batch-20261103-000000", "3\tbatch\n")] {
+        fs::create_dir_all(root.join("gate-logs").join(dir)).expect("log dir");
+        fs::write(root.join("gate-logs").join(dir).join(lanes::TIMINGS), body).expect("timings");
+    }
+    fs::create_dir_all(root.join("gate-logs/release-20261104-000000")).expect("a run with no timings yet");
+    let (h, from) = lanes::history(&root);
+    assert_eq!(h.get("new"), Some(&2));
+    assert!(!h.contains_key("old") && !h.contains_key("batch"), "{h:?}");
+    assert!(from.is_some_and(|f| f.to_string_lossy().contains("release-20261102")));
+    fs::remove_dir_all(root).expect("remove fixture");
 }
 
 #[test]
@@ -100,6 +179,7 @@ fn main() {
     }
     let run = |steps| {
         let mut runner = crate::exec::Run::new(&root, "release", false).expect("runner");
+        runner.budget = crate::budget::DEFAULT; // two lanes must overlap whatever CAMCRAFT_GATE_JOBS says
         runner.plan(&crate::plan::Plan { notes: Vec::new(), steps }).expect("execute fixture");
         runner.summary()
     };
@@ -109,6 +189,12 @@ fn main() {
     assert!(root.join("markers/survivor").exists(), "a failed suite must not discard other lane results");
     assert_eq!(run(vec![Step::new("bad build", &["test", "--no-run", "--invalid-build-flag"], ""), step("must not run", &["after-build-failure"])]), 1);
     assert!(!root.join("markers/after-build-failure").exists(), "a failed prebuild must stop suites");
+    // Batch runs its steps one by one: a failed whole-gate build stops the later steps too (review of #1952).
+    let mut seq = crate::exec::Run::new(&root, "batch", false).expect("runner");
+    let bad = Step::new(crate::plan::DEBUG_BUILD, &["test", "--no-run", "--invalid-build-flag"], "");
+    seq.plan(&crate::plan::Plan { notes: Vec::new(), steps: vec![bad, step("must not run", &["after-batch-build"])] }).expect("execute fixture");
+    assert_eq!(seq.summary(), 1);
+    assert!(!root.join("markers/after-batch-build").exists(), "a failed batch build must stop the later steps");
     assert_eq!(run(vec![step("checkout movement", &["move"])]), 1, "successful children still yield VOID after checkout movement");
     fs::remove_dir_all(root).expect("remove fixture");
 }

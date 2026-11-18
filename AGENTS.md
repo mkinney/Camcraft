@@ -29,6 +29,7 @@ disagree, this file is correct.
 | Cut a release | `release-cut` |
 | Work in a fork of NeoTech/Camcraft | `fork-sync` |
 | Install or change a self-hosted runner or a workflow | `runners` |
+| Start the agent team from a clean session | `start-orchestrator` |
 | Drive CamCraft through MCP | `camcraft-mcp` |
 
 A rule name in **bold** is a stable name. Skills, agents and code comments
@@ -58,9 +59,36 @@ He reviews them later. The work must not interrupt him.
   issue list is empty, start a subagent that reminds the session to claim
   the next issue. A stall is a bug.
 - **Side work rides subagents.** Subagents do all testing, documentation and
-  knowledge-graph updates. The main session plans, writes code and decides.
+  knowledge-graph updates. The coordinator plans and decides, and workers
+  write the code ("Agent roles").
   A subagent's completion notice starts the next step. Never give one
   subagent both a code change and its verification.
+
+### Agent roles
+
+Each role has one job (#2464). The model of each role is set only in its
+file in `.claude/agents/`.
+
+| Role | Agent file | Model | Does |
+|---|---|---|---|
+| Main session | - | - | Keeps the user: reports, questions, maintainer decisions (question dialog). Starts the coordinator. Orchestrates nothing |
+| Coordinator | `coordinator.md` | Fable; Opus if Fable is not available | Merges, picks issues, dispatches, resolves stuck processes, decides by reasoning. One long-running agent |
+| Worker | `issue-worker-max.md`, `-high.md`, `-medium.md` | Opus | Each code change. Comes and goes with its issue |
+| Small-fix worker | `issue-worker-low.md` | Sonnet | A quick, small fix that is easy to understand (`effort:low`) |
+| Context scout | `context-scout.md` | Haiku | Reads, searches, locates, queries the knowledge graph, writes context packs. Four run at all times |
+
+- **Scouts read, workers write.** The coordinator and the workers do not
+  explore the repository. A scout gives them a context pack with exact
+  paths and line ranges. A worker reads only those ranges and the lines
+  that it changes. The `work-issue` skill has the fallback for when no
+  scout answers.
+- **Scouts do not count as builds.** They never build, test or write to
+  GitHub. The limit on local builds applies to workers, gates and reviews.
+- **The coordinator writes no code and reads no source.** It reads `gh`
+  output and agent reports. A maintainer decision goes to the main session
+  as an `ASK:` line, and the coordinator continues with other work.
+- **Reviews and gates do not change.** The review tier, the gate-runner
+  and the graph-updater stay as they are.
 
 ## Issue Law - work is tracked as GitHub issues
 
@@ -92,8 +120,10 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   | `P9` | Someday: not picked while other work is free |
 
   - `P1`-`P3` are for defects only. "Wanted" is never a reason for them.
-  - Only `P1` and `P2` hold a release cut. A `P3` is worked before planned
-    work, but a cut does not wait for it.
+  - A priority does not hold a release cut. The maintainer names what a cut
+    includes (**The cut list**, "Commits and Releases"). An open `P1` or
+    `P2` that is not on the list goes under "Known issues". A `P3` is worked
+    before planned work.
   - Set `P4` only where the maintainer asked for the work in his own words.
     The issue quotes those words.
   - A follow-up found during work or review is `P7`, unless it is a defect.
@@ -205,7 +235,7 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   - **Safety floor.** Work that can change posted G-code, a collision or
     gouge check, stock simulation or geometry is `effort:high` or more. Each
     `P1` is `effort:high` or more.
-  - **Who works it.** The main session picks the issue and dispatches it to
+  - **Who works it.** The coordinator ("Agent roles") picks the issue and dispatches it to
     `.claude/agents/issue-worker-<effort>.md`. The worker runs the
     `work-issue` skill and never merges. The model for each effort is set
     only in those agent files. If the model is not available (a 404), run the
@@ -561,9 +591,9 @@ tests are in `crates/ui/tests/`; they start the real app through
 
   | Tier | When | Target | Runs |
   |---|---|---|---|
-  | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches; debug; no heavy lanes |
-  | batch | before a batch is committed; each push to `main` | ≤ 20 min | each debug suite that is not slow, the kernel suites, the ui suites, clippy |
-  | release | only at a cut | - | all debug suites and the `--ignored` heavy lanes in release |
+  | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches, one step for each binary; debug; no heavy lanes |
+  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build, then one step for each debug test binary that is not slow (kernel and ui included), clippy |
+  | release | only at a cut | - | one step for each debug test binary and the `--ignored` heavy lanes in release |
 - **Test the change, not everything.** The tests that pin a fix prove it.
   Run them one by one: `cargo xtask gate test <name> [--crate c] [--binary b]
   [--exact]`. Run a full suite only when the change touches what that suite
@@ -590,10 +620,25 @@ tests are in `crates/ui/tests/`; they start the real app through
   suite what a snapshot guards: AccessKit labels, roles, enabled state,
   window presence, and the text and coarse position of the painted strips.
   A UI change updates those assertions, not the PNGs.
+- **A UI refit PR keeps its tests** (#1953). A refit PR (a new look, chrome
+  or layout) changes one page or one component, and that page's tests.
+  - A behaviour test asserts labels, roles, enabled state and commands. It
+    does not assert a position, a size or a colour.
+  - Each page and window has one named layout test,
+    `crates/ui/src/egui_app/tests/page_layout.rs` (`layout_page_<page>`,
+    `layout_window_<window>`). The refit PR of that page updates it.
+  - The PR is not ready while a UI test that it touches is red, ignored or
+    deleted. The `#[test]` count of `crates/ui` does not go down.
+  - The quick gate of the PR runs the `camcraft-ui` lib tests. No refit
+    failure waits for the cut gate.
 - Add headless tests for toolpath generation (golden CLFile and G-code
   outputs in `tests/golden/`), stock simulation and post processing. Add fuzz
   tests for the geometry importers and the toolpath generators: degenerate
   input must give an error, never a crash or a hang.
+- **2D toolpath shape-mask tests** (`crates/motion/tests/common/shape_mask.rs`):
+  compare a generated `Toolpath`'s swept disc footprint against the expected
+  `Region` (overcut, leftover, progressive rim engagement, symmetry, stock
+  extension) and write an RGB diff PNG on failure (do not commit the PNG).
 - **GitHub Actions minutes are budgeted** (3000 each month; Windows counts
   2x, macOS 10x).
   - Nothing runs on a PR trigger.
@@ -679,12 +724,28 @@ subagent, and the session does not wait for it.
 **A cut goes PR review -> merge to main -> tag.** The `release-cut` skill
 has the procedure. Its rules:
 
-- A cut does not start while a `P1` or `P2` issue is open. The check is made
-  one time, at the start. A `P1` or `P2` filed later does not restart the
-  cut: it goes under "Known issues" and its fix ships in the next minor. Only
-  the maintainer stops a cut. An agent that finds a late `P1` tells the
-  maintainer in one line and continues.
-- From step 1 to the tag, nothing else merges to `main`.
+- **The cut list.** A cut does not clear all `P1` and `P2` issues. Before a
+  cut starts, the maintainer decides which open issues and PRs the cut
+  includes. That list is the cut list. The agent proposes it one time, in
+  the question dialog: each open `P1` and `P2` and each waiting `feat` PR,
+  with "in" or "out" recommended. The maintainer's answer is the list.
+- **The cut line.** When the list is set, it is closed. Nothing is added to
+  it: not a new `P1`, not a defect that a review of a listed PR finds in
+  other code, not a PR that became `merge-ready` later. Only the maintainer
+  adds an item, in his own words.
+  - An agent does not hold, delay or restart a cut for an item that is not
+    on the list. An agent does not ask to add one. It files the issue, tells
+    the maintainer in one line if it is a `P1`, and continues.
+  - Each open `P1` or `P2` that is not on the list goes under "Known
+    issues" in the release notes. Its fix ships in the next minor.
+  - A listed item that is not ready when the others are merged is the
+    maintainer's decision: wait for it, or remove it from the list. The
+    agent asks one time.
+  - Two things are always in a cut and need no list entry: a fix for a main
+    that does not build or whose gate is red, and a fix for a failure of
+    the cut's own release gate.
+- From the cut line to the tag, only the items on the cut list merge to
+  `main`. From step 1 of the cut to the tag, nothing else merges.
 - The release tier runs on the cut runner (`cut.yml`). The tagged tree is
   exactly the gated tree.
 - Cuts and tags stay with the maintainer.

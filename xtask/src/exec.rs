@@ -8,27 +8,30 @@ use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::checkout::{self, Reading};
-use crate::plan::{Plan, Step};
+use crate::plan::{self, Plan, Step};
 use crate::scan::re;
 
 pub struct Run {
     pub root: PathBuf,
     pub label: String,
     pub dry: bool,
-    log_dir: PathBuf,
+    /// The job budget of the whole run (#2057): the release queue's lanes share it, a step alone gets all of it.
+    pub budget: usize,
+    budget_note: Option<String>,
+    pub(crate) log_dir: PathBuf,
     clock: Instant,
-    done: Vec<Done>,
+    pub(crate) done: Vec<Done>,
     /// HEAD and the working tree when the gate started (#1201); every later reading is compared with it.
-    guard: Reading,
+    pub(crate) guard: Reading,
     /// The VOID line, once the checkout was seen to move; a void run has no verdict.
-    void: Option<String>,
+    pub(crate) void: Option<String>,
 }
 
-struct Done {
-    name: String,
-    ok: bool,
-    secs: u64,
-    note: String,
+pub(crate) struct Done {
+    pub(crate) name: String,
+    pub(crate) ok: bool,
+    pub(crate) secs: u64,
+    pub(crate) note: String,
 }
 
 /// The cargo that launched us (`cargo xtask` sets CARGO), else the one on PATH.
@@ -70,7 +73,7 @@ pub fn find_sccache() -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-fn gate_cache_env() -> Vec<(&'static str, String)> {
+pub(crate) fn gate_cache_env() -> Vec<(&'static str, String)> {
     cache_env(
         find_sccache().as_deref(),
         std::env::var_os("RUSTC_WRAPPER").is_some(),
@@ -135,7 +138,10 @@ impl Run {
         let log_dir = root.join("gate-logs").join(format!("{label}-{}", stamp(SystemTime::now())));
         std::fs::create_dir_all(&log_dir).map_err(|e| format!("create {}: {e}", log_dir.display()))?;
         let guard = checkout::read(root)?;
+        let (budget, budget_note) = crate::budget::from_env();
         Ok(Run {
+            budget,
+            budget_note,
             root: root.to_path_buf(),
             label: label.into(),
             dry,
@@ -151,36 +157,30 @@ impl Run {
         for n in &plan.notes {
             println!("{n}");
         }
-        if self.label == "release" {
-            for wave in crate::lanes::waves(&plan.steps) {
-                if self.check("before release wave") {
-                    break;
-                }
-                let results = std::thread::scope(|scope| {
-                    let handles: Vec<_> = wave.iter().map(|&i| {
-                        let (root, logs, dry) = (&self.root, &self.log_dir, self.dry);
-                        let step = &plan.steps[i];
-                        scope.spawn(move || Self::execute(root, logs, dry, i + 1, step))
-                    }).collect();
-                    // Join every lane even when one returns an error or panics.
-                    let joined: Vec<_> = handles.into_iter().map(|h| {
-                        h.join().map_err(|_| "gate lane thread failed".to_string()).and_then(|r| r)
-                    }).collect();
-                    joined.into_iter().collect::<Result<Vec<_>, String>>()
-                })?;
-                let build_failed = wave.iter().any(|&i| plan.steps[i].args.iter().any(|a| a == "--no-run"))
-                    && results.iter().any(|d| !d.ok);
-                self.done.extend(results);
-                if build_failed {
-                    break;
-                }
+        let lanes = self.label == "release";
+        if let Some(n) = &self.budget_note {
+            println!("{n}");
+        }
+        println!("{}", crate::budget::header(self.budget, lanes));
+        if lanes {
+            if self.budget_note.is_none() && std::env::var_os(crate::budget::ENV).is_none()
+                && let Ok(n) = std::thread::available_parallelism()
+                && n.get() > self.budget
+            {
+                println!("note: this machine has {n} cores; {}={n} lets the gate use them", crate::budget::ENV);
             }
+            self.run_release(plan)?;
         } else {
             for s in &plan.steps {
                 if self.check(&format!("before {}", s.name)) {
                     break;
                 }
                 self.step(s)?;
+                // A failed whole-gate build fails every later step with the same error: stop (as release does).
+                let failed = self.done.last().is_some_and(|d| !d.ok);
+                if failed && s.name == plan::DEBUG_BUILD {
+                    break;
+                }
             }
         }
         if self.void.is_none() {
@@ -190,17 +190,14 @@ impl Run {
     }
 
     /// Compares the checkout with the start reading. Returns true (and prints VOID) once it has moved.
-    fn check(&mut self, at: &str) -> bool {
+    pub(crate) fn check(&mut self, at: &str) -> bool {
         if self.void.is_some() {
             return true;
         }
-        let msg = match checkout::read(&self.root) {
-            Ok(now) => checkout::void_message(&self.guard, &now, at),
-            Err(e) => Some(format!(
-                "VOID: could not read the checkout ({e}) during the gate ({at}) - this run is void, not a verdict on any commit"
-            )),
-        };
-        match msg {
+        if self.dry {
+            return false; // a dry run runs nothing, so the checkout cannot void it (one git call per step)
+        }
+        match moved(&self.root, &self.guard, at) {
             Some(m) => {
                 println!("{m}");
                 self.void = Some(m);
@@ -211,17 +208,19 @@ impl Run {
     }
 
     fn step(&mut self, s: &Step) -> Result<(), String> {
-        let done = Self::execute(&self.root, &self.log_dir, self.dry, self.done.len() + 1, s)?;
+        let done = Self::execute(&self.root, &self.log_dir, self.dry, self.done.len() + 1, s, self.budget)?;
         self.done.push(done);
         Ok(())
     }
 
-    fn execute(root: &Path, log_dir: &Path, dry: bool, n: usize, s: &Step) -> Result<Done, String> {
+    /// Runs one step with its `-j` and `--test-threads` set to `jobs` (`budget::scale`).
+    pub(crate) fn execute(root: &Path, log_dir: &Path, dry: bool, n: usize, s: &Step, jobs: usize) -> Result<Done, String> {
+        let args = crate::budget::scale(&s.args, jobs);
         let log = log_dir.join(log_name(n, &s.name));
         let dir = if s.in_ui { root.join("crates").join("ui") } else { root.to_path_buf() };
         let leaf = dir.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
         println!("[{n:02}] {}", s.name);
-        println!("     (cwd {leaf}) cargo {}", s.args.join(" "));
+        println!("     (cwd {leaf}) cargo {}", args.join(" "));
         if dry {
             return Ok(Done { name: s.name.clone(), ok: true, secs: 0, note: "dry run".into() });
         }
@@ -237,14 +236,14 @@ impl Run {
         let err = file.try_clone().map_err(|e| format!("log {}: {e}", log.display()))?;
         let code = Command::new(cargo())
             .envs(cache)
-            .args(&s.args)
+            .args(&args)
             .current_dir(&dir)
             .stdin(Stdio::null())
             .stdout(file)
             .stderr(err)
             .status()
             .map(|st| st.code().unwrap_or(-1))
-            .map_err(|e| format!("cargo {}: {e}", s.args.join(" ")))?;
+            .map_err(|e| format!("cargo {}: {e}", args.join(" ")))?;
         let secs = t0.elapsed().as_secs();
         let note = read_log(&std::fs::read_to_string(&log).unwrap_or_default(), code)?;
         let ok = code == 0;
@@ -270,6 +269,17 @@ impl Run {
             return 1;
         }
         i32::from(bad > 0)
+    }
+}
+
+/// The VOID line when the checkout under `root` no longer reads as `guard` (or cannot be read); `None` while
+/// it is unchanged. Shared by the one-at-a-time loop and the release queue's lanes.
+pub(crate) fn moved(root: &Path, guard: &Reading, at: &str) -> Option<String> {
+    match checkout::read(root) {
+        Ok(now) => checkout::void_message(guard, &now, at),
+        Err(e) => Some(format!(
+            "VOID: could not read the checkout ({e}) during the gate ({at}) - this run is void, not a verdict on any commit"
+        )),
     }
 }
 

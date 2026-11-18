@@ -16,6 +16,32 @@ fn heavy() -> Vec<Step> {
 }
 
 #[test]
+fn release_plan_runs_heavy_targets_before_debug_suites() {
+    let root = root();
+    for snapshots in [false, true] {
+        let release = plan::release_with(&root, snapshots);
+        let heavy = plan::heavy_steps(&root);
+        for (actual, expected) in release.steps[1..=heavy.len()].iter().zip(&heavy) {
+            assert_eq!(actual, expected, "heavy targets must immediately follow the two builds");
+        }
+        let mut expected = vec![plan::debug_build(plan::ALL_CRATES)];
+        expected.extend(heavy);
+        expected.extend(plan::run_suites(&root, plan::ALL_CRATES, false));
+        expected.push(plan::clippy());
+        if snapshots {
+            // Existing snapshot coverage stays in the plan; the exact commands are pinned elsewhere.
+            expected.extend(release.steps.iter().filter(|s| s.name.contains("snapshot lane")).cloned());
+        }
+        let sorted = |steps: Vec<Step>| {
+            let mut steps = steps;
+            steps.sort_by(|a, b| a.name.cmp(&b.name));
+            steps
+        };
+        assert_eq!(sorted(release.steps), sorted(expected), "reordering must preserve every step and its command");
+    }
+}
+
+#[test]
 fn heavy_lanes_are_one_build_then_one_step_per_target() {
     let steps = heavy();
     assert_eq!(steps[0].name, "heavy build (release --no-run)");
@@ -27,6 +53,20 @@ fn heavy_lanes_are_one_build_then_one_step_per_target() {
     for want in ["app heavy: lib", "app heavy: doc", "motion heavy: bins", "app heavy: pocket3d_hsm", "motion heavy: finish3d"] {
         assert!(names.contains(&want), "{want} missing in {names:?}");
     }
+}
+
+#[test]
+fn lathe_field_sim_multi_pass_is_in_the_heavy_lane() {
+    let source = scan::read(&root().join("crates/app/tests/lathe_field_sim.rs"));
+    let before = source.split_once("fn multi_pass_contour_simulates_with_meridian_parity()").expect("test source").0;
+    let attributes = before.rsplit("#[test]").next().expect("test attributes");
+    assert!(attributes.contains("#[ignore = \""), "multi-pass parity must be ignored in debug");
+    assert!(attributes.contains("heavy lane"), "ignore reason must name the heavy lane");
+    let steps = heavy();
+    let step = steps.iter().find(|s| s.name == "app heavy: lathe_field_sim").expect("release heavy step");
+    assert!(step.args.contains(&"--release".to_string()));
+    assert!(step.args.contains(&"--ignored".to_string()));
+    assert!(step.args.windows(2).any(|w| w == ["--test", "lathe_field_sim"]));
 }
 
 #[test]

@@ -25,6 +25,9 @@ details. If the two disagree, AGENTS.md is correct.
 - `release.yml` runs on a cut tag and publishes the artifact.
   `aur-package.yml` is a job that `release.yml` calls. `ci.yml` and
   `nightly.yml` are removed.
+- `freebsd-backfill.yml` (#2378) is `workflow_dispatch` only. It builds the
+  FreeBSD package of an existing `vX.Y.0` tag (input `tag`) and attaches it
+  to that release. It never moves a tag and never replaces an asset.
 - `cut.yml` (#1413) runs the release tier of a cut on the cut runner. It
   starts `release.yml`; it does not replace it.
 - Billed minutes of one cut: `cut.yml` 0 (self-hosted). `release.yml` about
@@ -41,6 +44,12 @@ GitHub-hosted runner. The machine needs:
   the labels `self-hosted`, `Linux`, `X64`. An added name label is
   permitted. Size: 16 cores and about 64 GB RAM. Fewer cores work, but
   slower.
+- Job budget (#2057): the sum of `-j` of all builds on one machine stays
+  at or below its core count. The gate uses `CAMCRAFT_GATE_JOBS` (default
+  6) for all its lanes together. A runner that is the only build on its
+  machine can set `CAMCRAFT_GATE_JOBS` to its core count in its `.env`. A
+  runner that shares the machine with other builds keeps the sum of their
+  budgets at or below the core count.
 - Disk: 100 GB free or more for the work directory (a clean `target/` with
   the release heavy lanes is 20-30 GB), plus the sccache cache.
 - On the PATH of the runner service: the Rust toolchain (`~/.cargo/bin`, a
