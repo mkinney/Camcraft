@@ -68,7 +68,7 @@ cannot, so post multi-axis work with a machine that states its rotaries.
 
 ## 5-Axis Contour
 
-![View of waterline passes with a leaning tool axis.](../../../operation-paths.svg#Contour5D)
+{{ <icon name="op-contour5d" /> }} ![View of waterline passes with a leaning tool axis.](../../../operation-paths.svg#Contour5D)
 
 **For:** finishing steep walls with waterline rings, with the tool leaning
 off the wall. Choose it over 3D Finish's waterline when the holder or
@@ -87,7 +87,7 @@ shank would rub a deep wall at a vertical pose.
 
 ## 5-Axis Parallel
 
-![View of parallel surface passes with a leaning tool axis.](../../../operation-paths.svg#Parallel5D)
+{{ <icon name="op-parallel5d" /> }} ![View of parallel surface passes with a leaning tool axis.](../../../operation-paths.svg#Parallel5D)
 
 **For:** raster finishing of open, shallow-to-moderate ground with a
 leaning tool. Choose it over 3D Finish's parallel when a lead angle keeps
@@ -108,7 +108,7 @@ terrain's cosine.
 
 ## 5-Axis Flow
 
-![View of curved surface passes following the surface direction.](../../../operation-paths.svg#Flow5D)
+{{ <icon name="op-flow5d" /> }} ![View of curved surface passes following the surface direction.](../../../operation-paths.svg#Flow5D)
 
 **For:** the 5-Axis Parallel's lines, but following the surface's own
 least-curving direction instead of a straight raster. Choose it on
@@ -118,7 +118,7 @@ Parallel's; the direction is read from the model, not set.
 
 ## Multi-Axis Contour
 
-![View of a leaning tool following a picked spatial chain.](../../../operation-paths.svg#MultiAxisContour)
+{{ <icon name="op-multiaxis-contour" /> }} ![View of a leaning tool following a picked spatial chain.](../../../operation-paths.svg#MultiAxisContour)
 
 **For:** riding the ball along picked model edges wherever they stand,
 with a leaning tool: a chamfer or trace along a 3D edge. Choose it over
@@ -143,7 +143,7 @@ model to ride".
 
 ## Swarf
 
-![View of passes along a ruled flank with a leaning tool.](../../../operation-paths.svg#Swarf)
+{{ <icon name="op-swarf" /> }} ![View of passes along a ruled flank with a leaning tool.](../../../operation-paths.svg#Swarf)
 
 **For:** finishing ruled flanks (surfaces straight in one direction, such
 as a drafted wall) with passes along the ruling. Choose it on ruled
@@ -159,6 +159,24 @@ walls; doubly-curved ground is 5-Axis Parallel work.
 | Passes | Tolerance | 0.05 |
 | Feeds | Feed / Plunge feed / Climb milling | 1200 / 300 / on |
 
+![Unsafe CamCraft five-axis swarf example with red collision paths along a cylindrical blade](../../../images/guide/op-multiaxis-swarf.png)
+
+**Unsafe example — do not post or machine.** In
+`examples/guide-multiaxis.camproj`, `Swarf1` has **897 shank-hit warnings**
+(the shank or holder intersects material), **9 rapid-in-stock warnings**
+(rapid moves enter remaining material), and **2 sweep-hit warnings**
+(the tool assembly intersects material during a pose change). The red paths
+show this unsafe state; this is not a verified swarf recipe.
+Before using this setup, rough away interfering stock and select a tool
+assembly with enough reach to clear the part. Correct the lead/lag or split
+and reorient the passes where the assembly cannot clear the flank. Set
+clearance and retract heights so rapid moves and pose changes happen clear
+of the remaining stock, part and fixtures. Regenerate the toolpath and verify
+the corrected operation with no shank-hit, rapid-in-stock, sweep-hit or gouge
+warnings before posting or machining. A posed program reported as "not judged"
+by stock simulation is not a safety pass; see
+[Checks](@/guide/multi-axis/checks.md).
+
 **Common refusals:** "swarf found no ruling to follow - this surface
 curves about the same in every direction; doubly-curved ground is 5-Axis
 Parallel or Scallop work"; "this model's ruling runs along Z (vertical
@@ -170,7 +188,7 @@ refine it or finish with 5-Axis Parallel".
 
 ## Advanced Swarf
 
-![View of successive coarse and fine passes along a ruled flank.](../../../operation-paths.svg#AdvancedSwarf)
+{{ <icon name="op-advanced-swarf" /> }} ![View of successive coarse and fine passes along a ruled flank.](../../../operation-paths.svg#AdvancedSwarf)
 
 **For:** Swarf run coarse to fine. Each rough pass relaxes the tolerance
 fourfold and doubles the spacing; the last pass cuts to the stated
@@ -182,7 +200,7 @@ operation, 1 to 4 (the panel clamps it). Refusals as Swarf.
 
 ## Rotary Contour
 
-![View of ring passes around the fitted rotation axis.](../../../operation-paths.svg#RotaryContour)
+{{ <icon name="op-rotary-contour" /> }} ![View of ring passes around the fitted rotation axis.](../../../operation-paths.svg#RotaryContour)
 
 **For:** finishing a turned workpiece in rings around its axis, the tool
 posed off the radial. The axis is fitted to the model, not set. Choose it
@@ -206,7 +224,7 @@ along it: Rotary Parallel".
 
 ## Rotary Parallel
 
-![View of passes along a bar at successive rotary positions.](../../../operation-paths.svg#RotaryParallel)
+{{ <icon name="op-rotary-parallel" /> }} ![View of passes along a bar at successive rotary positions.](../../../operation-paths.svg#RotaryParallel)
 
 **For:** finishing a turned bar with passes along its fitted axis, spaced
 around the turn. Choose it for a bar lying on the table.
@@ -222,7 +240,7 @@ work's ... mm radius - raise it".
 
 ## Rotary Offset
 
-![View of roughing passes wrapping around a turned workpiece.](../../../operation-paths.svg#RotaryOffset)
+{{ <icon name="op-rotary-offset" /> }} ![View of roughing passes wrapping around a turned workpiece.](../../../operation-paths.svg#RotaryOffset)
 
 **For:** roughing a turned bar by wrapping: each level peels a radial
 infeed off the skin, the passes spaced around the bar. Choose it to rough
@@ -247,14 +265,18 @@ height window leaves no station of the work to rough".
 
 ## Multi-Axis Rough
 
-![View of roughing levels with tool axes that lean near walls.](../../../operation-paths.svg#MultiAxisRough)
+{{ <icon name="op-multiaxis-rough" /> }} ![View of roughing levels with tool axes that lean near walls.](../../../operation-paths.svg#MultiAxisRough)
 
 **For:** the 3D Pocket's level-by-level roughing, move for move, with the
 spindle posed where a wall or corner needs it and vertical where a floor
 does not ask. Choose it over 3D Pocket when the shank or holder would
 reach a deep wall at a vertical pose.
 
-**Picks:** none; it roughs around the whole model.
+**Picks:** none; it roughs around the whole model. Like a whole-model
+[3D Pocket](@/guide/operations/operations-3d.md#3d-pocket), it clears
+out to the stock outline, including stock far from the silhouette, and
+extends across open notch mouths without leaving a tool-radius ridge.
+Other parts remain protected by the same checks.
 
 | Tab | Setting | Default |
 |---|---|---|

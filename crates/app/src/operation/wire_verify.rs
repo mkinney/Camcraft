@@ -58,7 +58,7 @@ pub fn wire_verdict(world: &World, e: &Entity) -> Option<Result<WireVerdict, Str
             return Ok(WireVerdict { findings: vec![WireFinding::NoStart], ..WireVerdict::default() });
         }
         let cache = model::toolpath_of(world, e).ok_or("the wire laws have no toolpath to judge - generate it first")?;
-        let cond = super::wire_op::condition_of(world, setup, w)?;
+        let cond = super::wire_op::condition_of(world, setup, &op.tool, w)?;
         if matches!(op.src, SrcRef::Stock) {
             return Err("the wire laws judge the kerf against the part, and this cut is taken from the stock - cut it from the part model".into());
         }
@@ -108,6 +108,8 @@ pub fn wire_verdict(world: &World, e: &Entity) -> Option<Result<WireVerdict, Str
             taper: w.taper_deg != 0.0 || w.four_axis.is_some(),
 
             burnout: w.burnout.is_some(),
+            // #1170: the 4-axis cut's stated verify tolerance.
+            verify_tol: w.four_axis.as_ref().map_or(0.0, |f| f.verify_tolerance),
         }))
     })())
 }

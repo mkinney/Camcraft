@@ -19,6 +19,7 @@
 
 pub use crate::cutting::{ToolMaterial, WorkMaterial};
 pub use crate::turning_data::TurningData;
+pub use crate::thread_hand::ThreadHand;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolKind {
@@ -89,6 +90,8 @@ pub enum ToolKind {
     /// refused by name, [`Tool::torch_refusal`]). Only the plasma
     /// operations mount it.
     Torch,
+    /// Abrasive waterjet nozzle: diameter is the stream kerf, rpm is zero.
+    Waterjet,
     /// Sinker EDM electrode (#541): a rectangular solid burned straight
     /// down Z. `diameter` is its X size and `width` its Y size (both
     /// across the burning face), `flute_len` its length below the
@@ -110,6 +113,10 @@ pub enum ToolKind {
     /// helical turn per thread. `diameter` and `tip_angle` read as on
     /// the multi-form; `flute_len` is the tooth's own axial height.
     ThreadMillSingle,
+    /// Wire EDM wire (#2011): diameter is the wire diameter in mm
+    /// (`[0.02, 1.0]`), `material_group` the wire material (e.g. `"brass"`).
+    /// Turns no spindle (`rpm` must be 0) and has no corner radius.
+    Wire,
 }
 
 impl core::fmt::Display for ToolKind {
@@ -128,9 +135,11 @@ impl core::fmt::Display for ToolKind {
             ToolKind::Taper => "chamfer mill",
             ToolKind::Probe => "touch probe",
             ToolKind::Torch => "plasma torch",
+            ToolKind::Waterjet => "waterjet nozzle",
             ToolKind::Electrode => "sinker electrode",
             ToolKind::ThreadMill => "thread mill",
             ToolKind::ThreadMillSingle => "single-form thread mill",
+            ToolKind::Wire => "wire",
         };
         f.write_str(s)
     }
@@ -180,6 +189,8 @@ pub struct Tool {
     /// `pitch` it is the tool's pitch range. Inert (0.0) on every other
     /// kind.
     pub pitch_min: f64,
+    /// Tap thread hand; older tools default to right-hand.
+    pub thread_hand: crate::thread_hand::ThreadHand,
     /// Insert nose radius in mm (the ISO corner circle ground into the
     /// tip): 0.8 is common roughing stock. Inert unless kind is
     /// Turning, where it is the circle the facing verdict sweeps, or
@@ -259,127 +270,12 @@ impl Tool {
 
     /// Finite, positive where it must be, and geometrically consistent:
     /// a corner radius cannot exceed half the diameter, lengths cannot be
-    /// negative. The gate every tool command runs before writing.
+    /// negative. The gate every tool command runs before writing. The
+    /// rules live in [`Tool::why_not_sane`] (#1186), which names the
+    /// first one broken.
     #[must_use]
     pub fn is_sane(&self) -> bool {
-        let fin = [
-            self.diameter,
-            self.corner_r,
-            self.tip_angle,
-            self.pitch,
-            self.pitch_min,
-            self.nose_radius,
-            self.width,
-            self.flute_len,
-            self.shank_d,
-            self.shank_len,
-            self.holder_d,
-            self.holder_len,
-            self.rpm,
-            self.feed,
-        ]
-        .into_iter()
-        .all(|v| v.is_finite());
-        fin && self.diameter > 0.0
-            && self.diameter <= 500.0
-            && self.corner_r >= 0.0
-            && self.corner_r <= self.diameter * 0.5
-            && self.tip_angle < 180.0
-            && self.pitch >= 0.0
-            && self.pitch_min >= 0.0
-            && self.nose_radius >= 0.0
-            && self.width >= 0.0
-            && self.flute_len > 0.0
-            && self.shank_d >= 0.0
-            && self.shank_len >= 0.0
-            && self.holder_d >= 0.0
-            && self.holder_len >= 0.0
-            // A torch turns no spindle (#670): its rpm is 0 by law, and
-            // every spinning kind states a positive one.
-            // A sinker electrode turns none either (#541).
-            && (if matches!(self.kind, ToolKind::Torch | ToolKind::Electrode) {
-                self.rpm == 0.0
-            } else {
-                self.rpm > 0.0
-            })
-            && self.feed > 0.0
-            && self.flutes.is_none_or(|z| (1..=32).contains(&z))
-            && self.orientation.is_none_or(crate::orientation::is_valid)
-            && self.catalog.refusal().is_none()
-            && crate::cutting_rows::refusal(&self.cutting, self.kind == ToolKind::Torch).is_none()
-            // #891: stated turning data is sane, and the constant rpm
-            // the tool states never runs over its own max-rpm clamp.
-            && self.turning.is_none_or(|t| t.is_sane() && t.max_rpm.is_none_or(|m| self.rpm <= m))
-            && match self.kind {
-                // A point that cannot self-center is not a drill, and a
-                // tap with no thread pitch has no feed the cycle could
-                // derive. Other kinds carry both fields inert.
-                ToolKind::Drill => self.tip_angle > 60.0,
-                ToolKind::Tap => self.pitch > 0.0,
-                // A turning insert with no nose is a mathematical
-                // point - it would cut a knife line and verify with a
-                // zero-ball refusal - and a nose wider than half the
-                // shank is not the ball any insert body could hold.
-                // The bounds live HERE, kind-scoped, the drill's and
-                // tap's own law: an inert field may carry any sane
-                // number through a retype without refusing for
-                // geometry the kind never reads.
-                ToolKind::Turning => {
-                    self.nose_radius > 0.0 && self.nose_radius <= self.diameter * 0.5
-                }
-                // A blade with no width is a mathematical plane - it
-                // would part a knife line and judge a zero-band scan -
-                // and a blade as wide as its own body is not the edge
-                // any toolholder could ground. The same kind-scoped law
-                // as the insert's nose (the note above).
-                ToolKind::Groove => self.width > 0.0 && self.width < self.diameter,
-                // A thread form that is not a V (no opening, or a
-                // full flat) is not steel any grinder cuts, and a V
-                // as wide as the body is the insert no holder clamps
-                // - the blade's width law with the drill's angle
-                // bound, both fields read at once (kind-scoped, as
-                // every arm above).
-                ToolKind::Thread => {
-                    self.width > 0.0
-                        && self.width < self.diameter
-                        && self.tip_angle > 0.0
-                        && self.tip_angle < 180.0
-                }
-                // A gauge with no crown is a flat blade (mount a
-                // Groove), and a band ground wider than the arc's
-                // own reach has corners that are no steel at all -
-                // the kernel's door words it for a run; the tool
-                // says it never got made (kind-scoped, as above).
-                ToolKind::Form => {
-                    self.width > 0.0
-                        && self.width < self.diameter
-                        && self.nose_radius > 0.0
-                        && self.width <= 2.0 * self.nose_radius
-                }
-                // A cone that opens no angle at all is a cylinder
-                // wearing the name - the chamfer's generatrix would
-                // meet the wall nowhere, and the congruence door
-                // would divide on nothing (kind-scoped, as above;
-                // the global bound keeps it under a flat).
-                ToolKind::Taper => self.tip_angle > 0.0,
-                // A probe tip is a sphere: the ball radius IS the
-                // corner, and a stylus shorter than its own ball is
-                // no stylus at all.
-                ToolKind::Probe => {
-                    (self.corner_r - self.diameter * 0.5).abs() < 1e-9
-                        && self.flute_len >= self.diameter
-                }
-                // A torch's kerf is a cut width, never a corner: no
-                // corner radius rides it (#670).
-                ToolKind::Torch => self.corner_r == 0.0,
-                // A sinker electrode (#541): a rectangular face with a
-                // stated Y size, sharp-cornered (no corner rides it).
-                ToolKind::Electrode => crate::electrode::is_sane(self),
-                // The thread mills' own law (#894): a pitch (range), a
-                // form angle and a core left under the teeth.
-                ToolKind::ThreadMill | ToolKind::ThreadMillSingle => crate::thread_mill::is_sane(self),
-                _ => true,
-            }
+        self.why_not_sane().is_none()
     }
 
     /// The torch's own refusal, by name (#670): a plasma torch stating a
@@ -389,6 +285,12 @@ impl Tool {
     pub fn torch_refusal(&self) -> Option<String> {
         // #541: the sinker electrode's door rides the same seam - the
         // AddTool / ChangeTool / library refusals already call this.
+        if self.kind == ToolKind::Waterjet {
+            return crate::waterjet::refusal(self);
+        }
+        if self.kind == ToolKind::Wire {
+            return crate::wire::refusal(self);
+        }
         if self.kind == ToolKind::Electrode {
             return crate::electrode::refusal(self);
         }
@@ -496,7 +398,7 @@ impl Tool {
             // not off this cylinder.
             ToolKind::EndMill | ToolKind::Tap | ToolKind::Bore | ToolKind::Turning
             | ToolKind::Groove | ToolKind::Thread | ToolKind::Form | ToolKind::Torch
-            | ToolKind::Electrode
+            | ToolKind::Electrode | ToolKind::Waterjet | ToolKind::Wire
             // A thread mill draws as the cylinder its tooth crests
             // sweep (#894) - the envelope the reach laws read.
             | ToolKind::ThreadMill | ToolKind::ThreadMillSingle => add_pt(&mut p, 0.0, r),
@@ -574,6 +476,7 @@ pub fn probe_tool(ball_d: f64, stylus_len: f64) -> Tool {
         tip_angle: 0.0,
         pitch: 0.0,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         nose_radius: 0.0,
         width: 0.0,
         flute_len: stylus_len,
@@ -608,6 +511,7 @@ pub fn torch_tool(kerf: f64) -> Tool {
         tip_angle: 0.0,
         pitch: 0.0,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         nose_radius: 0.0,
         width: 0.0,
         flute_len: 10.0,

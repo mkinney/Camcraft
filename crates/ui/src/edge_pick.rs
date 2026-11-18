@@ -59,8 +59,9 @@ fn toggle(state: &mut State, pick: GeoSel) {
         queue_feature_pick(state, pick, true);
         return;
     };
+    let what = camcraft_app::pick::geo_label(&state.world, &pick);
     items.remove(i);
-    state.status = format!("{} of '{}' removed from {name}", pick.feature, pick.entity);
+    state.status = format!("{what} removed from {name}");
     if items.is_empty() {
         state.pending.push_back(CommandKind::EditOperationLinks { name, tool: None, src: Some(SrcRef::Stock) });
     } else {
@@ -78,8 +79,18 @@ fn edges_of(state: &State, g: &GeoSel) -> Vec<u32> {
         .map_or(Vec::new(), |c| c.edges)
 }
 
+fn setup_of(state: &State) -> Option<String> {
+    model::find_by_name(&state.world, &state.op_ui.name)
+        .and_then(|e| model::operation_of(&state.world, &e))
+        .and_then(|op| op.setup)
+}
+
 fn take_loop(state: &mut State, pick: GeoSel) {
-    let ring = match operation::extend_to_loop(&state.world, std::slice::from_ref(&pick)) {
+    let ring = match operation::extend_to_loop_in(
+        &state.world,
+        setup_of(state).as_deref(),
+        std::slice::from_ref(&pick),
+    ) {
         Ok(ring) => ring,
         Err(why) => {
             // No face loop through it: say so and keep the edge as a
@@ -99,12 +110,13 @@ fn take_loop(state: &mut State, pick: GeoSel) {
             g.entity != pick.entity || e.is_empty() || !e.iter().all(|x| ring_edges.contains(x))
         })
         .collect();
+    let what = camcraft_app::pick::geo_label(&state.world, &pick);
     let n = ring.len();
     for r in ring {
         if !items.contains(&r) {
             items.push(r);
         }
     }
-    state.status = format!("{} of '{}' closed around its loop ({n} runs) in {name}", pick.feature, pick.entity);
+    state.status = format!("{what} closed around its loop ({n} runs) in {name}");
     state.pending.push_back(CommandKind::SetOperationGeometry { name, items });
 }

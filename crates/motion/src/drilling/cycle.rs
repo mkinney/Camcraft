@@ -1,6 +1,8 @@
 //! Split from `drilling.rs` by M5.0.1; structure only.
 
-use super::hole::{CHIP_BREAK, CycleChoice, CycleParams, FIT_TOL, Hole, SPOT_DEPTH, THROUGH_CLEAR, auto_kind};
+use super::hole::{
+    auto_kind, through_tip_run, CHIP_BREAK, CycleChoice, CycleParams, FIT_TOL, Hole, SPOT_DEPTH,
+};
 
 use crate::cl::{lattice, Cycle, CycleKind, MoveKind, PathBuilder, Toolpath};
 use crate::geo2d::Point2;
@@ -21,6 +23,9 @@ pub fn drill(p: &CycleParams) -> Result<Toolpath, GenError> {
     }
     if !(p.feed.is_finite() && p.plunge_feed.is_finite() && p.dwell.is_finite() && p.dwell >= 0.0) {
         return Err(GenError::Invalid("cycle parameters not usable".into()));
+    }
+    if !(p.through_clear.is_finite() && p.through_clear >= 0.0) {
+        return Err(GenError::Invalid("the through-hole break-through must be zero or positive".into()));
     }
     if p.holes.is_empty() {
         return Err(GenError::Empty("no holes to drill".into()));
@@ -47,6 +52,12 @@ pub fn drill(p: &CycleParams) -> Result<Toolpath, GenError> {
         })
         .collect();
 
+    let tip_run = if p.bottom_z.is_none() && hs.iter().any(|h| h.through) {
+        through_tip_run(p.tool, p.cycle, p.through_clear, p.break_through_from)?
+    } else {
+        0.0
+    };
+
     let start_z = p.clearance_z.max(p.r_z);
     let hop = p.hop_z.unwrap_or(p.clearance_z).max(p.r_z);
     let mut b = PathBuilder::new(Point3::new(hs[0].xy.x, hs[0].xy.y, start_z));
@@ -57,7 +68,7 @@ pub fn drill(p: &CycleParams) -> Result<Toolpath, GenError> {
             b.push(MoveKind::Rapid, Point3::new(h.xy.x, h.xy.y, hop), None);
         }
         b.push(MoveKind::Rapid, Point3::new(h.xy.x, h.xy.y, p.r_z), None);
-        let floor_bottom = h.floor_z - if h.through { THROUGH_CLEAR } else { 0.0 };
+        let floor_bottom = h.floor_z - if h.through { tip_run } else { 0.0 };
         let bottom = match p.bottom_z {
             Some(z) => z,
             // SPOT_DEPTH's own words: the dimple hangs off the ENTRY

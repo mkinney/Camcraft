@@ -181,6 +181,7 @@ impl Toolpath {
 
 /// Chains moves onto a Toolpath, maintaining the link invariant by
 /// construction: a move's `from` is always the cursor.
+#[derive(Clone)]
 pub struct PathBuilder {
     at: Point3,
     /// The pose the NEXT move will carry (M5.1 stage A): None until a
@@ -276,7 +277,7 @@ impl PathBuilder {
         self.axis = axis.and_then(|a| match normalize_axis(a) {
             Some(n) => Some(n),
             None => {
-                eprintln!("cl: refusing a builder axis of {a:?}: not a direction");
+                tracing::warn!("cl: refusing a builder axis of {a:?}: not a direction");
                 None
             }
         });

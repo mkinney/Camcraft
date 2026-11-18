@@ -831,17 +831,17 @@ fn pocket_entry_family_is_a_step_up_on_the_wire() {
     assert_eq!(*helix_radius, 1.0, "absent means the seed's lead radius");
     assert_eq!(*optimal_load, camcraft_app::load::DEFAULT_OPTIMAL_LOAD, "absent means the law's 45 degrees, as a load");
 
-    // The explicit shape, hand-written so the tags are pinned.
+    // The explicit shape on a pre-v64 Pocket with Adaptive migrates on open to
+    // Adaptive2D (Spiral), carrying entry, helix_radius, and engagement load (#1517).
     let text = plain
         .replace("\"strategy\": \"zigzag\"", "\"strategy\": \"adaptive\", \"max_engagement\": 30.0, \"entry\": \"helix\", \"helix_radius\": 2.5");
     let world2 = new_world();
-    project::open(&world2, &text).expect("the grown pocket grammar must read");
+    project::open(&world2, &text).expect("the grown pocket grammar must read and migrate");
     let e2 = model::find_by_name(&world2, "Op1").expect("op");
     let o2 = model::operation_of(&world2, &e2).expect("operation");
-    let OpParams::Pocket { strategy, entry, helix_radius, optimal_load, .. } = &o2.params else {
-        panic!("pocket params expected, got {:?}", o2.params);
+    let OpParams::Adaptive2D { entry, helix_radius, optimal_load, .. } = &o2.params else {
+        panic!("adaptive2d params expected after migration, got {:?}", o2.params);
     };
-    assert_eq!(*strategy, PocketStrategy::Adaptive);
     assert_eq!(*entry, camcraft_app::machining3d::Entry3D::Helix);
     assert_eq!(*helix_radius, 2.5);
     // M11.4 B: the legacy degree word converts exactly on load.
@@ -966,7 +966,7 @@ fn v5_roundtrips_retract_and_auto() {
             "Pocket1",
             "EM-0400-2FL",
             SrcRef::Stock,
-            OpParams::Pocket { blend_radius: None, tilt: None,
+            OpParams::Pocket { rest: None, blend_radius: None, tilt: None,
                 links: camcraft_app::links::Links::PLANAR,
                 stepover: 1.0,
                 stock_to_leave: 0.0,
@@ -2850,10 +2850,15 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
     // the cutter 3 mm into the 5 mm-tall part from Z 4 down: a groove
     // through the finished part. The depth law refuses it by name -
     // the choice still round-trips below, the cut never generates.
+    // #2004: with no air level at Top Z the ring walks no level, and the
+    // picked-ring law (#1927) speaks first: the same refusal, with the
+    // side named and Outside advised.
     let err = GenerateOperation::new(&world2, "C2")
         .err()
-        .expect("an Inside ring inside the part solid must refuse");
-    assert!(err.to_string().contains("cuts into the part"), "{err}");
+        .expect("an Inside ring inside the part solid must refuse")
+        .to_string();
+    assert!(err.contains("the cutter Inside this ring stands in the part material"), "{err}");
+    assert!(err.contains("set Side to Outside"), "{err}");
     project::save(&world2, &path).expect("save");
     let first = std::fs::read_to_string(&path).expect("read");
     assert!(

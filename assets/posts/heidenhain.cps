@@ -29,6 +29,7 @@ workOffsetMax = 6;      // preset rows 1..6; more rows depend on the machine's p
 // cycle Q feeds take was not confirmed from the public manual this post
 // is specced from, and a feed off by a factor is no program to post.
 programUnits = "mm";
+endUnits = "note"; // #2189: mm-only post; notes once when asked for inch
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
@@ -618,10 +619,13 @@ function onCycle() {
   owedDwell();
   inCycle = false;
   var p = properties, type = p.CycleType;
-  // Boring keeps the established explicit-chain contract; its spindle
-  // orientation/disengagement semantics are not part of #51.
+  if (type === "BORE") {
+    msg(coolantWho() + "bore (G86) requires a spindle stop before rapid retract - expanded boring is not supported by this post; refused, not posted");
+    return;
+  }
+  // Back boring keeps its established explicit-chain contract.
   // #1445: REAM (feed in, feed out, no dwell) rides the same chain.
-  if (type === "BORE" || type === "BACKBORE" || type === "REAM") {
+  if (type === "BACKBORE" || type === "REAM") {
     if (has(p.P) && p.P > 0) pendingDwell = { z: Number(p.Z), s: Number(p.P) };
     cycleSig = "";
     return;
@@ -738,8 +742,16 @@ function owedDwell() {
 // and machine-referenced moves (M91, p. 393) depend on a datum the
 // machine builder sets - the program ends where its last retract left
 // the tool, as the manual's own programs do.
+// #2189: Heidenhain post is mm-only; note an inch ask once before M2.
+function noteEndUnits() {
+  var want = typeof postOptions !== "undefined" && postOptions ? postOptions.EndUnits : undefined;
+  if (want === "inch") {
+    note("END UNITS NOT WRITTEN - HEIDENHAIN POST IS MM ONLY");
+  }
+}
 function onClose() {
   endPreamble();
+  noteEndUnits();
   block(["M2"]);
   writeln("N" + N_LAST + " %" + pgmName + " G71 *");
 }

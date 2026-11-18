@@ -12,6 +12,10 @@ fn wire_page() -> Harness<'static, State> {
     let mut st = super::super::dialog_tests::opened(super::super::dialog_tests::face());
     let machine = camcraft_app::machine::parse_mch(include_str!("../../../app/tests/edm/wire-iso-fixture.mch")).expect("fixture");
     st.pending.push_back(CommandKind::EditMachineApply { path: "wire-test.mch".into(), machine: Box::new(machine) });
+    st.pending.push_back(CommandKind::AddTool {
+        name: "EDM-W025".into(),
+        tool: camcraft_app::wire_tools::wire_tool(0.25),
+    });
     st.drain_actions();
     let kind = camcraft_app::operation::KindInfo::ALL.iter().position(|k| k.label == "Wire Contour").expect("wire kind");
     crate::actions::add_operation(&mut st, kind);
@@ -110,7 +114,7 @@ fn wire_skim_apply_shows_each_named_refusal() {
         (vec![""], "skim 1 of the Wire Contour names no EDM condition"),
         (vec!["S31", "S21"], "cut past the finished profile"),
         (vec!["S21", "C110", "S31"], "cut only air"),
-        (vec!["W20"], "one threading cuts every pass with one wire"),
+        (vec!["W20"], "expects wire diameter 0.2 mm"),
     ] {
         let mut h = wire_page();
         for (i, id) in ids.iter().enumerate() {
@@ -184,4 +188,23 @@ fn wire_sync_pick_button_arms_and_says_the_next_click() {
     assert!(h.query_by_label("Next: click the upper point of pair 1 (a vertex of the upper profile)").is_some());
     press(&mut h, "Stop picking sync points");
     assert!(!h.state().wire_sync.armed);
+}
+
+/// #1170: the 4-axis block states where the wire stands off and the
+/// verify tolerance; a new block is the per-ruling choice and no
+/// tolerance, and the choice edits the page draft.
+#[test]
+fn wire_four_axis_states_the_stand_off_choice_and_the_verify_tolerance() {
+    use camcraft_app::operation::WireWidening;
+    let mut h = wire_page();
+    h.state_mut().op_tab = super::super::op_tabs::SEC_GEO;
+    h.run_steps(3);
+    press(&mut h, "4-axis (upper and lower profiles)");
+    let four = draft(&h).four_axis.clone().expect("the block");
+    assert_eq!((four.widening, four.verify_tolerance), (WireWidening::PerRuling, 0.0));
+    assert!(h.query_by_label("Verify tolerance").is_some(), "the verify tolerance row shows");
+    assert!(h.query_all_by_role(Role::ComboBox).any(|n| n.value().as_deref() == Some("Only where the surface twists")));
+    press(&mut h, "Stand off");
+    choose(&mut h, "Stand off", "The same all round");
+    assert_eq!(draft(&h).four_axis.as_ref().expect("the block").widening, WireWidening::Uniform);
 }

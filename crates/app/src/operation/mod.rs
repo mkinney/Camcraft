@@ -87,6 +87,8 @@ mod stamp_stock;
 pub use stamp_stock::reads_setup_stock;
 pub(crate) use stamp_stock::write_setup_stock;
 mod material;
+// #2496: a drill makes its own size; a wider hole is named.
+mod drill_size;
 pub use material::*;
 mod material_region;
 pub(crate) use material_region::selection_drives_region;
@@ -131,6 +133,7 @@ mod probe_pick_round;
 pub use probe_pick::{PROBE_AXIS_TOL_DEG, ProbeSeed, probe_account, probe_from_picks, probe_seed, seeded_params};
 pub(crate) use probe::*;
 mod selection;
+mod contour_auto_pick;
 pub use selection::*;
 mod picks;
 pub use picks::*;
@@ -142,7 +145,14 @@ mod open_band;
 mod run_out;
 use run_out::*;
 mod area;
+#[cfg(test)]
+mod stock_top_frame;
+use camcraft_motion::stock_top_frame::stock_top_in_frame;
 use area::*;
+mod pocket_memo;
+pub use pocket_memo::pocket_slices;
+mod selection_memo;
+pub use selection_memo::{contour_auto_side_fresh, selection_account_fresh, selection_walks};
 mod boundary;
 pub use boundary::AreaCtx;
 use boundary::AreaApplied;
@@ -162,7 +172,8 @@ mod finish_entry;
 mod boundary_ctx;
 mod boundary_picks;
 pub use boundary_picks::{
-    PickShape, area_pick_issue, area_refusal, boundary_pick_shape, extend_to_loop, run_pick, toggle_run,
+    PickShape, area_pick_issue, area_refusal, boundary_pick_shape, extend_to_loop,
+    extend_to_loop_in, run_pick, toggle_run,
 };
 pub use boundary_ctx::op_stamp;
 use boundary_ctx::*;
@@ -170,6 +181,10 @@ use boundary_ctx::*;
 // operation's world reads and CL wrap (part_alignment x Tilt).
 mod frame;
 pub use frame::OpFrame;
+// #2389: a tilted op's reference heights read along its tool axis.
+mod tilt_heights;
+pub use tilt_heights::{fold_height, resolve_params_folded};
+mod wcs_yaw;
 mod job;
 pub use job::*;
 mod generate;
@@ -183,13 +198,19 @@ mod cross_spindle;
 mod cross_stock;
 mod drill_reach;
 mod bore_reach;
+use camcraft_motion::break_through;
 pub use bore_reach::DetectedHoles;
+pub use break_through::BELOW_STOCK_NOTE;
 mod drill_prior;
 mod carried_stock;
 pub use carried_stock::{CARRIED_OUTSIDE_DECLARED, CARRIED_OUTSIDE_NOTED, carried_problems};
 pub(crate) use drill_prior::reads_prior;
 mod plunge_solid;
 mod predrilled_entry;
+pub mod rest_op;
+pub use rest_op::REST_PREDRILLED;
+#[cfg(test)]
+mod rest_op_tests;
 #[cfg(test)]
 mod predrilled_entry_tests;
 #[cfg(test)]
@@ -205,15 +226,18 @@ pub mod mark_law;
 pub mod keep_law;
 // #1749: the 3D Pocket's footprint past its open edges.
 mod open_side;
+pub use open_side::AIR_BAND_FIXTURE;
 // #1628: the post's live re-judge of the parts `keep_law` keeps.
 pub mod kept_rejudge;
 // #864: what a kind's gouge laws need of its model's fidelity.
 pub(crate) mod fidelity_law;
+mod clearance_stock;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
 mod tap_core;
-pub use top_stock::TOP_STOCK_WARNING;
+pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
+pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
 mod turning_axis;
 mod turning_feeds;

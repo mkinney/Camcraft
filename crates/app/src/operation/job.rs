@@ -44,7 +44,8 @@ pub struct GenJob {
     pub(super) material: Material,
     pub(super) frame: Option<crate::cl::TiltedFrame>,
     /// Resolved heights, UNshifted - the frame's `oz` fold is pure
-    /// arithmetic and belongs to `run_job`.
+    /// arithmetic and belongs to `run_job`. A tilted op's reference
+    /// heights are read along its tool axis (`fold_height`, #2389).
     pub(super) hs: ResolvedHeights,
     pub(super) stock_facets: Option<Vec<Triangle>>,
     pub(super) stock_aabb: Option<(Point3, Point3)>,
@@ -150,6 +151,8 @@ pub struct GenJob {
     /// it can be. The drill-reach refusals run on worker threads with
     /// no World to read, so they spell their depths through this lens.
     pub(super) unit: crate::units::Unit,
+    /// #760: active Z-rotated WCS on an upright milling operation (`None` when square).
+    pub(super) wcs_yaw: Option<super::wcs_yaw::WcsYaw>,
 }
 
 /// The tripwire phrase for a stored precompute whose arm never collected
@@ -166,14 +169,10 @@ pub(super) fn unreached(what: &str) -> GenError {
 /// everything an arm used to refuse at lives on as a stored `Result`
 /// for `run_job` to take at that exact statement.
 pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJob, GenError> {
-    // #532: a wire EDM kind mounts no library tool - the machine's
-    // condition stands in its place, read (and refused by name) here.
+    // #532 / #2011: resolve the mounted library tool (Wire tool for Wire Contour)
+    // and, for Wire Contour, the machine condition pair validated against it.
+    let (tool, body, lathe_body, neck) = super::tool_gate::job_tool(world, op)?;
     let wire = super::wire_op::job_wire(world, op)?;
-    // Tool: the diameter drives the path, the body drives the reach law.
-    let (tool, body, lathe_body, neck) = match &wire {
-        Some((cond, _)) => (super::wire_op::job_tool(cond), None, None, Vec::new()),
-        None => super::tool_gate::job_tool(world, op)?,
-    };
     let setup = op.setup.as_deref();
     // #326: an op this slice has not verified in an aligned setup is
     // refused by name here, at the one door every generation passes -
@@ -210,7 +209,13 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // The height seam, refused by name before anything else (as the old
     // head refused it, `resolve_params` being the first fallible read
     // after the material).
-    let hs = opframe.resolve_heights(world, Some(&op.src), &op.params).map_err(GenError::Invalid)?;
+    // #2389: a tilted op reads each reference height along its tool
+    // axis (the fold's coordinate); an untilted or upright op reads the
+    // setup resolve verbatim. A tilt that states no direction reads the
+    // setup resolve here and is refused by `checked_frame` just below.
+    let fold_frame = opframe.checked_frame().ok().flatten();
+    let hs = resolve_params_folded(world, setup, Some(&op.src), &op.params, fold_frame.as_ref())
+        .map_err(GenError::Invalid)?;
 
     // The 3+2 wrap (M5.1 B), read through the seam: the same refusal,
     // the same words, at the same statement - one construction site.
@@ -230,7 +235,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // The arm-scoped world reads, precomputed under the same guards
     // that decide which arm runs them; each result surfaces at its
     // arm's own statement in `run_job`.
-    let section_z = section_z_of(world, setup, Some(&op.src), &op.params);
+    let section_z = section_z_of(world, setup, Some(&op.src), &op.params, frame.as_ref());
     let picked_region = match (&op.params, &op.src) {
         // Contour's Selection pair is resolved as raw geometry below
         // (its arm never asks for a region first); every other kind
@@ -263,7 +268,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         _ => None,
     };
     let slot_bound = match (&op.params, &op.src) {
-        (OpParams::Slot { .. }, SrcRef::Selection(items)) if !items.is_empty() => Some(super::slot_pick::slot_bound_of(world, items)),
+        (OpParams::Slot { .. }, SrcRef::Selection(items)) if !items.is_empty() => Some(super::slot_pick::slot_bound_of(world, setup, items)),
         _ => None,
     };
     let drive_chains = match &op.params {
@@ -377,6 +382,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         (m.model, rot)
     });
 
+    let wcs_yaw = super::wcs_yaw::WcsYaw::from_world(world, setup, machine_kind, &op.params);
     Ok(GenJob {
         op_name: op_name.to_owned(),
         tool,
@@ -427,6 +433,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         sinker_pass,
         sinker_wear,
         unit: crate::units::of(world),
+        wcs_yaw,
     })
 }
 

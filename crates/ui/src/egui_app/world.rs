@@ -176,15 +176,29 @@ fn contour_params() -> OpParams {
 /// upload.
 #[must_use]
 pub fn collect(state: &State) -> Scene {
-    Scene { parts: collect_parts(state), overlay: collect_overlay(state) }
+    // #2235: one region build per operation for the whole scene.
+    crate::frame_memo::scene_scope(|| Scene { parts: collect_parts(state), overlay: collect_overlay(state) })
 }
 
 // ---------------------------------------------------------------- parts
 
 fn world_verts(state: &State, entity: &flecs_ecs::prelude::Entity) -> Vec<[f32; 3]> {
+    world_verts_by(state, entity, [0.0; 3])
+}
+
+/// [`world_verts`] slid by `by` (shown frame) - the handle drag's preview
+/// (#1198 b): display only, the world is untouched until the release.
+fn world_verts_by(state: &State, entity: &flecs_ecs::prelude::Entity, by: [f64; 3]) -> Vec<[f32; 3]> {
     let tris = model::facets_of(&state.world, entity).unwrap_or_default();
     // #326: the part where the active setup holds it.
-    let loc = camcraft_app::setup_align::view_pose(&state.world, entity).unwrap_or_default();
+    let mut loc = camcraft_app::setup_align::view_pose(&state.world, entity).unwrap_or_default();
+    loc.pos = Point3::new(loc.pos.x + by[0], loc.pos.y + by[1], loc.pos.z + by[2]);
+    // #2047: a ring drag's preview turns the shown pose about the centre.
+    if state.body_turn.is_some()
+        && let Some(turn) = model::name_of(&state.world, entity).and_then(|n| crate::turn_drag::preview_turn(state, &n))
+    {
+        loc = camcraft_app::setup_align::compose(turn, loc);
+    }
     let mut verts = Vec::with_capacity(tris.len() * 3);
     for t in tris.iter() {
         for p in [t.a, t.b, t.c] {
@@ -201,18 +215,22 @@ fn world_verts(state: &State, entity: &flecs_ecs::prelude::Entity) -> Vec<[f32; 
 fn collect_parts(state: &State) -> Vec<GpuPart> {
     // #339 slice 4: the fixtures the selected op's warnings strike are
     // tinted (display only - the classes ride the vertex, nothing else).
+    let models = crate::frame_cost::span("scene/parts.models");
     let struck = state.fixture_highlight();
     let mut parts: Vec<GpuPart> = model::model_entities(&state.world)
         .into_iter()
         .filter(|(name, _)| !state.hidden_models.iter().any(|h| h == name) && !state.fixture_hidden_by_setup(name))
         .map(|(name, entity)| {
-            let verts = world_verts(state, &entity);
+            let by = crate::move_drag::preview_offset(state, &name).unwrap_or([0.0; 3]);
+            let verts = world_verts_by(state, &entity, by);
             let classes =
                 if struck.contains(&name) { vec![crate::viewport::STRUCK_CLASS; verts.len()] } else { Vec::new() };
             GpuPart { verts, selected: model::is_selected(&state.world, &entity), stock: false, fill: false, classes }
         })
         .collect();
-    parts.extend(sim_body_part(state));
+    drop(models);
+    parts.extend(crate::frame_cost::time("scene/parts.sim_body", || sim_body_part(state)));
+    let stock = crate::frame_cost::span("scene/parts.stock");
     if !state.active_stock_hidden() {
         match (&state.program_sim, crate::machined::mesh(state)) {
             // The machined stock's extracted mesh (M13.1 owed) takes the
@@ -265,6 +283,7 @@ fn collect_parts(state: &State) -> Vec<GpuPart> {
             }
         }
     }
+    drop(stock);
     // #406: the stock a carried setup starts from, while its settings
     // page is open - a stock-slot part painted teal (`INCOMING_CLASS`),
     // apart from the setup's own Stock node.
@@ -274,9 +293,10 @@ fn collect_parts(state: &State) -> Vec<GpuPart> {
         let classes = vec![crate::incoming_view::INCOMING_CLASS; verts.len()];
         parts.push(GpuPart { verts, selected: false, stock: true, fill: false, classes });
     }
+    let fills = crate::frame_cost::span("scene/parts.region_fills");
     for (z, region) in crate::interact::shown_regions(state) {
         let Some(region) = region else { continue };
-        let Ok(tris) = region.triangles() else { continue };
+        let Ok(tris) = crate::frame_cost::time("scene/parts.region_fills.triangulate", || region.triangles()) else { continue };
         if tris.is_empty() {
             continue;
         }
@@ -288,12 +308,12 @@ fn collect_parts(state: &State) -> Vec<GpuPart> {
         }
         parts.push(GpuPart { verts, selected: false, stock: false, fill: true, classes: Vec::new() });
     }
+    drop(fills);
     // The Boundary group's preview of the area the draft machines (M11.5
     // UX), filled like the committed region while the group is open.
-    if let Some((z, region)) = crate::boundary_viz::preview_fill(state)
-        && let Ok(tris) = region.triangles()
-        && !tris.is_empty()
-    {
+    let _preview = crate::frame_cost::span("scene/parts.boundary_preview");
+    // #2246: the triangles were made with the preview; a frame reads them.
+    if let Some((z, tris)) = crate::boundary_viz::preview_fill(state) {
         let verts = tris.iter().flat_map(|t| t.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(z)])).collect();
         parts.push(GpuPart { verts, selected: false, stock: false, fill: true, classes: Vec::new() });
     }
@@ -358,7 +378,7 @@ fn sim_body_part(state: &State) -> Option<GpuPart> {
 /// than a void, and it is depth-tested against the part like the rest of
 /// the buffer.
 fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
-    let mut out = crate::interact::ground_grid_lines(state);
+    let mut out = crate::frame_cost::time("scene/overlay.grid", || crate::interact::ground_grid_lines(state));
     out.extend(crate::interact::collect_overlay(state));
     crate::interact::capped(out)
 }

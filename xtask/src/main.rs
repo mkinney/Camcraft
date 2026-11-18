@@ -31,6 +31,9 @@ mod gate_maps_tests;
 mod heavy_tests;
 mod icon_font;
 mod icons;
+mod known_fail;
+#[cfg(test)]
+mod known_fail_tests;
 #[cfg(test)]
 mod icons_tests;
 #[cfg(test)]
@@ -313,6 +316,15 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
         _ => tier_plan(root, g),
     };
     let plan = select::apply(plan, &g.only, failed.as_deref())?;
+    if g.tier == "release" {
+        match known_fail::check_issues(root, g.dry) {
+            Ok(notes) => notes.iter().for_each(|n| println!("{n}")),
+            Err(e) => {
+                println!("{e}");
+                return Ok(1);
+            }
+        }
+    }
     run.plan(&plan)?;
     Ok(run.summary())
 }

@@ -90,7 +90,7 @@ fn first_in_solid(t: &Toolpath, floor: f64) -> Option<(usize, Point3)> {
 }
 
 fn pocket(strategy: PocketStrategy, bottom: f64, stepdown: f64) -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,
@@ -187,7 +187,7 @@ fn random_bottoms_and_stepdowns_never_pocket_into_the_block() {
         s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         (s >> 11) as f64 / (1u64 << 53) as f64
     };
-    let strategies = [PocketStrategy::Zigzag, PocketStrategy::Waterline, PocketStrategy::Adaptive];
+    let strategies = [PocketStrategy::Zigzag, PocketStrategy::Waterline, PocketStrategy::OffsetRings];
     let (mut cut, mut refused) = (0, 0);
     for case in 0..18 {
         let floor = 0.3 + 15.0 * next();

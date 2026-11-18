@@ -130,7 +130,10 @@ fn one_block_op(params: &OpParams) -> Operation {
 fn assert_same_cut(across: &Toolpath, single: &Toolpath) {
     let (za, zs) = (feed_levels(across), feed_levels(single));
     assert_eq!(za.len(), zs.len(), "the same levels: {za:?} vs {zs:?}");
-    assert!(za.len() >= 2, "the one-block ring cuts more than its top level: {zs:?}");
+    // #2004: Top Z 10 is the part top and the stepdown is the full
+    // height, so the ladder is the one level Z 0 (the air level at Z 10
+    // is gone). The one-block ring must cut below its top.
+    assert!(!za.is_empty() && za.iter().all(|z| *z < 10.0 - EPS), "the one-block ring cuts below its top: {zs:?}");
     for (a, s) in za.iter().zip(&zs) {
         assert!((a - s).abs() < EPS, "level for level: {za:?} vs {zs:?}");
         let (fa, fs) = (level_feeds(across, *a), level_feeds(single, *s));
@@ -199,7 +202,9 @@ fn a_self_touching_single_body_still_stops_at_its_top_level() {
     // seam walls stand inside it. The union law is per BODY - one body
     // is sliced as one soup, which meets the seam as a non-manifold
     // contact - so the depth law still fails closed below the top
-    // level and names the skipped levels, exactly as before.
+    // level and names the skipped levels. Since #1927 a picked ring that
+    // keeps only that top plane is refused, and the refusal names the
+    // unreadable mesh, never the side: Outside of this outline is air.
     let mut facets: Vec<_> = half(-20.0, 0.0).facets.to_vec();
     facets.extend(half(0.0, 20.0).facets.iter().copied());
     let world = world_with(
@@ -212,16 +217,16 @@ fn a_self_touching_single_body_still_stops_at_its_top_level() {
     let params = contour(10.0, 0.0, Side::Outside);
     let o = op(SrcRef::Selection(picks), params.clone(), Default::default());
     assert_eq!(operation::region_of(&world, &o).expect("the outline bounds one area").loops().len(), 1);
-    let (t, _) = run(&world, &o).expect("the top level is cut");
-    assert_eq!(feed_levels(&t), vec![10.0], "only the top level: {:?}", feed_levels(&t));
-    assert!(
-        t.notes.iter().any(|n| n.contains("ends at its floor Z 10.000") && n.contains("levels below skipped (0.000)")),
-        "the skipped levels are named: {:?}",
-        t.notes
-    );
+    let err = run(&world, &o).expect_err("no level below the top is proven clear");
+    assert!(err.contains("meets its wall at no level below the part top Z 10.000"), "only the top level: {err}");
+    assert!(err.contains("levels below skipped (0.000)"), "the skipped levels are named: {err}");
+    assert!(err.contains("non-manifold"), "the mesh is named as the cause: {err}");
+    assert!(!err.contains("set Side") && !err.contains("stands in the part material"), "the side is not blamed: {err}");
     // And the one-block reference cuts below it.
+    // #2004: the ladder is the one level Z 0 (no air level at Z 10).
     let (single, _) = run(&block_world(), &one_block_op(&params)).expect("cut");
-    assert!(feed_levels(&single).len() >= 2, "{:?}", feed_levels(&single));
+    let zs = feed_levels(&single);
+    assert!(!zs.is_empty() && zs.iter().all(|z| *z < 10.0 - EPS), "{zs:?}");
 }
 
 fn feed_length_at(t: &Toolpath, z: f64) -> f64 {

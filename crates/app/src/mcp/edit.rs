@@ -186,11 +186,14 @@ pub(super) fn add_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, S
         Some(h) => (HolderPick::Named(h.to_owned()), "stated"),
     };
     let cmd = AddTool::with_holder(&env.world, &name, tool, pick).map_err(cmd_err)?;
+    let number = cmd.number();
     let holder = cmd.holder().map(str::to_owned);
     let note = cmd.note();
     env.history.execute(&env.world, cmd);
     Ok(json!({
         "tool": name,
+        "number": number,
+        "posts_as": number,
         "holder": holder,
         "holder_from": holder.as_ref().map(|_| from),
         "note": note,
@@ -247,7 +250,9 @@ pub(super) fn add_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Val
     }
     let cmd = CreateOperation::new(&env.world, &name, tool, src, params).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
-    Ok(json!({ "operation": name, "kind": label, "status": "never" }))
+    let mut out = json!({ "operation": name, "kind": label, "status": "never" });
+    clearance_warning(env, &name, &mut out);
+    Ok(out)
 }
 
 pub(super) fn edit_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
@@ -259,7 +264,19 @@ pub(super) fn edit_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Va
     let cmd = EditOperationParams::new(&env.world, &key, next).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     let params = model::operation_of(&env.world, &e).map(|o| project::params_to_json(&o.params));
-    Ok(json!({ "operation": key, "status": "stale", "params": params }))
+    let mut out = json!({ "operation": key, "status": "stale", "params": params });
+    clearance_warning(env, &key, &mut out);
+    Ok(out)
+}
+
+/// #2121: a clearance plane set inside raw stock is said when the
+/// operation is made or edited (`operation::clearance_in_stock_advice`),
+/// as the answer's `warning` - the rapid law holds the post at Generate.
+fn clearance_warning(env: &Env, key: &str, out: &mut Value) {
+    let op = model::find_by_name(&env.world, key).and_then(|e| model::operation_of(&env.world, &e));
+    if let Some(w) = op.and_then(|o| operation::clearance_in_stock_advice(&env.world, o.setup.as_deref(), &o.src, &o.params, Some(key))) {
+        out["warning"] = json!(w);
+    }
 }
 
 /// The app's Detect holes button over MCP (#312): the operation's
@@ -271,7 +288,7 @@ pub(super) fn detect_holes(env: &mut Env, a: &Map<String, Value>) -> Result<Valu
     let key = find_op(env, req_str(a, "name")?)?;
     let e = model::find_by_name(&env.world, &key).ok_or_else(|| format!("no operation named '{key}'"))?;
     let op = model::operation_of(&env.world, &e).ok_or_else(|| format!("'{key}' is not an operation"))?;
-    let operation::DetectedHoles { params: next, skipped } =
+    let operation::DetectedHoles { params: next, skipped, undersize } =
         operation::detect_holes(&env.world, &key, &op.params, op.setup.as_deref(), &op.src)?;
     let (holes, radial) = match &next {
         OpParams::Drill { holes, cross, .. } => (holes.len(), cross.len()),
@@ -281,8 +298,9 @@ pub(super) fn detect_holes(env: &mut Env, a: &Map<String, Value>) -> Result<Valu
     let cmd = EditOperationParams::new(&env.world, &key, next).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     // #1556: each hole the op's kind could not take, named - the GUI's
-    // status line reads the same sentences.
-    Ok(json!({ "operation": key, "holes": holes, "radial_holes": radial, "skipped": skipped, "status": "stale" }))
+    // status line reads the same sentences. #2496: each hole kept but
+    // drilled undersize (wider than the drill), named the same way.
+    Ok(json!({ "operation": key, "holes": holes, "radial_holes": radial, "skipped": skipped, "undersize": undersize, "status": "stale" }))
 }
 
 pub(super) fn delete_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {

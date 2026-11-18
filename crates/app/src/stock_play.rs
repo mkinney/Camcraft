@@ -36,13 +36,13 @@ use std::sync::Arc;
 
 use crate::geometry::Triangle;
 use crate::stock_sim::{Planned, SimOp, Stock};
-use crate::stock_view::{build_stock, build_target, display_inputs, FieldView, DEFAULT_TEXELS};
+use crate::stock_view::{build_stock, build_target, display_inputs_of, FieldView, DEFAULT_TEXELS};
 
 /// Snapshots kept at most - the backward seek's memory bound.
 pub const MAX_CHECKPOINTS: usize = 32;
 
 /// The smallest checkpoint stride, in moves.
-const MIN_STRIDE: usize = 64;
+pub const MIN_STRIDE: usize = 64;
 
 /// Where each op's moves sit on the global move count: what the UI
 /// needs to turn a playhead into a move index, without the moves.
@@ -51,6 +51,9 @@ pub struct PlayIndex {
     /// (op name, global index of its first move, its move count).
     ops: Vec<(String, usize, usize)>,
     total: usize,
+    /// The op the playback stops before and every op after it (#2280,
+    /// `PlaySeed::gather`); empty when the whole program plays.
+    rest: Vec<String>,
 }
 
 impl PlayIndex {
@@ -94,22 +97,28 @@ pub struct PlaySeed {
     /// The verdict tolerance the colours are gated at, or why the
     /// program is not judged (#1056, `model_fidelity::program_tol`).
     tol: Result<f64, String>,
+    /// See [`PlayIndex::stop`].
+    rest: Vec<String>,
 }
 
 impl PlaySeed {
     /// Read the document's program and stock at a display budget of
     /// `texels` cells (see `FieldPlay::new` for `judged`).
     pub fn gather(world: &flecs_ecs::prelude::World, judged: bool, texels: f64) -> Result<Self, String> {
-        let (stock_facets, planned, cell) = display_inputs(world, texels)?;
+        // #2280: the program plays up to the first op with no toolpath.
+        let (planned, rest) = crate::stock_sim::plan_program_until_ungenerated(world)?;
+        let setup = rest.first().and_then(|(_, e)| crate::model::operation_of(world, e)).and_then(|op| op.setup);
+        let (stock_facets, planned, cell) = display_inputs_of(world, texels, planned, setup)?;
         let part = if judged { Some(crate::stock_sim::part_facets(world)?) } else { None };
         let tol = crate::model_fidelity::program_tol(world);
-        Ok(PlaySeed { stock_facets, planned, cell, part, tol })
+        let rest = rest.into_iter().map(|(name, _)| name).collect();
+        Ok(PlaySeed { stock_facets, planned, cell, part, tol, rest })
     }
 
     /// The move table the transport maps onto (cheap; no field built).
     #[must_use]
     pub fn index(&self) -> PlayIndex {
-        PlayIndex::of(&self.planned)
+        PlayIndex { rest: self.rest.clone(), ..PlayIndex::of(&self.planned) }
     }
 }
 
@@ -120,6 +129,7 @@ struct PlayOp {
     ball: bool,
     cone: Option<f64>,
     corner: Option<f64>,
+    drill: bool,
     /// Global index of this op's first move.
     start: usize,
     /// A rotary op's fitted axis: its slices are chorded about it
@@ -135,9 +145,9 @@ pub struct FieldPlay {
     ops: Vec<PlayOp>,
     index: PlayIndex,
     total: usize,
-    stride: usize,
-    /// (moves cut, the stock after them), ascending; [0] is uncut.
-    checkpoints: Vec<(usize, Stock)>,
+    /// The checkpoints: the stock after each kept move count, ascending;
+    /// key 0 is uncut (`camcraft_sim::play_keys`, #2181).
+    keys: Keyframes<Stock>,
     cur: Stock,
     at: usize,
     /// A checkpoint replaced `cur` since the last `take_dirty`: its
@@ -159,6 +169,8 @@ pub struct FieldPlay {
     /// The partial bricks of the last picture taken: the next take
     /// re-sends them, whatever stands there now.
     ghost: HashSet<[i32; 3]>,
+    /// Moves cut since the build: the replay law's yardstick (#2181).
+    moves_cut: usize,
 }
 
 impl FieldPlay {
@@ -179,14 +191,14 @@ impl FieldPlay {
     /// Build the fields from a gathered seed - no world needed, so a
     /// worker thread can pay for it.
     pub fn from_seed(seed: PlaySeed) -> Result<Self, String> {
-        let PlaySeed { stock_facets, planned, cell, part, tol } = seed;
-        let index = PlayIndex::of(&planned);
+        let PlaySeed { stock_facets, planned, cell, part, tol, rest } = seed;
+        let index = PlayIndex { rest, ..PlayIndex::of(&planned) };
         let stock = build_stock(&stock_facets, cell)?;
         let mut ops = Vec::with_capacity(planned.len());
         let mut total = 0usize;
         for p in planned {
             let n = p.moves.len();
-            ops.push(PlayOp { name: p.name, moves: p.moves, radius: p.radius, ball: p.ball, cone: p.cone, corner: p.corner, start: total, rotary: p.rotary, lathe: p.lathe });
+            ops.push(PlayOp { name: p.name, moves: p.moves, radius: p.radius, ball: p.ball, cone: p.cone, corner: p.corner, drill: p.drill, start: total, rotary: p.rotary, lathe: p.lathe });
             total = total.saturating_add(n);
         }
         let (target, target_note) = if let (Some(_), Err(why)) = (&part, &tol) {
@@ -202,8 +214,7 @@ impl FieldPlay {
             ops,
             index,
             total,
-            stride,
-            checkpoints: vec![(0, stock.clone())],
+            keys: Keyframes::new(stock.clone(), stride, MAX_CHECKPOINTS),
             cur: stock,
             at: 0,
             restored: true,
@@ -216,6 +227,7 @@ impl FieldPlay {
             partial: None,
             partial_bricks: HashSet::new(),
             ghost: HashSet::new(),
+            moves_cut: 0,
         })
     }
 
@@ -240,14 +252,10 @@ impl FieldPlay {
     /// Snapshots held (bounded by `MAX_CHECKPOINTS` + 1).
     #[must_use]
     pub fn checkpoints(&self) -> usize {
-        self.checkpoints.len()
+        self.keys.len()
     }
 
-    /// The global move index the playhead `p` stands at, or `None`
-    /// when the plan holds no op of that name. An op's timeline is its
-    /// moves, one segment each, behind at most one connector rapid (the
-    /// air between programs, cut by nothing): a span one longer than
-    /// the op's moves carries that connector, and it is not a move.
+    /// `PlayIndex::index_at` on this playback's plan.
     #[must_use]
     pub fn index_at(&self, p: &Progress) -> Option<usize> {
         self.index.index_at(p)
@@ -263,14 +271,14 @@ impl FieldPlay {
     /// to `k` restarts cutting from (0 when none is nearer).
     #[must_use]
     pub fn floor_checkpoint(&self, k: usize) -> usize {
-        self.checkpoints.iter().rev().find(|(n, _)| *n <= k).map_or(0, |c| c.0)
+        self.keys.floor_at(k)
     }
 
     /// The next checkpoint boundary past `at` (the end at the latest):
     /// a jump cuts checkpoint to checkpoint, one batch per stride.
     #[must_use]
     pub fn next_boundary(&self) -> usize {
-        (self.at / self.stride.max(1)).saturating_add(1).saturating_mul(self.stride).min(self.total)
+        self.keys.next_boundary(self.at, self.total)
     }
 
     /// Jump mode on or off (M13.1 leftover): on, the field keeps no
@@ -303,29 +311,25 @@ impl FieldPlay {
         }
         // The move in flight changes: its partial picture goes.
         self.drop_partial();
-        if k < self.at {
-            let (at, snap) = self
-                .checkpoints
-                .iter()
-                .rev()
-                .find(|(n, _)| *n <= k)
-                .ok_or("playback lost its uncut stock")?;
+        // Back, or forward past a whole stride to a checkpoint ahead
+        // (a precalculated keyframe, #2181): restore, then cut the rest.
+        if self.keys.restores(self.at, k) {
+            let (at, snap) = self.keys.floor(k).ok_or("playback lost its uncut stock")?;
             self.cur = snap.clone();
             self.at = *at;
             self.restored = true;
             // The snapshot carries the ledger mode of its own time.
             self.cur.set_dirty_tracking(!self.batched);
         }
-        // Forward in stride-sized runs, snapshotting each boundary
-        // passed for the first time.
+        // Forward in stride-sized runs, offering each boundary passed
+        // to the store: its count cap and byte budget decide (#2181).
         while self.at < k {
-            let boundary = (self.at / self.stride + 1).saturating_mul(self.stride);
+            let boundary = (self.at / self.keys.stride()).saturating_add(1).saturating_mul(self.keys.stride());
             let to = k.min(boundary);
             self.cut(self.at, to)?;
             self.at = to;
-            let last = self.checkpoints.last().map_or(0, |c| c.0);
-            if to == boundary && to > last && self.checkpoints.len() <= MAX_CHECKPOINTS {
-                self.checkpoints.push((to, self.cur.clone()));
+            if to == boundary {
+                self.keys.offer(to, &self.cur);
             }
         }
         Ok(true)
@@ -384,9 +388,14 @@ impl FieldPlay {
                     let tol = crate::stock_sim::rotary_pose_tol(self.cur.cell());
                     crate::stock_sim::simulate_rotary_slice(&mut self.cur, &sim, &op.moves, a - op.start, ax, tol).map(|_| ())
                 }
-                (None, None) => self.cur.simulate_display(std::slice::from_ref(&sim)),
+                (None, None) => if op.drill {
+                    self.cur.simulate_drill_display(std::slice::from_ref(&sim))
+                } else {
+                    self.cur.simulate_display(std::slice::from_ref(&sim))
+                },
             };
             cut.map_err(|e| format!("playback could not cut {}: {e}", op.name))?;
+            self.moves_cut = self.moves_cut.saturating_add(b - a);
         }
         Ok(())
     }
@@ -395,3 +404,7 @@ impl FieldPlay {
 #[path = "stock_play_head.rs"]
 mod head;
 pub use head::{progress, settle_frac, Progress};
+
+#[path = "stock_play_precalc.rs"]
+mod precalc;
+pub use camcraft_sim::play_keys::{Keyframes, Precalc, MAX_KEYFRAMES, PRECALC_BUDGET};

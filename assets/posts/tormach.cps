@@ -8,11 +8,12 @@
 // write. The 4th axis (#785) from Tormach's public owner's guides TD10749
 // (microARC 4, 1223A), TD10552 (M/MX 4th axis, 0626A) and TD10374 (PCNC
 // 1100/770 4th axis, 0626A) and the LinuxCNC reference's rotary-axis and
-// G93/G94 sections - behaviour only. The hook contract from Autodesk's published post docs. No
+// G93/G94 sections - behaviour only. Wrapped A (#796) from PathPilot Hub
+// readings (v2.14.4, 770MX SIM) recorded on issue #796. The hook contract from Autodesk's published post docs. No
 // vendor post script text and no CAM post's output used; original work.
 // Structure follows our own haas.cps; the goldens lock this file's
 // decisions, not any vendor's.
-description = "Tormach PathPilot (3-axis mill, A indexing about X, G20/G21 from the machine, G73/G81/G82/G83/G84/G86/G89, G2/G3, G99, G38.2 probing)";
+description = "Tormach PathPilot (3-axis mill, A indexing and wrapped A about X (G93), G20/G21 from the machine, G73/G81/G82/G83/G84/G86/G89, G2/G3, G99, G38.2 probing)";
 vendor = "Camcraft";
 legal = "Original clean-room work; public documentation only";
 certificationLevel = 1;
@@ -23,6 +24,31 @@ capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 9;      // LinuxCNC G-code reference: G54-G59.3 select coordinate systems 1-9 (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
+endUnits = "G20 G21";     // #596 / #2189: switches end units before M30 when asked
+
+declaredOptions = {
+  showSequenceNumbers: {
+    type: "enum",
+    title: "Sequence numbers",
+    group: "Format",
+    description: "Where to emit N-word block numbers",
+    choices: [
+      { id: "off", title: "Off" },
+      { id: "every-block", title: "Every block" },
+      { id: "tool-change", title: "On tool change" },
+      { id: "op-start", title: "On operation start" },
+    ],
+    default: "off",
+  },
+  sequenceNumberStart: { type: "integer", title: "First sequence number", group: "Format", description: "Starting N number", min: 1, max: 999999, default: 10 },
+  sequenceNumberIncrement: { type: "integer", title: "Sequence number increment", group: "Format", description: "Step between sequence numbers", min: 1, max: 10000, default: 10 },
+  separateWordsWithSpace: { type: "boolean", title: "Separate words with space", group: "Format", description: "Insert a space between G-code words on a block", default: true },
+  writeMachine: { type: "boolean", title: "Write machine header", group: "Header & comments", description: "Emit a comment naming the machine in the header", default: false },
+  writeToolList: { type: "boolean", title: "Write tool list", group: "Header & comments", description: "Emit a summary comment per tool at program start", default: false },
+  writeVersion: { type: "boolean", title: "Write post version", group: "Header & comments", description: "Emit post version metadata comment in the header", default: false },
+  optionalStop: { type: "boolean", title: "Optional stop (M1)", group: "Behavior", description: "Write M1 before tool changes after the first operation", default: false },
+  useRadiusArcs: { type: "boolean", title: "Use radius (R) arcs", group: "Cycles & arcs", description: "Write R word instead of I/J/K arc centers", default: false },
+};
 afterModes = true; // #1532: reads PARAM AfterOperation (stop / optional stop) and PARAM SetupChange; a trip home is refused by name
 explains = "paren"; // #1387: LinuxCNC parenthesized comments; shared helper keeps them inert
 // Original wording; inherited mill meanings cite RS-274 / LinuxCNC in explain.rs.
@@ -81,14 +107,60 @@ function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
 function ni(v) { return has(v) ? String(Math.round(v)) : "0"; } // integer word
 function w(letter, v) { return has(v) ? letter + fu(v) : ""; }
 function fw(v) { return has(v) ? "F" + ff(v) : ""; }
+var seqNum = 0;
+var seqNextForce = false;
+var secStarted = 0;
+function optBool(k, def) {
+  return typeof postOptions !== "undefined" && postOptions && typeof postOptions[k] === "boolean" ? postOptions[k] : def;
+}
+function optInt(k, def) {
+  return typeof postOptions !== "undefined" && postOptions && typeof postOptions[k] === "number" && isFinite(postOptions[k]) ? Math.round(postOptions[k]) : def;
+}
+function optStr(k, def) {
+  return typeof postOptions !== "undefined" && postOptions && typeof postOptions[k] === "string" ? postOptions[k] : def;
+}
+function nextSeq() {
+  if (seqNum <= 0) seqNum = optInt("sequenceNumberStart", 10);
+  else seqNum += optInt("sequenceNumberIncrement", 10);
+  return "N" + seqNum;
+}
+function isCommentOnly(a) {
+  return a.length === 1 && String(a[0]).charAt(0) === "(" && String(a[0]).charAt(String(a[0]).length - 1) === ")";
+}
 function block(words) {  // join the non-empty words onto one line
   var a = [];
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
   if (a.length > 0) {
+    var commentOnly = isCommentOnly(a);
+    var sep = !commentOnly && !optBool("separateWordsWithSpace", true) ? "" : " ";
+    var body = a.join(sep);
     var c = explain(a);
-    writeln(a.join(" ") + (c ? " " + c : ""));
+    var prefix = "";
+    if (!commentOnly) {
+      var mode = optStr("showSequenceNumbers", "off");
+      if (mode === "every-block" || ((mode === "tool-change" || mode === "op-start") && seqNextForce)) {
+        prefix = nextSeq() + " ";
+        seqNextForce = false;
+      }
+    }
+    writeln(prefix + body + (c ? " " + c : ""));
+  }
+}
+function writeHeaderExtras() {
+  var nm = (typeof machine !== "undefined" && machine.name) || "";
+  if (optBool("writeMachine", false) && nm) note("MACHINE: " + clean(nm));
+  if (optBool("writeVersion", false)) note("POST: " + clean(description));
+  if (optBool("writeToolList", false) && typeof programTools !== "undefined" && programTools.length) {
+    for (var i = 0; i < programTools.length; i++) {
+      var pt = programTools[i];
+      var desc = [];
+      if (pt.kind) desc.push(clean(String(pt.kind).toUpperCase()));
+      if (has(pt.diameter) && pt.diameter > 0) desc.push("D" + fu(pt.diameter));
+      if (pt.name) desc.push(clean(pt.name));
+      note("T" + ni(pt.number) + (desc.length ? " - " + desc.join(" ") : ""));
+    }
   }
 }
 function xyz(p) {
@@ -264,6 +336,7 @@ function onOpen() {
   // #594: the machine name is user text - cleaned like every other
   // comment text, so `Tormach 770MX (ML)` never nests.
   note(headTitle(nm));
+  writeHeaderExtras();
   block([inch ? "G20" : "G21", "G17", "G90", "G91.1", "G94", "G40", "G49", "G80"]);
   block(["G64", blendP()]);
   var z = safeZ();
@@ -439,6 +512,9 @@ function smoothOff() {
 function startPreamble() {
   if (sectionOpen) return;
   sectionOpen = true;
+  var secIdx = secStarted;
+  secStarted += 1;
+  if (optStr("showSequenceNumbers", "off") === "op-start") seqNextForce = true;
   // #574: a touch probe (a stated speed of 0) states its spindle
   // stopped before its first move, whatever the tool change did.
   var probeStop = spindleWait && !(sRpm > 0);
@@ -451,6 +527,8 @@ function startPreamble() {
     // program already loaded can skip the trip to G30 and the tool change.
     if (loadedTool !== tNo) {
       retract();
+      if (secIdx > 0 && optBool("optionalStop", false)) block(["M1"]);
+      if (optStr("showSequenceNumbers", "off") === "tool-change") seqNextForce = true;
       block(["T" + ni(tNo), "M6"]);
       loadedTool = tNo;
     }
@@ -484,6 +562,7 @@ function startPreamble() {
 function endPreamble() {
   if (!sectionOpen) return;
   restorePlane();            // the plane never leaks past its section
+  g94();                     // #796: no section leaves G93 behind
   sectionOpen = false;
   aSection = null;           // #785: the next section indexes afresh
   aNow = null;               // ... and restates A: a section boundary is
@@ -544,12 +623,11 @@ function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028
 //   frame: the tip relative to the work offset turned by -A about X, so
 //   WCS Y0 Z0 must lie on the A centerline (the note at the first index).
 // - Refused by name: a tilt the A axis cannot reach (any B or C), an A
-//   past the stated travel, an A that changes inside an operation
-//   (simultaneous 4-axis: PathPilot's rollover and its combined-feed
-//   handling are not confirmed on a microARC 4 - TD10749 is silent, and
-//   LinuxCNC leaves rollover to the machine's configuration), an indexed
-//   arc (a tilted path is chords) and a tilted move on a machine with no
-//   A about X.
+//   past the stated travel, an indexed arc (a tilted path is chords),
+//   a tilted move on a machine with no A about X, and a move with no A
+//   word inside an operation indexed away from A0 (#2473).
+// - An A that changes inside an operation (simultaneous 4-axis, #796) is
+//   posted as wrapped A - see "Simultaneous A" below.
 // - No clamp code: none of the three guides names an M-code; the microARC
 //   4 has no clamp, the older tables clamp by hand (loosened to rotate).
 // A machine with an A states it at every section's first motion (G0 A0
@@ -604,7 +682,14 @@ function toolAngle(a0, b0, c0) {
 }
 // Called before every motion: true when the record may post. Indexes the
 // table at the section's first motion, when its angle is not the held one.
-function indexFor(p) {
+// A later record whose angle differs turns A inside the section: aNext is
+// then set to the unwrapped target ({a, word}) for onRapid / onLinear to
+// post (turnMove); any other motion (`what` names it) is refused by name
+// when it would turn A, and so is a record with no A word while the
+// section holds an A other than 0 (#2473).
+var aNext = null;
+function indexFor(p, what) {
+  aNext = null;
   var tilted = has(p.A);
   var ax = aRotary();
   if (!ax) {
@@ -624,9 +709,28 @@ function indexFor(p) {
     a = t;
   }
   if (aSection !== null) {
-    if (Math.abs(a - aSection) > A_EPS) {
-      return aRefuse("simultaneous 4-axis motion" + inOp() + " (A changes inside the operation) - not confirmed on PathPilot; this post indexes A between operations only");
+    // aSection is the unwrapped tool angle the control holds; the turn to
+    // `a` is taken the short way (-180..180), so A counts on through 360.
+    var d = a - aSection;
+    d = d - 360 * Math.round(d / 360);
+    if (Math.abs(d) <= A_EPS) return true;
+    // #2473: a record with no A word does not state a turn. The stream
+    // reads a move without an axis as "keep the pose" (post::dump), so a
+    // turn to A0 here would swing the part under the tool. Refused by name.
+    if (!tilted) {
+      return aRefuse((what || "move") + inOp() + " states no A angle while the operation holds A" + fa(ax.sign * aSection) + " - the post turns A inside an operation only on a move that states its A angle");
     }
+    if (what) {
+      return aRefuse(what + inOp() + " turns A - the post writes a turning A on straight G0 / G1 moves only");
+    }
+    if (!(rotaryRate("A") > 0)) {
+      return aRefuse("simultaneous 4-axis motion" + inOp() + " (A changes inside the operation) - " + mName() + " states no A feed rate (the A axis's max_normal_speed), so the post cannot hold it");
+    }
+    var to = aSection + d, tw = ax.sign * to;
+    if (ax.travel && (tw < ax.travel[0] - A_EPS || tw > ax.travel[1] + A_EPS)) {
+      return aRefuse("A" + fa(tw) + inOp() + " is beyond the A axis travel " + fa(ax.travel[0]) + ".." + fa(ax.travel[1]) + " degrees - A counts on through 360 (PathPilot does not roll A over), so the operation turns too far in one direction; use a machine with verified A travel wide enough for the whole operation. For Rotary Offset, cutting levels cover two laps plus seam padding");
+    }
+    aNext = { a: to, word: tw };
     return true;
   }
   var word = ax.sign * a;
@@ -659,6 +763,167 @@ function tip(x, y, z) {
   return [rx, ry * c + rz * s, -ry * s + rz * c];
 }
 function indexed() { return !!aSection; }
+
+// ---------------------------------------------- simultaneous A (#796)
+// An A that turns inside an operation (Rotary Parallel, a wrapped
+// contour) is posted from the readings mkinney took in the PathPilot Hub
+// (v2.14.4, 770MX SIM with the 4th axis on, recorded on issue #796):
+// 1. A is linear degrees with no rollover: from A350, G1 A10 turned BACK
+//    340 degrees and read 10.000. So A is written cumulative: each target
+//    is the equivalent of the stream's angle nearest the held one (359 ->
+//    361, never back through 0), and the stated travel bounds the count
+//    (refused by name past it - the control will not wrap it back).
+// 2. G94 on an X+A move: F is the X Y Z distance only, A follows in the
+//    same time; on an A-only move F is degrees per minute.
+// 3. G93 inverse time is accepted and timed (G93 G1 X4 A180 F5: 12 s).
+// So a move that turns A and moves X Y Z is written in G93, F = 1 / its
+// time in minutes; the time is the longer of the tool tip's path
+// RELATIVE TO THE PART at the programmed feed and the A turn at the
+// machine's stated A rate (`rotaryRate`, the #885 rule) - neither the
+// cutting feed nor the A rate is passed. The path is bounded from the
+// rounded posted XYZ/A trajectory, with one extra length step of slack,
+// and F is floored, never rounded: rounding only slows a move. A
+// move that turns A alone (its X Y Z words unchanged) stays in G94 with
+// F in degrees per minute under the same time law; a move that does not
+// turn A is the ordinary G94 move. G94 is restated before any motion that
+// is not a G93 feed, and at the section's end. A machine that states no
+// A rate is refused by name. Rapids turn A with G0 (no F).
+// The machine moves X Y Z in a straight line while A turns, so the tip
+// relative to the part bows off the stream's straight segment: each
+// turning move is split into 2^k equal pieces until that bow, sampled at
+// a quarter, half and three quarters of every piece, is within TURN_TOL
+// (at most TURN_MAX pieces, else refused by name).
+// Between operations A is reset, never carried: each section restates its
+// first angle as -180..180 (G53 G0 Z to the safe Z, then G0 A - the
+// index above), so a wrapped operation that ended at A370 unwinds at the
+// top of Z before the next operation starts.
+var TURN_TOL = 0.005;    // mm (0.0002 in)
+var TURN_MAX = 256;
+var g93 = false;         // the control is in G93 (inverse time)
+function g94() { if (g93) { block(["G94"]); g93 = false; } }
+// The motion gate every motion hook calls: indexFor, then G94 back for
+// any motion that will not be a turning move.
+function motionFor(p, what) {
+  if (!indexFor(p, what)) return false;
+  if (!aNext) g94();
+  return true;
+}
+// tip() at an explicit tool angle, and its inverse (machine words back
+// to the part frame, world coordinates).
+function tipAt(x, y, z, ang) {
+  var rx = x - orgX, ry = y - orgY, rz = z - orgZ;
+  var t = ang * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+  return [rx, ry * c + rz * s, -ry * s + rz * c];
+}
+function partAt(m, ang) {
+  var t = ang * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+  return [m[0] + orgX, m[1] * c - m[2] * s + orgY, m[1] * s + m[2] * c + orgZ];
+}
+function lerp3(a, b, u) { return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u]; }
+function dist3(a, b) {
+  var dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+// The largest bow (mm) of the move s -> e turning a0 -> a1, split in n.
+function turnBow(s, e, a0, a1, n) {
+  var worst = 0;
+  for (var i = 0; i < n; i++) {
+    var u0 = i / n, u1 = (i + 1) / n;
+    var p0 = lerp3(s, e, u0), p1 = lerp3(s, e, u1);
+    var b0 = a0 + (a1 - a0) * u0, b1 = a0 + (a1 - a0) * u1;
+    var m0 = tipAt(p0[0], p0[1], p0[2], b0), m1 = tipAt(p1[0], p1[1], p1[2], b1);
+    for (var k = 1; k <= 3; k++) {
+      var tau = k / 4;
+      var q = partAt(lerp3(m0, m1, tau), b0 + (b1 - b0) * tau);
+      var d = dist3(q, lerp3(p0, p1, tau));
+      if (!(d <= worst)) worst = d;   // a NaN reads as the worst
+    }
+  }
+  return worst;
+}
+function floorWord(letter, v) {  // v floored to 0.001; "" when under 0.001
+  var t = Math.floor(Number(v) * 1000 + 1e-9) / 1000;
+  return (t >= 0.001 && isFinite(t)) ? letter + trim(t.toFixed(3)) : "";
+}
+// Bound the length of q(u) = R(b0 + w*u) * (m0 + v*u), 0 <= u <= 1,
+// in the part frame. Rotation preserves norms. Its second derivative is
+// R(2*w*J*v + w*w*J*J*m), so |q''| <= M below (the radius of a straight
+// segment is at most its largest endpoint radius). Hence
+// |q'(u)| <= |q'(1/2)| + M*|u-1/2|, whose integral is |q'(1/2)| + M/4.
+// Use the actual rounded words, including the machine's A sign and inch
+// conversion: neither a stream chord nor a rounding allowance bounds
+// the curved trajectory when the stream endpoints nearly coincide.
+function turnLength(x0, y0, z0, x1, y1, z1, b0, b1) {
+  var unit = inch ? 25.4 : 1;
+  var m0 = [Number(x0.slice(1)) * unit, Number(y0.slice(1)) * unit, Number(z0.slice(1)) * unit];
+  var m1 = [Number(x1.slice(1)) * unit, Number(y1.slice(1)) * unit, Number(z1.slice(1)) * unit];
+  var vx = m1[0] - m0[0], vy = m1[1] - m0[1], vz = m1[2] - m0[2];
+  var w = (b1 - b0) * Math.PI / 180;
+  var dy = vy - w * (m0[2] + m1[2]) / 2;
+  var dz = vz + w * (m0[1] + m1[1]) / 2;
+  var r0 = Math.sqrt(m0[1] * m0[1] + m0[2] * m0[2]);
+  var r1 = Math.sqrt(m1[1] * m1[1] + m1[2] * m1[2]);
+  var bound = 2 * Math.abs(w) * Math.sqrt(vy * vy + vz * vz) + w * w * Math.max(r0, r1);
+  return Math.sqrt(vx * vx + dy * dy + dz * dz) + bound / 4;
+}
+// Posts a G0 / G1 that turns A to aNext. False when refused by name.
+function turnMove(p, rapid) {
+  var ax = aRotary();
+  if (xyUnknown || !ax || !(has(p.StartX) && has(p.StartY) && has(p.StartZ) && has(p.X) && has(p.Y) && has(p.Z))) {
+    return aRefuse("a move that turns A" + inOp() + " from a start point the post does not know - its path and time cannot be judged");
+  }
+  var f = Number(p.FeedRate);
+  if (!rapid && !(f > 0)) return aRefuse("a feed that turns A" + inOp() + " has no feed rate");
+  var s = [Number(p.StartX), Number(p.StartY), Number(p.StartZ)], e = [Number(p.X), Number(p.Y), Number(p.Z)];
+  var a0 = aSection, a1 = aNext.a;
+  var n = 1;
+  while (n < TURN_MAX && !(turnBow(s, e, a0, a1, n) <= TURN_TOL)) n *= 2;
+  var bow = turnBow(s, e, a0, a1, n);
+  if (!(bow <= TURN_TOL)) {
+    return aRefuse("a move that turns A" + inOp() + " still bows " + fu(bow) + " off its path split " + TURN_MAX + " times - shorten the toolpath's segments");
+  }
+  var rate = rotaryRate("A");
+  var slack = (inch ? 0.00254 : 0.001) * Math.sqrt(3);
+  var bPrev = a0;
+  var m0 = tipAt(s[0], s[1], s[2], a0);
+  var xw0 = "X" + fu(m0[0]), yw0 = "Y" + fu(m0[1]), zw0 = "Z" + fu(m0[2]);
+  for (var i = 1; i <= n; i++) {
+    var u = i / n;
+    var p1 = i === n ? e : lerp3(s, e, u);
+    var b1 = i === n ? a1 : a0 + (a1 - a0) * u;
+    var m = tipAt(p1[0], p1[1], p1[2], b1);
+    var xw = "X" + fu(m[0]), yw = "Y" + fu(m[1]), zw = "Z" + fu(m[2]);
+    var aw = "A" + fa(ax.sign * b1);
+    var dA = Math.abs(Number(fa(ax.sign * b1)) - Number(fa(ax.sign * bPrev)));
+    if (rapid) {
+      g94();
+      block(["G0", xw, yw, zw, aw]);
+    } else if (!(dA > 0)) {                   // the turn rounds away: plain G94
+      g94();
+      block(["G1", xw, yw, zw, fw(f)]);
+    } else {
+      var length = turnLength(xw0, yw0, zw0, xw, yw, zw,
+        Number(fa(ax.sign * bPrev)) / ax.sign, Number(fa(ax.sign * b1)) / ax.sign);
+      var t = Math.max((length + slack) / f, dA / rate);  // minutes
+      var pure = xw === xw0 && yw === yw0 && zw === zw0;
+      var word = floorWord("F", pure ? dA / t : 1 / t);
+      if (!word) {
+        return aRefuse("a feed that turns A" + inOp() + " would take over 1000 minutes - its F word cannot be written");
+      }
+      if (pure) {
+        g94();
+        block(["G1", aw, word]);              // F in degrees per minute
+      } else {
+        block([g93 ? "" : "G93", "G1", xw, yw, zw, aw, word]);
+        g93 = true;
+      }
+    }
+    bPrev = b1; xw0 = xw; yw0 = yw; zw0 = zw;
+  }
+  aSection = a1;
+  aNow = ax.sign * a1;
+  return true;
+}
 
 // ------------------------------------------------------------- motions
 // X and Y are unknown at the program's start and after every G30: the
@@ -779,20 +1044,22 @@ function probeSeat() {
 }
 function onRapid() {
   startPreamble();
-  if (chainRapid() || !indexFor(properties)) return;
+  if (chainRapid() || !motionFor(properties, "")) return;
+  if (aNext) { turnMove(properties, true); return; }
   if (!xyFirst(properties.X, properties.Y, properties.Z)) return;  // #1614: refused - the move is not written
   block(["G0"].concat(xyz(properties)));
 }
 function onLinear() {
   startPreamble();
-  if (chainCut() || !indexFor(properties)) return;
+  if (chainCut() || !motionFor(properties, "")) return;
   if (spindleStopped("feed move G1")) return;
+  if (aNext) { turnMove(properties, false); return; }
   if (!startXY(properties)) return;  // #1614: refused - the move is not written
   block(["G1"].concat(xyz(properties), [fw(properties.FeedRate)]));
 }
 function onCircular() {
   startPreamble();
-  if (chainCut() || !indexFor(properties)) return;
+  if (chainCut() || !motionFor(properties, "arc move")) return;
   var p = properties;
   if (indexed()) {  // #785: a tilted path is chords; an arc here is unstated
     aRefuse("arc on an indexed A" + inOp() + " - the indexed frame posts lines only");
@@ -800,11 +1067,83 @@ function onCircular() {
   }
   if (spindleStopped("arc move " + (p.CircularDirection === "CW" ? "G2" : "G3"))) return;
   if (!startXY(p)) return;  // #1614: refused - the move is not written
+  var g = p.CircularDirection === "CW" ? "G2" : "G3";
+  if (optBool("useRadiusArcs", false) && emitArcWithRadius(p, g, fw(p.FeedRate))) return;
   block([
     planeWord(planeOf(p)),
-    p.CircularDirection === "CW" ? "G2" : "G3",
+    g,
     wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ),
   ].concat(centerWords(p)).concat([fw(p.FeedRate)]));
+}
+function emitArcWithRadius(p, g, fwd) {
+  var c = p.IJKIncrement || {};
+  var axes = p.CircularPlane === "XZ" ? [2, 0, 1] : (p.CircularPlane === "YZ" ? [1, 2, 0] : [0, 1, 2]);
+  var u = axes[0], v = axes[1], h = axes[2];
+  var from = [p.StartX, p.StartY, p.StartZ], to = [p.X, p.Y, p.Z], center = [c.I, c.J, c.K];
+  var org = [orgX, orgY, orgZ];
+  if (!has(from[u]) || !has(from[v]) || !has(to[u]) || !has(to[v]) || !has(center[u]) || !has(center[v])) return false;
+  var du = from[u] - center[u], dv = from[v] - center[v];
+  var r0 = Math.sqrt(du * du + dv * dv);
+  var eu = to[u] - center[u], ev = to[v] - center[v];
+  var r1 = Math.sqrt(eu * eu + ev * ev);
+  if (!(r0 > 0) || !isFinite(r0) || !(r1 > 0) || !isFinite(r1)) return false;
+  var r = (r0 + r1) * 0.5;
+  if (Math.abs(r0 - r1) > Math.min(0.02, Math.max(0.002, r * 0.005))) return false;
+  var a0 = Math.atan2(dv, du), ccw = p.CircularDirection !== "CW";
+  var full = Math.abs(to[u] - from[u]) < 1e-5 && Math.abs(to[v] - from[v]) < 1e-5;
+  var sweep = 2 * Math.PI;
+  if (!full) {
+    var a1 = Math.atan2(ev, eu);
+    sweep = ccw ? a1 - a0 : a0 - a1;
+    if (sweep <= 0) sweep += 2 * Math.PI;
+  }
+  // #2191: near-180 deg arcs lose center accuracy and can put chord > 2R
+  // after rounding; near-360 deg arcs collapse or cannot take one R.
+  // Split into quadrant-sized segments and verify every posted segment.
+  var nearPi = Math.PI / 9;
+  var n = 1;
+  if (full || sweep >= 2 * Math.PI - nearPi) n = 4;
+  else if (Math.abs(sweep - Math.PI) <= nearPi) n = 2;
+  function buildSegs(count) {
+    var segs = [], dir = ccw ? 1 : -1, prev = [from[0], from[1], from[2]];
+    var rSigned = sweep / count > Math.PI + 1e-6 ? -r : r;
+    var rp = Number(fu(r));
+    if (!(rp > 0) || !isFinite(rp)) return null;
+    for (var k = 1; k <= count; k++) {
+      var next;
+      if (k === count) {
+        next = [to[0], to[1], to[2]];
+      } else {
+        var ak = a0 + dir * sweep * (k / count);
+        next = [from[0], from[1], from[2]];
+        next[u] = center[u] + r * Math.cos(ak);
+        next[v] = center[v] + r * Math.sin(ak);
+        if (has(from[h]) && has(to[h])) next[h] = from[h] + (to[h] - from[h]) * (k / count);
+        else if (has(to[h])) next[h] = to[h];
+      }
+      var su = Number(fu(prev[u] - org[u])), sv = Number(fu(prev[v] - org[v]));
+      var pu = Number(fu(next[u] - org[u])), pv = Number(fu(next[v] - org[v]));
+      var qdu = pu - su, qdv = pv - sv;
+      var chord = Math.sqrt(qdu * qdu + qdv * qdv);
+      if (!(chord > 0) || chord > 2 * rp - 1e-7) return null;
+      if (count === 1 && chord > 2 * rp * 0.99) return null;
+      segs.push({ pt: next, rSigned: rSigned });
+      prev = next;
+    }
+    return segs;
+  }
+  var segs = buildSegs(n);
+  if (!segs && n === 1) {
+    segs = buildSegs(Math.max(2, Math.ceil(sweep / (Math.PI / 2))));
+  }
+  if (!segs) return false;
+  for (var i = 0; i < segs.length; i++) {
+    var pt = segs[i].pt;
+    var words = i === 0 ? [planeWord(planeOf(p)), g] : [g];
+    words.push(wo("X", pt[0], orgX), wo("Y", pt[1], orgY), wo("Z", pt[2], orgZ), w("R", segs[i].rSigned), fwd);
+    block(words);
+  }
+  return true;
 }
 
 // ------------------------------------------- protected probe moves
@@ -826,7 +1165,7 @@ function onProbeGuard() {
   startPreamble();
   probeSeat();               // #1028
   var p = properties;
-  if (!indexFor(p)) return;  // #785: probing is upright (A0 on a 4th axis)
+  if (!motionFor(p, "probe move")) return;  // #785: probing is upright (A0 on a 4th axis)
   if (!startXY(p)) return;  // #1614: refused - the move is not written
   block(["G38.3", wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), fw(p.Feed)]);
   guardO += 1;
@@ -887,14 +1226,16 @@ function onCycle() {
   startPreamble();
   restorePlane();            // a cycle drills along G17's Z
   var p = properties;
-  if (!indexFor(p)) return;  // #785: a cycle drills upright (A0 on a 4th axis)
+  if (!motionFor(p, "canned cycle")) return;  // #785: a cycle drills upright (A0 on a 4th axis)
   var dwell = has(p.P) && p.P > 0 ? p.P : 0; // P is seconds
   var g = "G81";
   if (p.CycleType === "SPOT" || p.CycleType === "DRILL") g = dwell > 0 ? "G82" : "G81";
   else if (p.CycleType === "PECK") g = "G73";
   else if (p.CycleType === "DEEP") g = "G83";
   else if (p.CycleType === "BORE") g = "G86";
-  else if (p.CycleType === "BACKBORE") g = "G89";
+  // #2360: a back-bore with no dwell is G85 (feed in, feed out): a G89
+  // with no P word would leave the dwell to the control's modal P.
+  else if (p.CycleType === "BACKBORE") g = dwell > 0 ? "G89" : "G85";
   else if (p.CycleType === "REAM") g = "G85";   // #1445: feed in, feed out at F, no dwell
   // Tormach documents G84 for PathPilot: F is the pitch times the rpm
   // (the stream's synthesized tap feed), no P - PathPilot sizes the
@@ -928,10 +1269,18 @@ function onCycle() {
     }
     return;
   }
+  // #2348: PathPilot's and LinuxCNC's G83 formats have no P word.
+  if (g === "G83" && dwell > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1614: refused - not written)
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
+  // #2360 (as #2350 for Haas): P is sticky in the dwell cycles, so a
+  // changed dwell reopens the cycle and each hole posts its own P.
+  if (g === "G82" || g === "G86" || g === "G89") sig += "|" + secs(dwell);
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {
@@ -942,7 +1291,9 @@ function onCycle() {
     if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && p.Q > 0) {
       words.push(w("Q", p.Q));
     }
-    if (dwell > 0 && (g === "G82" || g === "G86" || g === "G89")) words.push("P" + secs(dwell));
+    // #2362: LinuxCNC / PathPilot requires a non-negative P on the first
+    // G86 block of a cycle, even when the dwell is 0 (P0).
+    if (g === "G86" || (dwell > 0 && (g === "G82" || g === "G89"))) words.push("P" + secs(dwell));
     words.push(fw(p.FeedRate));
     block(words);
     cycleSig = sig;
@@ -998,7 +1349,7 @@ function onProbeMove() {
   startPreamble();
   probeSeat();               // #1028
   var p = properties;
-  if (!indexFor(p)) return;  // #785: probing is upright (A0 on a 4th axis)
+  if (!motionFor(p, "probe move")) return;  // #785: probing is upright (A0 on a 4th axis)
   if (!xyFirst(p.X, p.Y)) return;  // never a probe from an unknown X Y (#1614: refused - not written)
   block(["G38.2", wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), fw(p.Feed)]);
   if (has(p.Measure) && p.Measure >= 0) {

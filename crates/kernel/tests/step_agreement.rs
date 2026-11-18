@@ -99,6 +99,15 @@ const ROWS: &[Row] = &[
         import: "agree",
         mesh: "watertight, within tolerance",
     },
+    // #2209 (PR #2215): two curved faces that meet at one smooth crease.
+    // As fillet_corner: solidcore has no exact pcurve for a face of it;
+    // truck reads the file (#2244 pinned the reading).
+    Row {
+        file: "fig8.step",
+        mm_per_unit: 1.0,
+        import: "solidcore refuses: #14 at read: pcurves failed on",
+        mesh: "no exact solid to judge against",
+    },
     // solidcore has no exact pcurve of a NURBS on a spline surface (the
     // corner blend); truck meshes the corner.
     Row {
@@ -128,6 +137,12 @@ const ROWS: &[Row] = &[
     Row {
         file: "sample_ap214.step",
         mm_per_unit: 1000.0,
+        import: "agree",
+        mesh: "watertight, within tolerance",
+    },
+    Row {
+        file: "spline_revolved.step",
+        mm_per_unit: 1.0,
         import: "agree",
         mesh: "watertight, within tolerance",
     },
@@ -427,11 +442,13 @@ per_file! {
     step_bspline_discontinuous => "bspline_discontinuous.step",
     step_bspline_dome => "bspline_dome.step",
     step_empty_list => "empty_list.step",
+    step_fig8 => "fig8.step",
     step_fillet_corner => "fillet_corner.step",
     step_lathe_holder_offset => "lathe_holder_offset.step",
     step_modular_clamp_unit => "modular_clamp_unit.step",
     step_modular_lathe_head => "modular_lathe_head.step",
     step_sample_ap214 => "sample_ap214.step",
+    step_spline_revolved => "spline_revolved.step",
     step_tool_csys_box_iso13399 => "tool_csys_box_iso13399.step",
     step_tool_csys_degenerate => "tool_csys_degenerate.step",
     step_tool_csys_iso13399 => "tool_csys_iso13399.step",

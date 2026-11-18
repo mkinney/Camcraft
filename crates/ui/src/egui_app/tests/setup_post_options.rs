@@ -5,6 +5,7 @@
 //! Provenance: our own tests over our own shell; no vendor material.
 
 use super::*;
+use egui_kittest::kittest::NodeT;
 use crate::state::SetupPage;
 use camcraft_app::schema::PostOptions;
 use camcraft_app::setup_post_options;
@@ -51,9 +52,14 @@ fn the_post_page_radio_gives_the_setup_its_own_options() {
     crate::actions::target(&mut harness.state_mut().state, UiTarget::SetupNode("Setup1".into(), SetupPage::Post));
     harness.run_steps(2);
     assert!(harness.query_by_label("Use the document's post options").is_some());
+    // Post rows can extend below the viewport; exercise the real scroll path.
+    harness.get_by_label("This setup has its own post options").scroll_to_me();
+    harness.run_steps(10);
     harness.get_by_label("This setup has its own post options").click();
     harness.run_steps(2);
     assert!(setup_post_options::own(&harness.state().state.world, Some("Setup1")).is_some());
+    harness.get_by_label("Skip pauses and homes").scroll_to_me();
+    harness.run_steps(10);
     harness.get_by_label("Skip pauses and homes").click();
     harness.run_steps(2);
     let world = &harness.state().state.world;
@@ -80,4 +86,116 @@ fn the_tool_list_page_exports_the_setups_tools() {
     assert_eq!(text, camcraft_app::tool_list_export::csv(&state.world, Some("Setup1")));
     assert!(state.status.contains("tool list"), "{}", state.status);
     assert_eq!(state.doc_version, version, "an export is not a command");
+}
+
+// The UI switch reaches the post engine through the same options object as a real post.
+fn explain_program(options: PostOptions) -> String {
+    let cps = r#"explains = "paren";
+function onOpen() {
+    var words = ["G21"];
+    var comment = explain(words);
+    writeln(words.join(" ") + (comment ? " " + comment : ""));
+}
+"#;
+    camcraft_app::post::engine::run_with(
+        cps,
+        &serde_json::Value::Null,
+        "",
+        &camcraft_app::posting::options_value(options),
+    )
+    .expect("the original fixture posts")
+    .program
+}
+
+fn assert_explain_checked(h: &Harness<'static, ShellUi>, checked: bool) {
+    let node = h.get_by(|n| {
+        n.role() == egui::accesskit::Role::CheckBox
+            && n.label().as_deref() == Some("Explain G-code (add a comment to each block)")
+    });
+    let expected = if checked { egui::accesskit::Toggled::True } else { egui::accesskit::Toggled::False };
+    assert_eq!(node.accesskit_node().toggled(), Some(expected));
+}
+
+/// #1390: the document page exposes Explain through the undoable options command.
+#[test]
+fn explain_on_the_document_post_page_is_undoable() {
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1280.0, 1100.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    crate::actions::target(&mut h.state_mut().state, UiTarget::SetupNode(String::new(), SetupPage::Post));
+    h.run_steps(3);
+    let label = "Explain G-code (add a comment to each block)";
+    assert!(h.query_by(|n| n.role() == egui::accesskit::Role::CheckBox && n.label().as_deref() == Some(label)).is_some(), "the document post page offers Explain");
+    assert!(h.query_by_label("The program gets longer.").is_some(), "the page states the size cost");
+    let before = setup_post_options::document(&h.state().state.world);
+    let plain = explain_program(before);
+    assert_explain_checked(&h, false);
+    h.get_by(|n| {
+        n.role() == egui::accesskit::Role::CheckBox && n.label().as_deref() == Some(label)
+    })
+    .click();
+    h.run_steps(2);
+    assert_explain_checked(&h, true);
+    let after = setup_post_options::document(&h.state().state.world);
+    assert_eq!(after, PostOptions { explain: true, ..before });
+    let explained = explain_program(after);
+    assert_ne!(explained, plain, "the checkbox changes posted text");
+    assert!(explained.contains(" ("), "an explanation comment is appended: {explained}");
+    assert_eq!(explained.split(" (").next().unwrap_or_default(), plain.trim_end(), "executable words stay identical");
+    run(&mut h.state_mut().state, CommandKind::Undo);
+    h.run_steps(2);
+    assert_explain_checked(&h, false);
+    assert_eq!(setup_post_options::document(&h.state().state.world), before);
+    assert_eq!(explain_program(setup_post_options::document(&h.state().state.world)), plain);
+    run(&mut h.state_mut().state, CommandKind::Redo);
+    assert!(setup_post_options::document(&h.state().state.world).explain);
+}
+
+/// #1390: changing Setup2 explains only its output, and undo restores inheritance.
+#[test]
+fn explain_on_the_setup_post_page_leaves_other_setups_unchanged() {
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1280.0, 1100.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    super::setup_mount_pages::two_setups(&mut h, SetupPage::Post);
+    let label = "Explain G-code (add a comment to each block)";
+    assert!(h.query_by(|n| n.role() == egui::accesskit::Role::CheckBox && n.label().as_deref() == Some(label)).is_some(), "the setup post page offers Explain");
+    assert!(h.query_by_label("The program gets longer.").is_some(), "the page states the size cost");
+    let before = setup_post_options::of(&h.state().state.world, Some("Setup2"));
+    assert_explain_checked(&h, false);
+    h.get_by(|n| {
+        n.role() == egui::accesskit::Role::CheckBox && n.label().as_deref() == Some(label)
+    })
+    .click();
+    h.run_steps(2);
+    assert_explain_checked(&h, true);
+    let world = &h.state().state.world;
+    assert_eq!(setup_post_options::own(world, Some("Setup2")), Some(PostOptions { explain: true, ..before }));
+    assert_eq!(setup_post_options::document(world), before, "the document keeps its options");
+    assert_eq!(setup_post_options::of(world, Some("Setup1")), before, "Setup1 keeps its options");
+    run(&mut h.state_mut().state, CommandKind::Undo);
+    h.run_steps(2);
+    assert_explain_checked(&h, false);
+    assert_eq!(setup_post_options::own(&h.state().state.world, Some("Setup2")), None);
+    run(&mut h.state_mut().state, CommandKind::Redo);
+    assert!(setup_post_options::of(&h.state().state.world, Some("Setup2")).explain);
+}
+
+#[test]
+fn wcs_rotation_on_the_document_post_page_is_undoable() {
+    use camcraft_app::schema::WcsRotationOutput;
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1280.0, 1100.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    crate::actions::target(&mut h.state_mut().state, UiTarget::SetupNode(String::new(), SetupPage::Post));
+    h.run_steps(3);
+    assert!(h.query_by_label("WCS rotation").is_some(), "document post page shows WCS rotation picker");
+    assert_eq!(setup_post_options::document(&h.state().state.world).wcs_rotation, WcsRotationOutput::Bake);
+
+    super::setup_mount_pages::pick(&mut h, "Bake into XY (table coordinates)", "Control rotation (G68 / ROT)");
+    assert_eq!(setup_post_options::document(&h.state().state.world).wcs_rotation, WcsRotationOutput::Control);
+
+    run(&mut h.state_mut().state, CommandKind::Undo);
+    h.run_steps(2);
+    assert_eq!(setup_post_options::document(&h.state().state.world).wcs_rotation, WcsRotationOutput::Bake);
 }

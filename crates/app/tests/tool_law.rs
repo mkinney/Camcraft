@@ -1,6 +1,6 @@
 //! M10.1 D (the table half): the tool law's registry column. Every kind
-//! names the tool kinds that can machine it, every tool kind is claimed
-//! by some kind (no orphan cutters in the library), and the family edges
+//! names the tool kinds that can machine it, each supported cutting tool
+//! is claimed by an operation, staged kinds are refused, and the family edges
 //! hold - a grooving kind refuses an end mill, a drill refuses a ball, a
 //! pocket takes an end mill.
 //!
@@ -33,6 +33,8 @@ fn every_tool_kind() -> Vec<ToolKind> {
         ToolKind::Electrode,
         ToolKind::ThreadMill,
         ToolKind::ThreadMillSingle,
+        ToolKind::Waterjet,
+        ToolKind::Wire,
     ];
     for k in &all {
         match k {
@@ -51,7 +53,9 @@ fn every_tool_kind() -> Vec<ToolKind> {
             | ToolKind::Torch
             | ToolKind::Electrode
             | ToolKind::ThreadMill
-            | ToolKind::ThreadMillSingle => {}
+            | ToolKind::ThreadMillSingle
+            | ToolKind::Waterjet
+            | ToolKind::Wire => {}
         }
     }
     all
@@ -60,12 +64,6 @@ fn every_tool_kind() -> Vec<ToolKind> {
 #[test]
 fn every_kind_names_a_tool_set() {
     for row in KindInfo::ALL {
-        // #532: a wire EDM kind mounts no library tool - its wire is the
-        // machine's condition - and is the one family with an empty set.
-        if row.family() == camcraft_app::operation::Family::WireEdm {
-            assert!(row.tool_kinds.is_empty() && !row.mounts_tool(), "{:?} mounts a tool", row.ty);
-            continue;
-        }
         assert!(row.mounts_tool(), "{:?} names no tool kind", row.ty);
         assert!(!row.tool_kinds.is_empty(), "{:?} names no tool kind", row.ty);
         for (i, k) in row.tool_kinds.iter().enumerate() {
@@ -82,6 +80,15 @@ fn every_kind_names_a_tool_set() {
 #[test]
 fn no_orphan_tool_kinds() {
     for k in every_tool_kind() {
+        if k == ToolKind::Waterjet {
+            // #1881 adds the tool and family data seam. Until a waterjet
+            // operation exists, every current operation must refuse it.
+            assert!(
+                KindInfo::ALL.iter().all(|row| !row.accepts(k)),
+                "an existing operation must not machine with a waterjet nozzle"
+            );
+            continue;
+        }
         assert!(
             KindInfo::ALL.iter().any(|row| row.accepts(k)),
             "no operation kind can use a {k}"
@@ -137,4 +144,5 @@ fn family_edges_spot_checks() {
     assert_eq!(OpType::FormTurning.info().tool_kinds, &[ToolKind::Form]);
     assert_eq!(OpType::BoringTurning.info().tool_kinds, &[ToolKind::Bore]);
     assert_eq!(OpType::Facing.info().tool_kinds, &[ToolKind::Turning]);
+    assert_eq!(OpType::WireContour.info().tool_kinds, tool_law::WIRE);
 }

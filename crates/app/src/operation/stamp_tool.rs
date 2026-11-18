@@ -39,6 +39,8 @@ pub(super) fn write(world: &World, tool_name: &str, params: &OpParams, h: &mut s
         crate::tools::ToolKind::Electrode => 13,
         crate::tools::ToolKind::ThreadMill => 14,
         crate::tools::ToolKind::ThreadMillSingle => 15,
+        crate::tools::ToolKind::Waterjet => 16,
+        crate::tools::ToolKind::Wire => 17,
     });
     for v in [
         tool.diameter,

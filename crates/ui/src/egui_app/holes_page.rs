@@ -27,6 +27,8 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             plunge_feed,
             holes,
             cross,
+            break_through,
+            break_through_from,
         } => {
             if tab == SEC_GEO {
                 field(ui, "Holes");
@@ -78,6 +80,8 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 group(ui, LEVELS, None, |ui| {
                     retract_hop(ui, world, op_ctx.as_deref(), retract_z, top_z, clearance_z, "drill.retract");
                     hole_floor(ui, world, op_ctx.as_deref(), bottom_z, top_z, "drill.bottom");
+                    break_through_row(ui, u, break_through, &drill_default(u));
+                    break_through_from_row(ui, break_through_from);
                 });
             }
             if tab == SEC_PASSES {
@@ -118,6 +122,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             climb,
             tolerance,
             holes,
+            break_through,
         } => {
             if tab == SEC_LEADS {
                 // Each hole opens with the dive at its centre; the
@@ -149,6 +154,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 group(ui, LEVELS, None, |ui| {
                     retract_hop(ui, world, op_ctx.as_deref(), retract_z, top_z, clearance_z, "bore.retract");
                     hole_floor(ui, world, op_ctx.as_deref(), bottom_z, top_z, "bore.bottom");
+                    break_through_row(ui, u, break_through, &drill_default(u));
                     prop_row(ui, "Stepdown", |ui| num(ui, u, stepdown));
                 });
             }
@@ -183,6 +189,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             hand,
             external,
             passes,
+            break_through,
         } => {
             if tab == SEC_GEO {
                 // #985: holes, or bosses for an external thread.
@@ -201,6 +208,9 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 group(ui, LEVELS, None, |ui| {
                     retract_hop(ui, world, op_ctx.as_deref(), retract_z, top_z, clearance_z, "thread.retract");
                     hole_floor(ui, world, op_ctx.as_deref(), bottom_z, top_z, "thread.bottom");
+                    if !*external {
+                        break_through_row(ui, u, break_through, "one pitch");
+                    }
                 });
             }
             if tab == SEC_PASSES {
@@ -245,6 +255,35 @@ fn axial_hole_rows(ui: &mut Ui, u: Unit, holes: &[camcraft_app::drilling::Hole])
 /// The peck depth an un-Auto'd field starts from, mm: a modest bite the
 /// user then sizes to the drill (Auto's own law is 3 x / 1 x diameter).
 const PECK_SEED: f64 = 2.0;
+
+/// The drill's default break-through, in the document's unit.
+fn drill_default(u: Unit) -> String {
+    format!("{} {}", units::len(camcraft_app::drilling::THROUGH_CLEAR, u, 3), u.suffix())
+}
+
+/// #1557: how far past a through hole's floor the cut runs - the kind's
+/// default until stated; generation says it and refuses it below an
+/// unmodelled stock bottom.
+fn break_through_row(ui: &mut Ui, u: Unit, v: &mut Option<f64>, default: &str) {
+    auto_opt(ui, "Break-through", "Default", v, default, camcraft_app::drilling::THROUGH_CLEAR, |ui, x| num(ui, u, x));
+    hint(ui, "how far a through hole runs past the part bottom; checked against the stock bottom");
+}
+
+/// #2441: whether Drill's break-through is measured from the full cutting
+/// diameter (adds the point cone) or from the tip.
+fn break_through_from_row(ui: &mut Ui, from: &mut camcraft_app::drilling::BreakThroughFrom) {
+    use camcraft_app::drilling::BreakThroughFrom;
+    let mut idx = match from {
+        BreakThroughFrom::FullDiameter => 0,
+        BreakThroughFrom::Tip => 1,
+    };
+    let before = idx;
+    prop_row(ui, "Break-through from", |ui| combo(ui, "d_bt_from", &mut idx, &["Full diameter", "Tip"]));
+    if idx != before {
+        *from = if idx == 1 { BreakThroughFrom::Tip } else { BreakThroughFrom::FullDiameter };
+    }
+    hint(ui, "Full diameter adds the drill point cone so the full diameter breaks through; Tip measures to the point tip");
+}
 
 /// The hole kinds' depth override, inside the Levels group: off, every
 /// hole stops at its own floor from the model; on, one Bottom Z for all.

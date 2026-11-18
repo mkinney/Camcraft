@@ -24,6 +24,7 @@ pub fn moves_named(w: &Warning) -> [Option<usize>; 2] {
         Warning::Crossing { moves } => [Some(moves[0]), Some(moves[1])],
         Warning::Gouge { at }
         | Warning::StockChamferGouge { at }
+        | Warning::StockDeburrGouge { at }
         | Warning::ShankHit { at, .. }
         | Warning::SweepHit { at, .. }
         | Warning::RapidInStock { at }
@@ -33,7 +34,8 @@ pub fn moves_named(w: &Warning) -> [Option<usize>; 2] {
         | Warning::Envelope { at, .. }
         | Warning::Scallop { at, .. }
         | Warning::ProbeSearch { at, .. }
-        | Warning::SinkerFinishOrder { at, .. } => [Some(*at), None],
+        | Warning::SinkerFinishOrder { at, .. }
+        | Warning::DrillUndersize { at, .. } => [Some(*at), None],
         Warning::RestUnjudged { .. } => [None, None],
     }
 }

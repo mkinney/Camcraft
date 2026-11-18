@@ -4,7 +4,8 @@
 //! these four stayed at `DepthLaw::None`, so a drill, bar, thread mill or
 //! chamfer cone cut off the stock and into the part had 0 findings - with
 //! the stock aligned the program sim held the post, with it turned (the
-//! sim refuses to judge) the post went out.
+//! sim refuses to judge) the post went out. #2177: the device is a turn
+//! off the machine axes; the sim judges a quarter-turned box.
 //!
 //! Now the hole kinds take their own containment law against the setup's
 //! parts: a hole may enter a part only through the hole the part models
@@ -173,6 +174,7 @@ fn a_part_added_under_a_stock_source_drill_is_judged_at_the_post_by_the_hole_law
         let (world, mut h) = job(Model::hole(3.0, 8.0), HALF, true);
         let warns = hole_op(&world, &mut h, Kind::Drill, Cut::at(25.0, 0.0, 3.0, 10.0));
         assert!(warns.iter().all(|w| !w.blocks_post()), "{label}: a clean generation: {warns:?}");
+        assert!(pocket_support::oblique_refused(&world), "{label}: the device holds: the program sim does not judge this stock");
         assert_posts(&world, &format!("added-{label}-before"));
         let mut f = Vec::new();
         let ring = common::solid_part::circle((25.0, 0.0), 3.0, 32);
@@ -201,6 +203,7 @@ fn stock_source_chamfer_refusal_names_cause_and_part_as_source_workaround() {
             "generate rotated {rotated}: expected cause + workaround in warnings: {hints:?}"
         );
         if rotated {
+            assert!(pocket_support::oblique_refused(&world), "the device holds: the program sim does not judge this stock");
             assert_not_posted(&world, "chamfer-hint-rotated", "chamfer with the part as source");
         }
 
@@ -249,10 +252,16 @@ fn stock_source_chamfer_refusal_names_cause_and_part_as_source_workaround() {
 #[test]
 fn framed_stock_chamfer_live_refusal_keeps_hint_without_local_move_number() {
     use camcraft_app::operation::Tilt;
+    // #2483: the ride plane stands at mid-wall. A 10-degree plane at the
+    // stock's top (Z20) crosses the top face along a line that is no edge.
+    // The #2435 wall law refuses that line by name, and the refusal is
+    // right. At Z10 the plane and the corner plane Z9 cut only the walls.
+    const MID: f64 = 10.0;
     let (world, mut h) = job_without_part(HALF);
     let mut params = chamfer(1.0);
-    if let OpParams::Chamfer2D { tilt, .. } = &mut params {
-        *tilt = Some(Tilt { a_deg: 0.0, b_deg: 10.0, origin: [0.0; 3] });
+    if let OpParams::Chamfer2D { tilt, top_z, .. } = &mut params {
+        *tilt = Some(Tilt { basis_version: 1, a_deg: 0.0, b_deg: 10.0, origin: [0.0; 3] });
+        *top_z = Height::fixed(MID);
     }
     let warns = generated(&world, &mut h, CHAMFER, params);
     assert!(warns.iter().all(|w| !w.blocks_post()), "previously clear chamfer: {warns:?}");
@@ -264,7 +273,7 @@ fn framed_stock_chamfer_live_refusal_keeps_hint_without_local_move_number() {
     let mut f = Vec::new();
     // Model the added part in the cutting plane: its top meets the
     // chamfer, while its body stays below the cutter's shank.
-    common::solid_part::plate(&common::solid_part::rect(-50.0, -50.0, 50.0, 50.0), None, 0.0, TOP, &mut f);
+    common::solid_part::plate(&common::solid_part::rect(-50.0, -50.0, 50.0, 50.0), None, 0.0, MID, &mut f);
     let frame = op.params.tilt().expect("tilt").frame().expect("frame");
     let f = f.iter().map(|t| camcraft_app::geometry::Triangle::new(frame.to_world(t.a), frame.to_world(t.b), frame.to_world(t.c))).collect();
     h.execute(&world, ImportModel::from_mesh("other", Mesh::from_facets(f)));

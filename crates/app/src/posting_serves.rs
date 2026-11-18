@@ -46,7 +46,11 @@ use crate::post::dialect::{declared_serves, work_voice, WorkVoice};
 
 /// The registry name of a script text, when it is a shipped post's.
 fn registry_name(cps: &str) -> Option<&'static str> {
-    super::BUILTINS.iter().find(|(_, text)| *text == cps).map(|(name, _)| *name)
+    // #2282: the shipped text is the cached disk read, not a compiled-in copy.
+    super::BUILTINS
+        .iter()
+        .find(|(name, _)| super::builtin_post_text(name).is_ok_and(|text| text == cps))
+        .map(|(name, _)| *name)
 }
 
 /// Whether the script `cps` serves a machine of `kind`.
@@ -67,7 +71,7 @@ fn serves(cps: &str, kind: Kind) -> Result<bool, String> {
         Kind::Mill => !turning,
         // The mask cannot tell a plasma script from a milling one, so an
         // undeclared script is not proven to serve a torch or a wire.
-        Kind::Plasma | Kind::WireEdm | Kind::SinkerEdm => false,
+        Kind::Plasma | Kind::WireEdm | Kind::SinkerEdm | Kind::Waterjet => false,
     })
 }
 

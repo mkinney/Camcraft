@@ -94,6 +94,10 @@ pub enum SdfTool {
     /// (virtual sharp), side slope `cot` = cotangent of the half
     /// angle from the axis, as the dexel's cone atom reads it.
     Taper { r: f64, cot: f64 },
+    /// Twist drill (#2441): cone of maximum radius `r` and side slope
+    /// `cot` from the apex up to `r * cot`, transitioning into a
+    /// cylindrical flute of radius `r` up to `flank` (`flank >= r * cot`).
+    Drill { r: f64, cot: f64, flank: f64 },
     /// Bull nose (M13.1): a cylinder of `r` to `flank` whose bottom
     /// edge is rounded by `corner` - the rounded-rectangle profile
     /// revolved (`field_bull`), the dexel's `cut_bull` atom made a
@@ -209,7 +213,7 @@ impl SdfField {
 }
 
 /// One straight chord's swept solid for `kind`.
-fn chord_sweep(kind: &ToolKind, ax: [f64; 3], a: Point3, b: Point3) -> Result<Sweep, StockError> {
+pub(super) fn chord_sweep(kind: &ToolKind, ax: [f64; 3], a: Point3, b: Point3) -> Result<Sweep, StockError> {
     Ok(match kind {
         ToolKind::Ball(r) => {
             let off = scale(ax, *r);
@@ -221,6 +225,9 @@ fn chord_sweep(kind: &ToolKind, ax: [f64; 3], a: Point3, b: Point3) -> Result<Sw
         }
         ToolKind::Flat { r, flank } => Sweep::Revolve { a, b, kind: RevKind::Flat { r: *r, flank: *flank } },
         ToolKind::Taper { r, cot } => Sweep::Revolve { a, b, kind: RevKind::Taper { r: *r, cot: *cot } },
+        ToolKind::Drill { r, cot, flank } => {
+            Sweep::Revolve { a, b, kind: RevKind::Drill { r: *r, cot: *cot, flank: *flank } }
+        }
         ToolKind::Bull { r, corner, flank } => {
             Sweep::Revolve { a, b, kind: RevKind::Bull { r: *r, corner: *corner, flank: *flank } }
         }
@@ -240,7 +247,7 @@ fn window_cells(w: [(i32, i32); 3]) -> u64 {
 /// The move's path as straight chords: one segment for a linear move,
 /// the sagitta chords with Z interpolated uniformly for an arc the
 /// exact sweep does not take (a tilted pose, a lathe tool).
-fn chords(m: &Move, chord_tol: f64) -> Vec<(Point3, Point3)> {
+pub(super) fn chords(m: &Move, chord_tol: f64) -> Vec<(Point3, Point3)> {
     match m.arc {
         None => vec![(m.from, m.to)],
         // XZ / YZ arcs (M11.2 A): their own 3-D chords.

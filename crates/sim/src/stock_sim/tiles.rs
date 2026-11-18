@@ -83,6 +83,7 @@ impl Dexel {
     /// `top[k] = min(top[k], z)` - the cut law. A cell that does not
     /// drop never touches (never even allocates) its tile.
     pub fn lower(&mut self, k: usize, z: f64) {
+        self.history = None;
         let Some((t, off)) = self.slot(k) else { return };
         let cur = match &self.tiles[t] {
             None => self.stock_z,
@@ -112,6 +113,7 @@ impl Dexel {
     /// law need. A uniform tile keeps its economy when the new value
     /// IS its value; only a real change pays a box.
     pub fn set(&mut self, k: usize, z: f64) {
+        self.history = None;
         let Some((t, off)) = self.slot(k) else { return };
         if let Some(Tile::Cut(b)) = &mut self.tiles[t] {
             b[off] = z;
@@ -132,6 +134,7 @@ impl Dexel {
     /// Every cell to one height: the whole field collapses to the
     /// representation of "nothing happened but this".
     pub fn fill(&mut self, z: f64) {
+        self.history = None;
         if z == self.stock_z {
             self.tiles.fill(None);
         } else {
@@ -152,11 +155,7 @@ impl Dexel {
         self.tiles.iter().filter(|t| t.is_some()).count()
     }
 
-    /// Move every stored height by `dz`, air (the non-finite) never.
-    /// Untouched tiles ride on `stock_z` and must NOT shift here:
-    /// the caller translates `stock_z` itself, and they travel
-    /// together - what the old whole-field loop did cell by cell.
-    pub fn translate_finite(&mut self, dz: f64) {
+    fn shift_tiles(&mut self, dz: f64) {
         for t in &mut self.tiles {
             match t {
                 None => {}
@@ -174,6 +173,54 @@ impl Dexel {
                 }
             }
         }
+    }
+
+    /// Translate the grid's origin and heights together, keeping continuous
+    /// stock provenance aligned in world coordinates.
+    pub fn translate_origin(&mut self, dx: f64, dy: f64, dz: f64) {
+        self.x0 += dx;
+        self.y0 += dy;
+        self.stock_z += dz;
+        self.shift_tiles(dz);
+        if let Some(h) = &mut self.history {
+            let mut h_mut = h.as_ref().clone();
+            if !h_mut.active && h_mut.cuts.is_empty() && h_mut.clips.is_empty() {
+                h_mut.lo.x += dx;
+                h_mut.lo.y += dy;
+                h_mut.hi.x += dx;
+                h_mut.hi.y += dy;
+                if h_mut.lo.z.is_finite() {
+                    h_mut.lo.z += dz;
+                }
+                if h_mut.hi.z.is_finite() {
+                    h_mut.hi.z += dz;
+                }
+                if let Some((cx, cy, _)) = &mut h_mut.cylinder {
+                    *cx += dx;
+                    *cy += dy;
+                }
+                self.history = Some(std::sync::Arc::new(h_mut));
+            } else {
+                self.history = None;
+            }
+        }
+    }
+
+    /// Move every stored height by `dz`, air (the non-finite) never.
+    /// Untouched tiles ride on `stock_z` and must NOT shift here:
+    /// the caller translates `stock_z` itself, and they travel
+    /// together - what the old whole-field loop did cell by cell.
+    pub fn translate_finite(&mut self, dz: f64) {
+        self.history = self.history.as_deref().filter(|h| !h.active && h.cuts.is_empty() && h.clips.is_empty())
+            .cloned()
+            .map(|mut h| {
+                if h.lo.z.is_finite() {
+                    h.lo.z += dz;
+                }
+                h.hi.z = self.stock_z;
+                std::sync::Arc::new(h)
+            });
+        self.shift_tiles(dz);
     }
 
     /// Wrap a dense field: tiles whose cells all answer one number
@@ -230,6 +277,7 @@ impl Dexel {
             ny,
             stock_z,
             tiles,
+            history: None,
         }
     }
 
@@ -240,6 +288,16 @@ impl Dexel {
     /// boundary crosses pays a box. The cell test on the ring is the
     /// old `hypot` law exactly, so the mask is bit-identical.
     pub(super) fn air_outside_circle(&mut self, r: f64) {
+        let kept_history = self
+            .history
+            .as_deref()
+            .filter(|h| !h.active && h.cuts.is_empty() && h.clips.is_empty())
+            .cloned()
+            .map(|mut h| {
+                h.cylinder = Some((0.0, 0.0, r));
+                std::sync::Arc::new(h)
+            });
+        self.history = None;
         let air = f64::NEG_INFINITY;
         let (tx, ty) = (self.tx(), self.ny.div_ceil(TILE));
         for tiy in 0..ty {
@@ -271,5 +329,6 @@ impl Dexel {
                 }
             }
         }
+        self.history = kept_history;
     }
 }

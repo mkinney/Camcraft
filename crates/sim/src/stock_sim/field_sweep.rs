@@ -55,6 +55,7 @@ impl Sweep {
             Sweep::Revolve { kind, .. } => match kind {
                 RevKind::Flat { r, flank } => r.hypot(*flank),
                 RevKind::Taper { r, cot } => r.hypot(r * cot),
+                RevKind::Drill { r, cot, flank } => r.hypot(flank.max(r * cot)),
                 RevKind::Bull { r, flank, .. } => r.hypot(*flank),
             },
             Sweep::Arc(_) => 0.0, // its stadium is its own (`ArcPiece::stadium`)
@@ -67,7 +68,7 @@ impl Sweep {
     /// runs one way, from the tip UP the axis (M7.3: a flank never
     /// reaches below its own tip); the ball's path is its center
     /// path, so its solid is the path dilated by `r` and nothing more.
-    fn reach(&self) -> (f64, f64) {
+    pub(super) fn reach(&self) -> (f64, f64) {
         match self {
             // The revolved solid's reach is its own window (`window_of`
             // reads the annulus directly); the nose is its dilation.
@@ -77,6 +78,7 @@ impl Sweep {
             Sweep::Revolve { kind, .. } => match kind {
                 RevKind::Flat { r, flank } => (*r, *flank),
                 RevKind::Taper { r, cot } => (*r, r * cot),
+                RevKind::Drill { r, cot, flank } => (*r, flank.max(r * cot)),
                 RevKind::Bull { r, flank, .. } => (*r, *flank),
             },
             Sweep::Arc(p) => p.reach(),
@@ -85,7 +87,7 @@ impl Sweep {
 
     /// The path endpoints the solid rides (tip path, or center path
     /// for the ball).
-    fn path(&self) -> (Point3, Point3) {
+    pub(super) fn path(&self) -> (Point3, Point3) {
         match self {
             Sweep::Ball { c0, c1, .. } | Sweep::Shanked { c0, c1, .. } => (*c0, *c1),
             Sweep::Revolve { a, b, .. } => (*a, *b),
@@ -116,7 +118,9 @@ impl Sweep {
             Sweep::Lathe(_) | Sweep::Ball { .. } => false,
             Sweep::Shanked { c0, c1, up, .. } => c0.z.min(c1.z) + up[2] >= z,
             Sweep::Revolve { a, b, kind } => match kind {
-                RevKind::Flat { flank, .. } | RevKind::Bull { flank, .. } => a.z.min(b.z) + flank >= z,
+                RevKind::Flat { flank, .. } | RevKind::Drill { flank, .. } | RevKind::Bull { flank, .. } => {
+                    a.z.min(b.z) + flank >= z
+                }
                 RevKind::Taper { .. } => false,
             },
             Sweep::Arc(p) => p.spans_above(z),

@@ -16,8 +16,11 @@ pub mod cutting_turn;
 pub mod smoothing;
 pub use camcraft_motion::drilling;
 pub mod fixture;
+// #744: editable spun & extruded fixture profiles + DXF/STEP integration.
+pub mod fixture_profile;
 // #339 slice 6: the user fixture library file.
 pub mod fixture_library;
+pub mod step_source;
 pub mod fixture_carried;
 // #561: locate the part in a fixture (or the fixture on the part) by mates.
 pub mod fixture_clash;
@@ -93,10 +96,14 @@ pub mod setup_offsets;
 pub mod setup_align;
 // #343: each setup's own machine and post, and the one-mount law.
 pub mod setup_mount;
+// #870: the WCS origin said in words ("top of stock, front-left corner").
+pub mod setup_origin;
 // #316: transforms between setups and the setup-relative link.
 pub mod setup_relative;
 // #1510: a tilted milling WCS is refused at generation.
 pub mod setup_wcs_tilt;
+// #1720, #1649: a flipped WCS axis is stored; the post mirrors X/Y and refuses the rest.
+pub mod setup_wcs_flip;
 pub mod setup_post_options;
 // #1031: a setup's workholding (chuck/collet) rpm limit.
 pub mod setup_workholding;
@@ -115,6 +122,7 @@ pub use camcraft_geometry::geometry::stock;
 pub mod stock_sim;
 // #1094: the model that is only the stock's source is not the part.
 pub mod stock_source;
+pub mod stock_material;
 // #1538: fit-to-models measures the parts, never the fixtures.
 pub mod stock_fit;
 // #1094: the geometry fingerprint a raw-stock-only mark is checked by.
@@ -124,6 +132,8 @@ pub mod stock_export;
 pub mod stock_follow;
 pub mod stock_play;
 pub mod stock_play_worker;
+// #1666: the radius the stock sweeps about the lathe's spindle axis.
+pub mod stock_turn;
 pub mod stock_view;
 pub mod tool_library;
 pub mod tool_list;
@@ -137,8 +147,12 @@ pub use camcraft_tools::thread_mill;
 pub use camcraft_tools::orientation;
 pub use camcraft_tools::catalog_fields;
 pub use camcraft_tools::cutting_rows as tool_cutting_rows;
+pub use camcraft_tools::waterjet as waterjet_tools;
+pub use camcraft_tools::wire as wire_tools;
 // #93: the drawn spun profile of a milling holder.
 pub use camcraft_tools::spun;
+// #743 part 2: STEP/SpunProfile <-> DXF half-profile conversion.
+pub mod tool_profile_dxf;
 // #93 slice 2: the drawn cutter law, and the tool's stored drawn cutter.
 pub use camcraft_tools::cutter_profile;
 // #93 slice 3: the drawn cutter carried onto new numbers, and its neck.

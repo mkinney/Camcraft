@@ -23,7 +23,7 @@ use camcraft_app::geometry::{cube, Point3, IDENTITY_Q};
 use camcraft_app::machine::validate::validate_text;
 use camcraft_app::machine::{self, check_document, kind, parse_mch, Kind, Machine};
 use camcraft_app::operation::{Height, OpParams, SrcRef};
-use camcraft_app::posting::{self, MACHINES};
+use camcraft_app::posting;
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
@@ -113,7 +113,7 @@ fn a_plasma_file_stating_a_spindle_is_refused_by_name() {
 fn an_unknown_kind_is_still_refused() {
     let t = plasma(|v| v["general"]["kind"] = "laser".into());
     let err = parse_mch(&t).expect_err("an unknown kind refuses");
-    assert!(err.contains("not mill, lathe, mill-turn, plasma, wire_edm or sinker_edm"), "{err}");
+    assert!(err.contains("not mill, lathe, mill-turn, plasma, waterjet, wire_edm or sinker_edm"), "{err}");
     assert!(keys(&t).contains(&"general.kind".to_owned()));
     // Plasma is declared, never inferred: the same axes undeclared are a mill.
     let undeclared = plasma(|v| v["general"]["kind"] = serde_json::Value::Null);
@@ -123,10 +123,7 @@ fn an_unknown_kind_is_still_refused() {
 }
 
 fn shipped_1300pl() -> Machine {
-    let text = MACHINES
-        .iter()
-        .find(|(n, _)| *n == "Tormach 1300PL")
-        .map(|(_, t)| *t)
+    let text = camcraft_app::posting::builtin_machine_text("Tormach 1300PL")
         .expect("the 1300PL ships");
     parse_mch(text).expect("the 1300PL reads")
 }

@@ -11,7 +11,14 @@
 use std::path::Path;
 use crate::clock::Instant;
 
+use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::EnvFilter;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "logging_desktop.rs"]
+mod desktop;
+#[cfg(not(target_arch = "wasm32"))]
+pub use desktop::{failure_message, init_desktop, log_path, startup_failure};
 
 /// Milliseconds since `started`, saturating at `u64::MAX` rather than
 /// truncating the `u128` `as_millis` returns (safe numeric conversion).
@@ -43,13 +50,27 @@ pub fn filter_from_env() -> EnvFilter {
         .unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER))
 }
 
+/// Build the `tracing` subscriber for `writer`. When `browser` is true
+/// (`wasm32`), timestamps and ANSI colour codes are omitted: `SystemTime::now()`
+/// panics on `wasm32-unknown-unknown` and browser consoles print plain text.
+pub fn dispatch<W>(writer: W, browser: bool) -> tracing::Dispatch
+where
+    W: for<'a> tracing_subscriber::fmt::MakeWriter<'a> + Send + Sync + 'static,
+{
+    let base = tracing_subscriber::fmt()
+        .with_env_filter(filter_from_env())
+        .with_writer(writer)
+        .with_target(true);
+    if browser {
+        tracing::Dispatch::new(base.without_time().with_ansi(false).finish())
+    } else {
+        tracing::Dispatch::new(base.finish())
+    }
+}
+
 /// Install the stderr subscriber. Safe to call more than once (a test
 /// harness, a second entry point): only the first install wins, later
 /// calls are no-ops.
 pub fn init() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter_from_env())
-        .with_writer(std::io::stderr)
-        .with_target(true)
-        .try_init();
+    let _ = dispatch(std::io::stderr, cfg!(target_arch = "wasm32")).try_init();
 }

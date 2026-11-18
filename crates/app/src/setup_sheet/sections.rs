@@ -104,9 +104,16 @@ pub(super) fn render_wcs(world: &World, ctx: Option<&str>, out: &mut String) {
                 mm(pos.y),
                 mm(pos.z)
             ));
-            // #327: the rotation the translation line cannot show.
+            // #327 / #760: the rotation the translation line cannot show.
             match crate::posting::offset_frame(&loc) {
                 crate::posting::OffsetFrame::Square => {}
+                crate::posting::OffsetFrame::Yaw { deg, .. } => {
+                    let mode = match crate::setup_post_options::of(world, ctx).wcs_rotation {
+                        crate::schema::WcsRotationOutput::Bake => "baked into XY",
+                        crate::schema::WcsRotationOutput::Control => "control rotation G68 / ROT",
+                    };
+                    out.push_str(&format!("       rotated {deg:.3} deg about Z ({mode})\n"));
+                }
                 crate::posting::OffsetFrame::Rotated { deg, axis } => out.push_str(&format!(
                     "       rotated {deg:.3} deg about {axis} - the post refuses a rotated offset\n"
                 )),
@@ -117,6 +124,21 @@ pub(super) fn render_wcs(world: &World, ctx: Option<&str>, out: &mut String) {
         }
         None => out.push_str(&format!("  {label}  (not placed - at the origin)\n")),
     }
+    // #1649: a flipped axis changes every sign the operator reads.
+    let flip = crate::setup_wcs_flip::of_setup(world, ctx);
+    if flip.iter().any(|f| *f) {
+        let axes = crate::setup_wcs_flip::axes_text(flip);
+        let one = flip.iter().filter(|f| **f).count() == 1;
+        out.push_str(&format!(
+            "       {axes} {} flipped - the program is mirrored on {}\n",
+            if one { "axis" } else { "axes" },
+            if one { "it" } else { "them" }
+        ));
+    }
+    // #870: where that origin sits, in words - what the operator touches
+    // off. An unplaced WCS is read at the world origin.
+    let words = crate::setup_origin::origin_words(world, ctx, &|v| format!("{} mm", mm(v)));
+    out.push_str(&format!("  origin: {words} (X0 Y0 Z0)\n"));
     // #196, #329, #931: the one offset the setup's program runs in: the
     // setup's label (offset 1 when unset), named by the setup's post -
     // never another offset's name.
@@ -145,17 +167,18 @@ pub(super) fn render_datum(world: &World, ctx: Option<&str>, out: &mut String) {
     }
 }
 
-/// #375: one line per inverted linear axis of the machine this setup
-/// mounts - the operator must know the slide runs the other way and the
-/// program is mirrored for it. A standard machine prints nothing (sheets
-/// unchanged).
+/// #375 & #33: one line per inverted linear axis and a notice when
+/// the C rotary turns clockwise (`-Z` axis), so the operator knows the
+/// machine direction and posted negation. A standard machine prints
+/// nothing (sheets unchanged).
 pub(super) fn render_machine_axes(world: &World, ctx: Option<&str>, out: &mut String) {
     let (_, machine) = crate::machine::of_setup(world, ctx);
     let Some(m) = machine else {
         return;
     };
     let letters = m.inverted_axes();
-    if letters.is_empty() {
+    let rev_c = m.reversed_c_rotary();
+    if letters.is_empty() && !rev_c {
         return;
     }
     out.push_str("MACHINE AXES\n");
@@ -164,6 +187,9 @@ pub(super) fn render_machine_axes(world: &World, ctx: Option<&str>, out: &mut St
             "  {} - the program is mirrored in {l} for this machine\n",
             crate::machine::inverted_axis_line(l)
         ));
+    }
+    if rev_c {
+        out.push_str("  C rotary turns clockwise about +Z (-Z axis) - posted C is negated for this machine\n");
     }
     out.push('\n');
 }

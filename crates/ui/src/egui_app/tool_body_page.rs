@@ -31,9 +31,22 @@ const PITCH0: f32 = 0.45;
 /// preview: `(above, len, r)` per band, or `None` with no usable draft.
 /// Re-mirrors the world's body first (a no-op unless it changed), so
 /// the preview follows Apply profile, undo and reload whichever tab
-/// shows - not only once the Body tab has been drawn.
+/// shows - not only once the Body tab has been drawn. An unchanged
+/// machine-default body includes the conservative parameter-cylinder floor.
 pub(super) fn envelope(state: &mut State) -> Option<Vec<(f64, f64, f64)>> {
     state.sync_tool_body_ui();
+    let d = &state.tool_body_ui;
+    if let Some(b) = state.editor_tool_body()
+        && b.machine_default
+        && std::sync::Arc::ptr_eq(&b.facets, &d.facets)
+        && d.axis == [0.0, 0.0, 1.0]
+        && d.offset == 0.0
+        && d.lathe.is_none()
+    {
+        // Use the stored profile, as judging does; a mesh rebuild loses its exact bands.
+        let profile = b.profile()?.floored(&state.tool_ui.to_tool().geom());
+        return Some(profile.bands().iter().map(|q| (q.above, q.len, q.r)).collect());
+    }
     match state.tool_body_preview()? {
         Ok(b) => Some(b.profile()?.bands().iter().map(|q| (q.above, q.len, q.r)).collect()),
         Err(_) => None,
@@ -138,6 +151,14 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
     if ui.button("Apply body").on_hover_text("attach the body with this placement (one undo step)").clicked() {
         state.queue_apply_tool_body();
     }
+    if ui
+        .button("Convert to profile")
+        .on_hover_text("convert this aligned body into an editable conservative half-profile (non-revolved features are enveloped, never cut away)")
+        .clicked()
+    {
+        state.convert_body_draft_to_profile();
+    }
+    ui.small("Non-revolved features are enveloped conservatively (never cut away).");
     super::tool_body_assembly_page::section(ui, state);
 }
 
@@ -331,3 +352,7 @@ fn norm(a: [f64; 3]) -> Option<[f64; 3]> {
     let n = dot(a, a).sqrt();
     (n.is_finite() && n > 1e-12).then(|| [a[0] / n, a[1] / n, a[2] / n])
 }
+
+#[cfg(test)]
+#[path = "tests/tool_body_floor.rs"]
+mod tests;

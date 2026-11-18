@@ -9,6 +9,9 @@ use crate::operation::Tilt;
 /// the normalized axis vectors the CL stream stores).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct TiltDto {
+    /// Missing in old projects: keep their original in-plane coordinates.
+    #[serde(default)]
+    pub basis_version: u8,
     pub a_deg: f64,
     pub b_deg: f64,
     pub origin: [f64; 3],
@@ -17,6 +20,7 @@ pub struct TiltDto {
 impl From<Tilt> for TiltDto {
     fn from(t: Tilt) -> Self {
         TiltDto {
+            basis_version: t.basis_version,
             a_deg: t.a_deg,
             b_deg: t.b_deg,
             origin: t.origin,
@@ -27,11 +31,21 @@ impl From<Tilt> for TiltDto {
 impl From<TiltDto> for Tilt {
     fn from(d: TiltDto) -> Self {
         Tilt {
+            basis_version: d.basis_version,
             a_deg: d.a_deg,
             b_deg: d.b_deg,
             origin: d.origin,
         }
     }
+}
+
+/// Which point of a twist drill `break_through` is measured from (#2441).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BreakThroughFromDto {
+    #[default]
+    FullDiameter,
+    Tip,
 }
 
 /// The file mirror of `operation::OpParams`, tool-free by the same rule as
@@ -168,6 +182,10 @@ pub enum ParamsDto {
         /// earlier file - no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend_radius: Option<f64>,
+        /// #1489 rest machining: absent is off on every earlier file -
+        /// no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rest: Option<RestDto>,
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
@@ -417,6 +435,15 @@ pub enum ParamsDto {
         /// byte-identical to a pre-v40 one - is "no cross holes".
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cross: Vec<CrossHoleDto>,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
+        /// #2441 (v68): whether `break_through` measures from the full
+        /// cutting diameter (`"full_diameter"`, new default) or the drill
+        /// point tip (`"tip"`, pre-v68 files with the key absent).
+        #[serde(default)]
+        break_through_from: Option<BreakThroughFromDto>,
     },
     /// Declared at v11 with the 3-D pocket. No footprint on the wire:
     /// a 3-D op's machine area is the model's silhouette at generation
@@ -1037,6 +1064,10 @@ pub enum ParamsDto {
         climb: bool,
         tolerance: f64,
         holes: Vec<HoleDto>,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
     },
     /// Helical thread milling (M2.4 C). The pitch rides no DTO -
     /// it lives on the tool, like every other tool number.
@@ -1070,6 +1101,10 @@ pub enum ParamsDto {
         /// hand. Flattened keys, each absent when at the #894 default.
         #[serde(flatten)]
         passes: ThreadPassesDto,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
     },
     /// The probe (#108): an additive variant in the v50 grammar.
     Probe(ProbeDto),

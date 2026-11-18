@@ -1,4 +1,4 @@
-//! Project save/load: `.camproj`, JSON, version 61 (see `PROJECT_VERSION`).
+//! Project save/load: `.camproj`, JSON, version 69 (see `PROJECT_VERSION`).
 //!
 //! Serialization goes through plain DTO structs (deliberately not flecs
 //! reflection): the file format is our public persistence contract and must
@@ -134,7 +134,7 @@ pub use probe_dto::*;
 mod plasma_dto;
 // #890: a tool's cutting data per workpiece material.
 mod cutting_rows_dto;
-pub use cutting_rows_dto::{CuttingRowDto, MaterialWord};
+pub use cutting_rows_dto::{CuttingRowDto, MaterialWord, StockMaterialWord};
 pub use plasma_dto::*;
 mod wire_edm_dto;
 pub use wire_edm_dto::*;
@@ -143,6 +143,8 @@ mod sinker_dto;
 pub use sinker_dto::*;
 mod trochoid_dto;
 pub use trochoid_dto::*;
+mod rest_dto;
+pub use rest_dto::*;
 mod approach;
 pub use approach::*;
 mod links;
@@ -154,6 +156,7 @@ mod json;
 pub use json::*;
 mod apply;
 mod fidelity_migrate;
+mod pocket_adaptive_migrate;
 use apply::*;
 // #813: the load note for a machine embedded before #804.
 mod swing_note;

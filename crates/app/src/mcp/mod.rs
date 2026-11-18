@@ -15,6 +15,11 @@
 //! and every failure is an MCP tool error (`isError: true`) naming the
 //! reason - never a panic, never a silent success.
 
+pub mod provider;
+mod provider_calls;
+mod fallback;
+mod schema_validation;
+
 mod align_tools;
 mod area;
 mod body_tools;
@@ -25,8 +30,11 @@ mod cutter_tools;
 mod cutting_tools;
 mod edit;
 mod features;
+mod fixture_profile_tools;
 mod fixture_tools;
+mod fixture_turn_tools;
 mod holders;
+mod holder_dxf_tools;
 mod job;
 mod listen;
 mod live;
@@ -41,6 +49,7 @@ mod pockets;
 // #1534: document and per-setup post options (`SetPostOptions` / `SetSetupPostOptions`).
 mod post_options_tools;
 mod render;
+mod selection;
 mod setup_tools;
 mod tool_delete;
 mod tool_edit;
@@ -57,6 +66,8 @@ mod units_tools;
 mod stock_fit_tools;
 mod tool_number_tools;
 mod wcs_tools;
+// #1720: a setup's WCS flipped axes.
+mod wcs_flip_tools;
 mod rotary_tools;
 mod workholding_tools;
 
@@ -64,7 +75,12 @@ mod workholding_tools;
 // loopback socket, against the app's own document and History.
 pub use bridge::bridge;
 pub use listen::{port_from, Inbox, Request, Wake, IDLE_TIMEOUT};
-pub use live::{answer_live, LiveAnswer};
+pub use live::{
+    answer_live, answer_live_with, requires_approval, ApprovedCall, GateKind, LiveAnswer,
+    LiveGate, LiveOptions,
+};
+pub use selection::{PickMode, SelectionContext};
+pub(crate) use tools::call;
 
 use crate::script::Env;
 

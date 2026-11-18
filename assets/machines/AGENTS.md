@@ -53,6 +53,7 @@ unstated capability into existence.
         "max_taper_deg": 15.0,                         // wire, (0, 90)
         "wire_diameters": [0.25, 0.20],                // wire, length unit
         "awt": true,                                   // wire, automatic threading
+        "tank": "submerged", "flushing": "high",       // wire (#1499): submerged|non-submerged, high|low; unstated = set at the control
         "orbits": [ { "kind": "circular", "word": "..." } ],  // sinker: circular|vector|planetary + the control's word
         "max_orbit_radius": 2.0,                       // sinker, length unit
         "pickup": "...",                               // sinker, the holder system's name
@@ -85,13 +86,14 @@ unstated capability into existence.
   key). Like plasma, an EDM head states no `spindle`, `live_tool` or
   coolant list (`post::machine::edm_refusals`, read by the reader and
   the Machines pane's validator alike); a rotary is allowed. No vendor
-  values are shipped. No EDM machine is in the built-in library yet:
-  every library machine must have a post (`machine_library`). The
-  sinker's first post shipped with #542 (`sinker-iso.cps`), the wire's
-  with #533 (`wire-iso.cps`); the empty sinker template joining the
-  library is #1135. Until then they are test fixtures
-  (`crates/app/tests/edm/`, with `sinker-iso-dialect.mch` the synthetic
-  codes the sinker post's goldens are posted against).
+  values are shipped. The empty sinker template (`sinker-edm.mch`, #1135)
+  is in the built-in library with the sinker post (`sinker-iso.cps`,
+  #542): posting on it refuses by name for each missing `edm.codes` role
+  until the user fills them. No wire machine is in the library yet (the
+  wire's first post shipped with #533, `wire-iso.cps`); the wire
+  template stays a test fixture (`crates/app/tests/edm/`, with
+  `sinker-iso-dialect.mch` the synthetic codes the sinker post's goldens
+  are posted against).
 
 - `edm.conditions[]` (#531): the generator conditions the user states
   from their machine's manual. None ship. CamCraft reads only the
@@ -180,8 +182,9 @@ unstated capability into existence.
     to the part (RS-274 / ISO 841 - the table turns the part the other
     way), `[-1, 0, 0]` when it turns the other way; the Tormach post
     negates its A words for the second. `tormach-770mx-microarc4.mch` is
-    the shipped 4th-axis mill (an A about X, travel -360..360 degrees,
-    rates unstated: TD10749 states none). `resolution` is the
+    the shipped 4th-axis mill (an A about X, A travel unstated — PathPilot
+    has no A soft limit per Tormach UM10587 / UM10864 / TD10749 and Hub
+    readings, feed 360 deg/min from #796). `resolution` is the
     positioning step (same scaling law as travel).
   - rotary that turns the WORK only (#804): `nose_to_axis` - how far
     the spindle nose sits above the rotary's centerline with Z at
@@ -207,6 +210,20 @@ unstated capability into existence.
     work's X span by its box's distance from the line; unstated, or
     steel it cannot read (no facets, a box across the line), is named
     in the gate's not-judged line. The microARC 4 states 3.15 in.
+  - trunnion kinematics fields (#1962, all optional, absent = unstated):
+    `pivot: [x, y, z]` (rotary reference position in machine coordinates,
+    scaled by file length units to mm; `[0,0,0]` is legal), child
+    `offset: [dx, dy, dz]` (child rotary offset from parent rotary,
+    scaled by file length units to mm), `zero_offset` (degrees from
+    kinematic 0 to machine home 0, never unit-scaled), `rollover`
+    (boolean: controller 0..360 deg wrapping), and `sign_convention`
+    (`"tool_rh"` | `"table_rh"`, also accepted on `kinematics.default`
+    or `controller`; unstated defaults to `"tool_rh"` per ISO 841 so
+    checker and post agree). Parent-child nesting order in
+    `kinematics.default.parts` is preserved via `AxisLimits.chain_order`
+    (read in order by `Machine::rotary_axes()`) and `AxisLimits.parent` even
+    when `controller.synced_configuration` sorts `Machine.axes` differently. Invalid vectors, types, or rotary
+    keys on linear parts refuse by name.
   - `type: "head"` parts carry the spindle and station, first match
     wins: `spindle { min_speed, max_speed }` rpm, `power` kW (stated,
     not judged — the sheet renders it, no model consumes it),
@@ -214,7 +231,8 @@ unstated capability into existence.
     `rigid_tapping` (#786: `true` | `false`, anything else refuses the
     file by name; absent is "not limited" - a stated `false` makes the
     program gate refuse every tap cycle by name, whatever the post; the
-    Tormach mills and routers state it); and
+    Tormach mills, routers and lathes state it - the lathes from their
+    G33.1 rigid-tap pages, #795); and
     `tool_station { max_tool_length, max_tool_diameter, coolants }`.
     Separately from first-match, the checker also COUNTS (M5.3 C):
     `Machine.spindles` is how many head parts anywhere in the tree
@@ -252,6 +270,11 @@ unstated capability into existence.
   deg/min NEVER mirror into a prismatic field: the unit-lie law) and
   `coordinate` is the display/sort order (0=X, 1=Y, 2=Z, rotaries
   from 3 up). A letter absent here simply has unstated rates.
+- `controller.rtcp` (#1962, optional boolean): when `false`, the mirror
+  sets `machine.rtcp = false` even if a rotary tilts off Z (so RTCP
+  posts like `fanuc.cps` and `doosan-dnm.cps` refuse `G43.4` while
+  CAM-side IK posts receive the full rotary chain). Absent infers
+  controller RTCP geometrically from rotary tilt vectors.
 - `tooling.number_of_tools`: DISTINCT tool positions the program may
   call (a double-tier of the same 40 stations is 40, not 80); a
   program asking for a tool number above it is a checker refusal.
@@ -282,11 +305,15 @@ stated LINEAR rates — absent everywhere → 0 → silence, never a fake
 ceiling), `spindleMax` rpm, `coolants[]`, `rotaries[]
 {name, direction, travel}`, and `rtcp`.
 
-`rtcp` is DERIVED GEOMETRICALLY, never a hand-typed flag: true iff
-some rotary states a direction that is not the Z column
-(z² < 0.99·(x²+y²+z²)). A C table ([0,0,1]) is not RTCP; a trunnion
-or tilted axis is. A post may output the tool-center-point promise
-only when this reads true — `machine.rtcp` says so.
+`rtcp` defaults to GEOMETRIC derivation: true iff some rotary states a
+direction that is not the Z column (z² < 0.99·(x²+y²+z²)) AND
+`controller.rtcp` is not `false` (#1962). A C table ([0,0,1]) is not
+RTCP; a trunnion or tilted axis without `controller.rtcp: false` is; an
+AC trunnion with `controller.rtcp: false` keeps `machine.rtcp = false`
+and carries `parent`, `pivot`, `offset`, `zeroOffset`, `rollover`, and
+`signConvention` across the mirrored `rotaries` chain in parent-child
+order. A post may output `G43.4` / controller RTCP only when
+`machine.rtcp === true`.
 
 ## The axis-lettering convention
 

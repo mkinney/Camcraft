@@ -2,7 +2,7 @@
 //! understand, hard to read"): every page lays its fields out through
 //! these helpers, so the whole operation dialog reads one way -
 //!
-//! - a property grid: label LEFT in a fixed-width column, control RIGHT
+//! - a property grid: label LEFT in a responsive column, control RIGHT
 //!   on the same row, right-aligned and compact ([`prop_row`],
 //!   [`check_row`], [`prop_grid`]);
 //! - units as a suffix on the value, never in the label
@@ -28,8 +28,7 @@
 
 use egui::{Align, Button, Color32, DragValue, Id, Label, Layout, Response, RichText, Ui, Vec2};
 
-/// The label column's width - one value, so every row of every page
-/// lines up.
+/// The label column's minimum width when the pane has room.
 pub const LABEL_W: f32 = 120.0;
 /// A compact control's width (combos, numbers).
 pub const CTRL_W: f32 = 96.0;
@@ -48,8 +47,11 @@ fn remember(ui: &Ui, r: &Response) {
 
 fn label_cell(ui: &mut Ui, label: &str) -> Response {
     let h = ui.spacing().interact_size.y;
-    ui.allocate_ui_with_layout(Vec2::new(LABEL_W, h), Layout::left_to_right(Align::Center), |ui| {
-        ui.set_min_width(LABEL_W);
+    let available = (ui.available_width() - ui.spacing().item_spacing.x).max(0.0);
+    // Share spare width with labels while keeping a compact control reachable.
+    let width = (available * 0.5).max(LABEL_W).min((available - CTRL_W).max(0.0));
+    ui.allocate_ui_with_layout(Vec2::new(width, h), Layout::left_to_right(Align::Center), |ui| {
+        ui.set_min_width(width);
         ui.add(Label::new(label).truncate())
     })
     .inner
@@ -89,16 +91,12 @@ pub fn prop_row_hint<R>(ui: &mut Ui, label: &str, help: &str, add: impl FnOnce(&
 pub fn check_row(ui: &mut Ui, label: &str, v: &mut bool) -> Response {
     ui.horizontal(|ui| {
         // The caption toggles too, as a checkbox's own text would.
-        let h = ui.spacing().interact_size.y;
-        let lab = ui
-            .allocate_ui_with_layout(Vec2::new(LABEL_W, h), Layout::left_to_right(Align::Center), |ui| {
-                ui.set_min_width(LABEL_W);
-                ui.add(Label::new(label).truncate())
-            })
-            .inner;
+        let lab = label_cell(ui, label);
         remember(ui, &lab);
         let hit = ui.interact(lab.rect, lab.id.with("toggle"), egui::Sense::click());
-        let mut r = ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.checkbox(v, "")).inner;
+        let mut r = ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.checkbox(v, "")).inner.labelled_by(lab.id);
+        // The blank checkbox's empty name must not hide its associated caption.
+        r.ctx.accesskit_node_builder(r.id, |node| node.clear_label());
         if hit.clicked() {
             *v = !*v;
             r.mark_changed();
@@ -186,7 +184,7 @@ pub fn group_open<R>(
     });
     let body = header.body(|ui| {
         if on {
-            Some(egui::Frame::NONE.inner_margin(egui::Margin { left: 2, right: 0, top: 0, bottom: 2 }).show(ui, add).inner)
+            Some(egui::Frame::NONE.inner_margin(egui::Margin { left: 2, right: 0, top: 0, bottom: 2 }).show(ui, |ui| super::field_ring::in_group(ui, id, add)).inner)
         } else {
             None
         }
@@ -221,14 +219,28 @@ pub fn auto_value(
 ) -> bool {
     let before = *v;
     prop_row(ui, label, |ui| {
-        let mut auto = *v == 0.0;
-        if ui.checkbox(&mut auto, toggle).changed() {
+        // The model's 0 is the Auto sentinel, and the keys "0", "0." and
+        // "0.5" all read as 0 on the way to a value (#2178). While the
+        // user types in the edit field, a 0 therefore stays manual: the
+        // hold lasts until the field loses focus.
+        let hold = ui.make_persistent_id(("camcraft.auto_value_hold", label));
+        let held: bool = ui.data(|d| d.get_temp(hold)).unwrap_or(false);
+        let mut auto = *v == 0.0 && !held;
+        let toggle_resp = ui.checkbox(&mut auto, toggle);
+        if toggle_resp.changed() {
             *v = if auto { 0.0 } else { seed };
+            ui.data_mut(|d| d.remove_temp::<bool>(hold));
         }
         if auto {
             ui.add_enabled(false, Label::new(RichText::new(derived).weak()));
         } else {
             edit(ui, v);
+            let editing = ui.memory(|m| m.focused()).is_some_and(|f| f != toggle_resp.id);
+            if editing {
+                ui.data_mut(|d| d.insert_temp(hold, true));
+            } else {
+                ui.data_mut(|d| d.remove_temp::<bool>(hold));
+            }
         }
     });
     *v != before

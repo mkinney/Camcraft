@@ -8,7 +8,7 @@
 use camcraft_app::machine::{self, Kind, library};
 use camcraft_app::operation::{OpType, Section};
 
-use super::panes::{self, Cmd, DROP_W, ribbon_plan};
+use super::panes::{self, Cmd, ribbon_plan};
 use crate::machine_modes::{self, MACHINE_MODES};
 use crate::state::{CommandKind, State};
 
@@ -21,6 +21,7 @@ fn run(state: &mut State, kind: CommandKind) {
 fn every_kind_with_a_shipped_machine_has_a_mode() {
     let shipped: Vec<Kind> = library::builtins().iter().filter_map(|e| e.kind).collect();
     assert!(shipped.contains(&Kind::Plasma), "the Tormach 1300PL ships");
+    assert!(shipped.contains(&Kind::SinkerEdm), "the sinker EDM template ships (#1135)");
     for kind in shipped {
         assert!(
             MACHINE_MODES.iter().any(|(k, _, _)| *k == kind),
@@ -40,6 +41,32 @@ fn every_mode_mounts_a_shipped_machine_of_its_own_kind() {
             "'{caption}' must mount the built-in '{name}' of its own kind"
         );
     }
+}
+
+#[test]
+fn the_sinker_template_has_its_own_mode_row() {
+    assert!(
+        MACHINE_MODES.contains(&(Kind::SinkerEdm, "Sinker EDM", "Sinker EDM 3-axis (template)")),
+        "the sinker mode mounts the shipped template (#1135)"
+    );
+    assert_eq!(machine_modes::short_caption(Kind::SinkerEdm), "Sinker");
+    assert!(machine_modes::modes_phrase().ends_with("Wire EDM or Sinker EDM"));
+}
+
+#[test]
+fn waterjet_without_a_mode_keeps_the_specific_door_caption() {
+    assert!(!MACHINE_MODES.iter().any(|(kind, _, _)| *kind == Kind::Waterjet));
+    assert_eq!(machine_modes::caption(Kind::Waterjet), "Machine");
+    assert_eq!(machine_modes::short_caption(Kind::Waterjet), "Waterjet");
+    let draft = machine::draft::MachineDraft::blank(Kind::Waterjet);
+    let machine = machine::parse_mch(&draft.value.to_string()).expect("waterjet draft parses");
+    let mut state = State::new();
+    let load = camcraft_app::commands::LoadMachine::new(
+        &state.world, "waterjet.mch".into(), Some(machine),
+    ).expect("waterjet mounts");
+    state.history.execute(&state.world, load);
+    assert_eq!(machine::kind_of(&state.world), Kind::Waterjet);
+    assert_eq!(panes::text_of(Cmd::Machine, &state), "Waterjet");
 }
 
 #[test]
@@ -79,8 +106,9 @@ fn the_door_tip_lists_every_mode() {
 
 #[test]
 fn the_menu_is_as_wide_as_its_longest_row_and_never_narrower_than_the_door_menu() {
-    assert_eq!(panes::machine_menu_width(10.0), DROP_W, "short rows keep the usual width");
-    assert_eq!(panes::machine_menu_width(500.0), 516.0, "a long row sets the width, text not cut");
+    let pal = super::theme::Tokens::DARK;
+    assert_eq!(panes::machine_menu_width(10.0, &pal), pal.menu_width, "short rows keep the usual width");
+    assert_eq!(panes::machine_menu_width(500.0, &pal), 516.0, "a long row sets the width, text not cut");
 }
 
 #[test]
@@ -119,4 +147,23 @@ fn plasma_cutting_mode_shows_the_plasma_profile_and_switching_back_restores_the_
     assert_eq!(machine::kind_of(&state.world), Kind::Plasma, "one undo: back to plasma");
     run(&mut state, CommandKind::Undo);
     assert_eq!(machine::kind_of(&state.world), Kind::Mill, "two undos: back to the mill");
+}
+
+#[test]
+fn every_machine_kind_has_a_short_caption() {
+    let kinds = [
+        Kind::Mill,
+        Kind::Lathe,
+        Kind::MillTurn,
+        Kind::Plasma,
+        Kind::Waterjet,
+        Kind::WireEdm,
+        Kind::SinkerEdm,
+    ];
+    for kind in kinds {
+        let short = machine_modes::short_caption(kind);
+        assert!(!short.is_empty(), "{kind:?} has a short caption");
+        assert!(!machine_modes::caption(kind).is_empty(), "{kind:?} has a caption");
+    }
+    assert_eq!(machine_modes::short_caption(Kind::Waterjet), "Waterjet");
 }

@@ -3,9 +3,10 @@
 //! `SetWcsOrigin`; `CommandKind::SetWcsCircle` (#739, the "Circle centre"
 //! anchor) as one `SetWcsAtCircleCentre` on a picked circular edge. A
 //! refusal names itself on the status line and lands nothing.
+//! `CommandKind::SetWcsFlip` (#1720) lands one `SetWcsFlip`.
 //! Provenance: our own routing over our own commands; no vendor material.
 
-use camcraft_app::commands::{SetWcsAtCircleCentre, SetWcsOrigin};
+use camcraft_app::commands::{SetWcsAtCircleCentre, SetWcsFlip, SetWcsOrigin};
 use camcraft_app::geometry::{Point3, quat_from_euler};
 use camcraft_app::operation::GeoSel;
 use camcraft_app::schema::Location;
@@ -75,6 +76,36 @@ impl State {
                 self.wcs_ui.circle = Some(Err(why.clone()));
                 self.refuse(ErrorScope::Setup, format!("WCS not set: {why}"));
             }
+        }
+    }
+
+    pub(super) fn dispatch_set_wcs_flip(&mut self, flip: [bool; 3]) {
+        match SetWcsFlip::for_setup(&self.world, None, flip) {
+            Ok(command) => {
+                self.history.execute(&self.world, command);
+                self.doc_version += 1;
+                let active = camcraft_app::setup::active(&self.world);
+                let label = camcraft_app::setup::wcs_label(&self.world, active.as_deref());
+                let axes = camcraft_app::setup_wcs_flip::axes_text(flip);
+                // #1649 review: say "mirrored" only when the post carries
+                // it; else name the refusal (once per click, not per frame).
+                let refused = (!axes.is_empty())
+                    .then(|| {
+                        camcraft_app::setup_wcs_flip::setup_problem(&self.world, active.as_deref()).or_else(|| {
+                            let ops = camcraft_app::setup_wcs_flip::setup_post_problems(&self.world, active.as_deref());
+                            (!ops.is_empty()).then(|| ops.join("; "))
+                        })
+                    })
+                    .flatten();
+                self.status = if axes.is_empty() {
+                    format!("{label}: no axis flipped")
+                } else if let Some(why) = refused {
+                    format!("{label}: {axes} flipped - the post refuses it: {why}")
+                } else {
+                    format!("{label}: {axes} flipped - the posted program is mirrored")
+                };
+            }
+            Err(err) => self.refuse(ErrorScope::Setup, format!("WCS flip not set: {err}")),
         }
     }
 }

@@ -30,6 +30,9 @@
 mod error;
 pub mod machining_mesh;
 mod measure;
+pub mod mesh_bound;
+mod mesh_bound_blossom;
+mod mesh_bound_spline;
 pub mod mesh_deviation;
 mod solidcore_blend;
 pub mod solidcore_impl;
@@ -41,6 +44,9 @@ pub mod truck_impl;
 
 pub use error::KernelError;
 pub use measure::{Measure, mesh_signed_volume};
+/// The time bound the readers and the mesher poll (#1456: the app passes
+/// one in without its own solidcore dependency).
+pub use solidcore::kernel::CancelToken;
 
 /// A point or extent in model units, `[x, y, z]`.
 pub type P3 = [f64; 3];

@@ -35,7 +35,6 @@ use super::adaptive::{Spine, medial_spine, widest_point};
 use super::adaptive_troch_clean::{emit_cleanup, plan_cleanup};
 use super::adaptive_troch_lanes::{clearance, narrow_err, plan_all_lanes, rest_share, straightened, trochoid_params};
 use super::face::GenError;
-use super::levels::cut_levels;
 use super::pocket::{PocketParams, PocketStrategy};
 use super::trochoid_slot::{DEFAULT_MAX_ENGAGEMENT, MIN_BAND_PER_D, TrochoidReturn, emit_level, plan_lane};
 
@@ -143,7 +142,7 @@ pub fn adaptive_trochoidal_with(region: &Region, p: &PocketParams, t: &AdaptiveT
         return Err(GenError::Empty("empty pocket region".into()));
     }
     let r = 0.5 * p.tool_diameter;
-    let center = region.offset(-(r + p.stock_to_leave))?;
+    let center = super::pocket::non_sliver_center(region, r + p.stock_to_leave)?;
     if center.is_empty() {
         return Err(GenError::Invalid(format!(
             "{WHO}: the region is narrower than the {:.3} mm tool (with {:.3} mm left on each wall)",
@@ -155,13 +154,15 @@ pub fn adaptive_trochoidal_with(region: &Region, p: &PocketParams, t: &AdaptiveT
     let (clean, final_cleared) =
         plan_cleanup(&center, &reach, &planned.used_center, &planned.cleared, p.tool_diameter, p.optimal_load, p.climb, t)?;
 
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let hop = p.retract_z.unwrap_or(p.clearance_z);
     let p3 = |q: Point2, z: f64| Point3::new(lattice(q.x), lattice(q.y), lattice(z));
     let first_entry = planned.layouts[0].entry;
     let mut bld = PathBuilder::approached(p3(first_entry, p.clearance_z));
     bld.push(MoveKind::Rapid, p3(first_entry, p.clearance_z), None);
-    let mut above = p.top_z;
+    // #1559: over stock carried above the top of the cut, the first
+    // level's entry starts at its plunge height and feeds down.
+    let mut above = p.links.approach.entry_top(p.top_z);
     for (zi, &z) in zs.iter().enumerate() {
         for (li, lay) in planned.layouts.iter().enumerate() {
             if zi > 0 || li > 0 {

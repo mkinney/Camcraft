@@ -22,7 +22,7 @@
 //!   leaves `target` empty with its reason - pixels then paint class 3,
 //!   unjudged, never clean.
 
-use crate::geometry::{transform_point, IDENTITY_Q, Point3, Triangle};
+use crate::geometry::{transform_point, Point3, Triangle};
 use crate::model;
 use std::sync::Arc;
 
@@ -156,7 +156,13 @@ pub fn field_view_with(world: &flecs_ecs::prelude::World, texels: f64) -> Result
         let cut = match (&p.rotary, &p.lathe) {
             (_, Some(l)) => stock.simulate_lathe_profile(&p.moves, &l.profile, &l.axis),
             (Some(ax), None) => crate::stock_sim::simulate_rotary_slice(&mut stock, &op, &p.moves, 0, ax, pose_tol).map(|_| ()),
-            (None, None) => stock.simulate_display(std::slice::from_ref(&op)),
+            (None, None) => {
+                if p.drill {
+                    stock.simulate_drill_display(std::slice::from_ref(&op))
+                } else {
+                    stock.simulate_display(std::slice::from_ref(&op))
+                }
+            }
         };
         cut.map_err(|e| format!("the field view could not cut the program: {e}"))?;
     }
@@ -183,12 +189,26 @@ pub(crate) fn display_inputs(
     if !(texels.is_finite() && texels >= 1.0) {
         return Err(format!("the field view needs a positive texel budget, not {texels}"));
     }
-    let planned = plan_program(world)?;
+    display_inputs_of(world, texels, plan_program(world)?, None)
+}
+
+/// `display_inputs` over a given plan (#2280: the playback's plan ends
+/// before an op with no toolpath). `fallback_setup` names the setup
+/// whose stock is drawn when the plan is empty.
+pub(crate) fn display_inputs_of(
+    world: &flecs_ecs::prelude::World,
+    texels: f64,
+    planned: Vec<crate::stock_sim::Planned>,
+    fallback_setup: Option<String>,
+) -> Result<(Vec<Triangle>, Vec<crate::stock_sim::Planned>, f64), String> {
+    if !(texels.is_finite() && texels >= 1.0) {
+        return Err(format!("the field view needs a positive texel budget, not {texels}"));
+    }
     // #541: the field eye has no box atom - said, never cut as a disc.
     if let Some(p) = planned.iter().find(|p| p.electrode.is_some()) {
         return Err(format!("{}: {}", p.name, crate::stock_sim::ELECTRODE_FIELD_REFUSAL));
     }
-    let first = planned.first().and_then(|p| p.setup.clone());
+    let first = planned.first().map_or(fallback_setup, |p| p.setup.clone());
     let eff = crate::setup::effective(world, first.as_deref());
     if planned.iter().any(|p| crate::setup::effective(world, p.setup.as_deref()) != eff) {
         return Err("the field view draws one setup's stock; a multi-setup program keeps the sheet (the flip transform is M7.3's)".into());
@@ -246,17 +266,24 @@ pub(crate) fn build_target(part: &[Triangle], cell: f64) -> (Option<Stock>, Opti
 }
 
 /// The setup's stock entity as world triangles (the mesh the viewport
-/// already draws), refusing a rotation the axis-aligned field
-/// lattice would silently ignore.
+/// already draws) in the sim's frame (`stock_follow::sim_frame`):
+/// refusing a turn the axis-aligned field lattice cannot hold.
 fn stock_facets(world: &flecs_ecs::prelude::World, setup: Option<&str>) -> Result<Vec<Triangle>, String> {
     let name = crate::setup::stock_entity_name(world, setup);
     let e = model::find_by_name(world, &name)
         .ok_or_else(|| format!("no stock '{name}' - the eye draws material, not air"))?;
-    let loc = model::transform_of(world, &e).unwrap_or_default();
-    if loc.rot != IDENTITY_Q {
-        return Err("the field view models an axis-aligned stock; this stock carries a rotation".into());
-    }
-    let tris = model::facets_of(world, &e).ok_or("the stock entity carries no mesh")?;
+    let placed = model::transform_of(world, &e).unwrap_or_default();
+    // #2177: the sim's own law - a square-turned stock is drawn as its
+    // unturned twin (the same solid), an oblique one refused by name.
+    let (twin, loc) = match model::stock_def_of(world, &e) {
+        Some(shape) => crate::stock_follow::sim_frame(&shape, placed).map(|(s, l)| (Some(s), l))?,
+        None if placed.rot == crate::geometry::IDENTITY_Q => (None, placed),
+        None => return Err(crate::stock_follow::OBLIQUE_STOCK.into()),
+    };
+    let tris: Arc<[Triangle]> = match twin.filter(|_| loc != placed) {
+        None => model::facets_of(world, &e).ok_or("the stock entity carries no mesh")?,
+        Some(s) => crate::stock::stock_mesh(&s).ok_or("the stock cannot be meshed")?.into(),
+    };
     Ok(tris
         .iter()
         .map(|t| {

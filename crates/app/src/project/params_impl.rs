@@ -113,6 +113,7 @@ impl ParamsDto {
                 optimal_load,
                 blend_turns,
                 blend_radius,
+                rest,
                 tilt,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
@@ -146,6 +147,7 @@ impl ParamsDto {
                 optimal_load: Some(*optimal_load),
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 tilt: (*tilt).map(Into::into),
             },
             // The twins drop the strategy tag - the variant itself
@@ -1142,7 +1144,14 @@ impl ParamsDto {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
+                break_through_from,
             } => ParamsDto::Drill {
+                break_through: *break_through,
+                break_through_from: Some(match break_through_from {
+                    crate::drilling::BreakThroughFrom::FullDiameter => BreakThroughFromDto::FullDiameter,
+                    crate::drilling::BreakThroughFrom::Tip => BreakThroughFromDto::Tip,
+                }),
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
                 top_z: (*top_z).into(),
@@ -1181,7 +1190,9 @@ impl ParamsDto {
                 climb,
                 tolerance,
                 holes,
+                break_through,
             } => ParamsDto::Bore {
+                break_through: *break_through,
                 links: links_to_dto(links, &p.default_links()),
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
@@ -1209,7 +1220,9 @@ impl ParamsDto {
                 hand,
                 external,
                 passes,
+                break_through,
             } => ParamsDto::Thread {
+                break_through: *break_through,
                 external: *external,
                 passes: (*passes).into(),
                 pitch: *pitch,
@@ -1347,6 +1360,7 @@ impl ParamsDto {
                 optimal_load,
                 blend_turns,
                 blend_radius,
+                rest,
                 tilt,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1379,6 +1393,7 @@ impl ParamsDto {
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Adaptive2D {
@@ -2357,7 +2372,14 @@ impl ParamsDto {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
+                break_through_from,
             } => OpParams::Drill {
+                break_through: *break_through,
+                break_through_from: match break_through_from.unwrap_or_default() {
+                    BreakThroughFromDto::FullDiameter => crate::drilling::BreakThroughFrom::FullDiameter,
+                    BreakThroughFromDto::Tip => crate::drilling::BreakThroughFrom::Tip,
+                },
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
                 top_z: (*top_z).into(),
@@ -2396,7 +2418,9 @@ impl ParamsDto {
                 climb,
                 tolerance,
                 holes,
+                break_through,
             } => OpParams::Bore {
+                break_through: *break_through,
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 clearance_z: (*clearance_z).into(),
                 retract_z: retract_z.map(Into::into),
@@ -2424,7 +2448,9 @@ impl ParamsDto {
                 hand,
                 external,
                 passes,
+                break_through,
             } => OpParams::Thread {
+                break_through: *break_through,
                 external: *external,
                 passes: (*passes).into(),
                 pitch: *pitch,
@@ -2439,6 +2465,20 @@ impl ParamsDto {
                 climb: *climb,
                 holes: holes.iter().copied().map(HoleDto::to_hole).collect(),
             },
+        }
+    }
+}
+
+/// Pre-v68 projects omitted `break_through_from` and posted to the drill tip;
+/// settle absent keys to `Tip` on load so saved operations and cached paths
+/// do not shift (#2441).
+pub(super) fn settle_drill_break_through(entities: &mut [EntityDto]) {
+    for row in entities {
+        if let Some(op) = &mut row.operation
+            && let ParamsDto::Drill { break_through_from, .. } = &mut op.params
+            && break_through_from.is_none()
+        {
+            *break_through_from = Some(BreakThroughFromDto::Tip);
         }
     }
 }

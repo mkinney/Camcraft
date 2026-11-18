@@ -27,6 +27,9 @@ pub struct Dexel {
     /// its own cells (the `tiles` module owns the representation and
     /// every law that reads or writes it).
     pub(super) tiles: Vec<Option<Tile>>,
+    /// Continuous box/cut provenance for a later side turn. Direct grid
+    /// edits clear it; the validated program and clip paths preserve it.
+    pub(super) history: Option<std::sync::Arc<super::carry_history::History>>,
 }
 
 impl Dexel {
@@ -55,6 +58,9 @@ impl Dexel {
             ny,
             stock_z: top_z,
             tiles: vec![None; nx.div_ceil(TILE) * ny.div_ceil(TILE)],
+            history: Some(std::sync::Arc::new(super::carry_history::History::block(
+                x0, y0, x1, y1, top_z, cell,
+            ))),
         })
     }
 
@@ -113,79 +119,6 @@ impl Dexel {
                 let za = a.z + (b.z - a.z) * t0;
                 let zb = a.z + (b.z - a.z) * t1;
                 let cut = za.min(zb);
-                self.lower(ix + iy * self.nx, cut);
-            }
-        }
-    }
-
-    /// The ball-nose atom: a sphere of radius `r` whose CENTER travels
-    /// the straight, Z-linear chord `a -> b`. Above a cell center `q`,
-    /// at instant `t`, the sphere's bottom sits at
-    /// `z(t) - sqrt(r^2 - d(t)^2)` with `d` the horizontal distance
-    /// from `q` to the center path; the cut is the minimum of that
-    /// over the reach window. Endpoints do NOT suffice here (unlike
-    /// `cut_chord`, where the bottom is constant along the chord): the
-    /// bottom function is convex in `t`, so its minimum is at a window
-    /// end or at its single interior stationary point - `f'(t) = k +
-    /// (t*D^2 - w.D)/sqrt(r^2 - d^2)`, whose squaring gives the
-    /// quadratic below, and the unsquared law keeps only roots where
-    /// `(w.D - t*D^2)` shares `k`'s sign. The XY-nearest instant `t_c`
-    /// is always evaluated too, so a root lost to rounding degrades
-    /// toward the chord's mid-sagitta, never past an endpoint.
-    pub fn cut_ball(&mut self, a: Point3, b: Point3, r: f64) {
-        if !(a.is_finite() && b.is_finite()) || !(r.is_finite() && r >= 0.0) {
-            return; // the cut_chord gate: validation lives upstream
-        }
-        let (dx, dy) = (b.x - a.x, b.y - a.y);
-        let dd = dx * dx + dy * dy;
-        let k = b.z - a.z;
-        let fx = |v: f64| ((v - self.x0) / self.cell).floor();
-        let fy = |v: f64| ((v - self.y0) / self.cell).floor();
-        let lo_x = fx(a.x.min(b.x) - r).max(0.0) as usize;
-        let hi_x = fx(a.x.max(b.x) + r).clamp(0.0, self.nx as f64 - 1.0) as usize;
-        let lo_y = fy(a.y.min(b.y) - r).max(0.0) as usize;
-        let hi_y = fy(a.y.max(b.y) + r).clamp(0.0, self.ny as f64 - 1.0) as usize;
-        if lo_x >= self.nx || lo_y >= self.ny {
-            return;
-        }
-        let r2 = r * r;
-        for iy in lo_y..=hi_y {
-            for ix in lo_x..=hi_x {
-                let q = self.center(ix, iy);
-                let (wx, wy) = (q.x - a.x, q.y - a.y);
-                let Some((t0, t1)) = reach(wx, wy, dx, dy, r) else {
-                    continue;
-                };
-                let f = |t: f64| {
-                    let ex = wx - dx * t;
-                    let ey = wy - dy * t;
-                    a.z + k * t - (r2 - (ex * ex + ey * ey)).max(0.0).sqrt()
-                };
-                let t_c = if dd > f64::EPSILON {
-                    (wx * dx + wy * dy) / dd
-                } else {
-                    0.0
-                };
-                let mut cut = f(t0).min(f(t1)).min(f(t_c.clamp(t0, t1)));
-                if dd > f64::EPSILON {
-                    let wd = wx * dx + wy * dy;
-                    let s = dd + k * k;
-                    let qa = dd * s;
-                    let qb = -2.0 * wd * s;
-                    let qc = wd * wd + k * k * (wx * wx + wy * wy - r2);
-                    let mut disc = qb * qb - 4.0 * qa * qc;
-                    if disc < 0.0 && disc > -qb * qb * 1e-12 {
-                        disc = 0.0; // a planar double root erased by rounding
-                    }
-                    if disc >= 0.0 && disc.is_finite() {
-                        let sd = disc.sqrt();
-                        for t in [(-qb - sd) / (2.0 * qa), (-qb + sd) / (2.0 * qa)] {
-                            if t > t0 && t < t1 && (wd - t * dd) * k >= 0.0 {
-                                cut = cut.min(f(t));
-                            }
-                        }
-                    }
-                }
                 self.lower(ix + iy * self.nx, cut);
             }
         }
@@ -368,6 +301,58 @@ impl Dexel {
         // The strip law lives with the seam's reader (M7.3), so both
         // arms merge their masks by one body of code.
         super::columns::above_strips(self.x0, self.y0, self.cell, self.nx, self.ny, |k| self.top_at(k), z)
+    }
+
+    /// Conservative XY rotation about `origin` (#760). Each target cell takes
+    /// the maximum of every source cell in its inverse-mapped bounding box.
+    /// The box encloses the entire rotated cell, so it can retain extra stock
+    /// but cannot miss a narrow standing region between samples.
+    pub fn rotated_z_conservative(&self, origin: Point2, angle_rad: f64) -> Result<Self, StockError> {
+        if !(origin.x.is_finite() && origin.y.is_finite() && angle_rad.is_finite()) {
+            return Err(StockError::Invalid("dexel rotation requires finite origin and angle".into()));
+        }
+        if angle_rad == 0.0 || self.nx == 0 || self.ny == 0 {
+            return Ok(self.clone());
+        }
+        let (s, c) = angle_rad.sin_cos();
+        let rot = |x: f64, y: f64, s: f64| {
+            Point2::new(origin.x + (x - origin.x) * c - (y - origin.y) * s, origin.y + (x - origin.x) * s + (y - origin.y) * c)
+        };
+        let (x1, y1) = (self.x0 + self.nx as f64 * self.cell, self.y0 + self.ny as f64 * self.cell);
+        let pts = [(self.x0, self.y0), (x1, self.y0), (self.x0, y1), (x1, y1)].map(|(x, y)| rot(x, y, s));
+        let lo_x = pts.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let hi_x = pts.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        let lo_y = pts.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let hi_y = pts.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        let (mut out, h) = (Dexel::block(lo_x, lo_y, hi_x, hi_y, self.stock_z, self.cell)?, 0.5 * self.cell);
+        for iy in 0..out.ny {
+            for ix in 0..out.nx {
+                let q = out.center(ix, iy);
+                let corners = [(-h, -h), (h, -h), (h, h), (-h, h)]
+                    .map(|(dx, dy)| rot(q.x + dx, q.y + dy, -s));
+                // Include a one-cell halo around the inverse AABB. Besides
+                // boundary-touching cells, this covers rounding at grid lines.
+                // Overfetch only raises the answer: it never invents clearance.
+                let bounds = |base: f64, n: usize, coord: fn(&Point2) -> f64| {
+                    let lo = corners.iter().map(coord).fold(f64::INFINITY, f64::min);
+                    let hi = corners.iter().map(coord).fold(f64::NEG_INFINITY, f64::max);
+                    let start = (((lo - base) / self.cell).floor() - 1.0).clamp(0.0, n as f64) as usize;
+                    let end = (((hi - base) / self.cell).floor() + 2.0).clamp(0.0, n as f64) as usize;
+                    start..end
+                };
+                let xs = bounds(self.x0, self.nx, |p| p.x);
+                let ys = bounds(self.y0, self.ny, |p| p.y);
+                let top = ys.flat_map(|y| xs.clone().map(move |x| x + y * self.nx))
+                    .map(|k| self.top_at(k))
+                    .filter(|z| !z.is_nan())
+                    .reduce(f64::max)
+                    .unwrap_or(f64::NEG_INFINITY);
+                if top.to_bits() != self.stock_z.to_bits() {
+                    out.set(ix + iy * out.nx, top);
+                }
+            }
+        }
+        Ok(out)
     }
 }
 

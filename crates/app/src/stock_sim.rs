@@ -60,7 +60,7 @@ pub fn stock_grid(
     setup: Option<&str>,
     tool_r: f64,
 ) -> Result<Dexel, String> {
-    use crate::geometry::{IDENTITY_Q, transform_point};
+    use crate::geometry::transform_point;
     use crate::stock::StockShape;
     use crate::model;
 
@@ -69,10 +69,8 @@ pub fn stock_grid(
         .ok_or_else(|| format!("no stock '{stock_name}' - the program sim judges material, not air"))?;
     let shape = model::stock_def_of(world, &stock_e)
         .ok_or("the stock entity lost its shape")?;
-    let loc = model::transform_of(world, &stock_e).unwrap_or_default();
-    if loc.rot != IDENTITY_Q {
-        return Err("the program sim models an axis-aligned stock; this stock carries a rotation".into());
-    }
+    // #2177: a square-turned stock is its unturned twin; oblique refused.
+    let (shape, loc) = crate::stock_follow::sim_frame(&shape, model::transform_of(world, &stock_e).unwrap_or_default())?;
     let stock_facets: Vec<Triangle> = match &shape {
         StockShape::FromModel { .. } => model::facets_of(world, &stock_e)
             .unwrap_or_default()
@@ -124,10 +122,7 @@ pub fn stock_grid(
             // The analytic grids are built origin-centered; the stock
             // entity's place moves the lattice itself, so the moves
             // stay in the world frame the viewport and post read.
-            d.x0 += loc.pos.x;
-            d.y0 += loc.pos.y;
-            d.stock_z += loc.pos.z;
-            d.translate_finite(loc.pos.z); // stored heights ride with it
+            d.translate_origin(loc.pos.x, loc.pos.y, loc.pos.z);
             d
         }
     };
@@ -168,7 +163,8 @@ pub fn simulate_document(
     let (mut dev, display) = walked.held.verdict(&model_facets, tol)?;
     // #303: the op owns its break - a chamfer's or deburr's declared
     // bevel is part of the finished part, judged by its own depth.
-    credit_breaks(&mut dev, &display, &model_facets, &program_breaks(world, &planned, walked.spanned, &walked.frame));
+    let breaks = breaks::program_breaks(world, &planned, walked.spanned, &walked.frame, &model_facets, tol);
+    credit_breaks(&mut dev, &display, &model_facets, &breaks);
     // #1595: and its mark - an Engrave's or Trace's own sweep, within
     // the budget the operation's own law holds it to.
     credit_marks(&mut dev, &display, &model_facets, &marks::program_marks(world, &planned, walked.spanned, &walked.frame));
@@ -179,23 +175,6 @@ pub fn simulate_document(
     let classes = color_classes(&dev);
     let surface = display.surface(&classes);
     Ok(ProgramSim { dev, surface })
-}
-
-/// The edge breaks the program declares, in the frame the verdict is
-/// read in: every op's when one frame holds the whole program, only
-/// the final frame's ops' when the program spans setups that hold the
-/// part differently (an earlier frame's bevel is not this frame's).
-fn program_breaks(
-    world: &flecs_ecs::prelude::World,
-    planned: &[Planned],
-    spanned: bool,
-    frame: &Option<String>,
-) -> Vec<crate::cl::EdgeBreak> {
-    planned
-        .iter()
-        .filter(|p| !spanned || crate::setup::effective(world, p.setup.as_deref()) == *frame)
-        .flat_map(|p| p.breaks.iter().cloned())
-        .collect()
 }
 
 /// The kinds the column verdict cannot judge, refused by name before
@@ -252,6 +231,9 @@ pub(crate) struct Planned {
     /// The edge breaks the op was asked to cut (#303); empty for every
     /// kind but the chamfer and the deburr.
     pub breaks: Vec<crate::cl::EdgeBreak>,
+    /// #2435: the breaks are a 2D Chamfer's, whose tip the law puts on
+    /// a wall - credited only where it stands on one (`on_walls`).
+    pub walled: bool,
     /// The mark budget and target part(s) the op declares (#1595, #1627,
     /// `operation::mark_law`): `Some` only for an Engrave or Trace.
     pub mark: Option<crate::operation::mark_law::SimMark>,
@@ -259,6 +241,9 @@ pub(crate) struct Planned {
     /// it; the field eye has no electrode atom and refuses the program
     /// by name. `None` for every other tool.
     pub electrode: Option<held::ElectrodeAtom>,
+    /// #2441: a twist drill's cone carries a cylindrical flute above
+    /// `r * cot`, unlike a truncated chamfer `Taper`.
+    pub drill: bool,
 }
 
 /// The field eye's refusal of a sinker electrode (#541), said once.
@@ -283,9 +268,22 @@ pub(crate) fn bull_corner(tool: &crate::tools::Tool) -> Result<Option<f64>, Stri
 /// The program in posting order, each op resolved to its tool's atom
 /// - the one plan both the column verdict and the field eye walk.
 pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Planned>, String> {
-    use crate::{model, posting};
+    plan_ops(world, &crate::posting::program_ops(world)?)
+}
 
-    let ops = posting::program_ops(world)?;
+/// The playback's plan (#2280): [`plan_program`] up to the first op
+/// with no toolpath, and that op and every op after it, in program
+/// order (empty when every op has a toolpath). The verdict and the
+/// post never read this: they keep `plan_program`, which refuses.
+pub(crate) fn plan_program_until_ungenerated(
+    world: &flecs_ecs::prelude::World,
+) -> Result<(Vec<Planned>, crate::posting::OpList), String> {
+    let (ops, rest) = crate::posting::program_ops_until_ungenerated(world)?;
+    Ok((plan_ops(world, &ops)?, rest))
+}
+
+fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelude::Entity)]) -> Result<Vec<Planned>, String> {
+    use crate::model;
 
     // Tools and cached paths, resolved once, in program order. The
     // atom follows the tool kind (stage A's law): a ball nose sweeps
@@ -298,7 +296,7 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
     // and a tap sweeps the disc of its thread's core (#266,
     // `tool_law::cutting_radius`).
     let mut planned: Vec<Planned> = Vec::with_capacity(ops.len());
-    for (name, e) in &ops {
+    for (name, e) in ops {
         let op = model::operation_of(world, e)
             .ok_or_else(|| format!("{name}: lost its operation"))?;
         if wire::skips(&op) {
@@ -329,26 +327,42 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
         // order, kerf crossings, the through-cut) are #672's laws, and
         // the generator certified that no lit move's kerf reaches the
         // part - so the torch carves nothing here, said not silenced.
-        if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch) {
+        if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch | crate::tools::ToolKind::Wire) {
             continue;
         }
         let cache = model::toolpath_of(world, e)
             .ok_or_else(|| format!("{name}: lost its toolpath"))?;
         // The cone's slope, cot of the half-angle from the axis -
-        // the number the dexel atom reads directly, so the sim and
-        // the congruence door in `generate` see the same steel.
-        let cone = if tool.kind == crate::tools::ToolKind::Taper {
-            let tan_half = (tool.tip_angle.to_radians() * 0.5).tan();
-            if tan_half.is_finite() && tan_half > 0.0 {
-                Some(1.0 / tan_half)
-            } else {
-                return Err(format!(
-                    "{name}: chamfer mill {} carries no sane cone (tip angle {})",
-                    op.tool, tool.tip_angle
-                ));
+        // the number the dexel / drill cone reads directly, so the sim and
+        // the congruence door in `generate` see the same steel (#2441).
+        let (cone, drill) = match tool.kind {
+            crate::tools::ToolKind::Taper => {
+                let tan_half = (tool.tip_angle.to_radians() * 0.5).tan();
+                if tan_half.is_finite() && tan_half > 0.0 && tool.tip_angle > 0.0 && tool.tip_angle < 180.0 {
+                    (Some(1.0 / tan_half), false)
+                } else {
+                    return Err(format!(
+                        "{name}: chamfer mill {} carries no sane cone (tip angle {})",
+                        op.tool, tool.tip_angle
+                    ));
+                }
             }
-        } else {
-            None
+            crate::tools::ToolKind::Drill => {
+                if (tool.tip_angle - 180.0).abs() <= 1e-9 {
+                    (None, false)
+                } else {
+                    let tan_half = (tool.tip_angle.to_radians() * 0.5).tan();
+                    if tan_half.is_finite() && tan_half > 0.0 && tool.tip_angle > 0.0 && tool.tip_angle < 180.0 {
+                        (Some(1.0 / tan_half), true)
+                    } else {
+                        return Err(format!(
+                            "{name}: drill {} carries no sane point cone (tip angle {})",
+                            op.tool, tool.tip_angle
+                        ));
+                    }
+                }
+            }
+            _ => (None, false),
         };
         let corner = bull_corner(&tool).map_err(|e| format!("{name}: {e}"))?;
         // The revolved clause (#19, was M5.2 G.2's refusal): a Turn-
@@ -389,8 +403,10 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
         planned.push(Planned {
             name: name.clone(),
             moves,
-            // #529: only what the op itself declared, never wider.
-            breaks: breaks::bounded(name, &op.params, cache.path.breaks),
+            // #529: only what the op itself declared, never wider. #2308:
+            // and never a stock edge's bevel over a part.
+            breaks: if breaks::breaks_stock_edge(world, &op) { Vec::new() } else { breaks::bounded(name, &op.params, cache.path.breaks) },
+            walled: matches!(op.params, crate::operation::OpParams::Chamfer2D { .. }),
             mark: crate::operation::mark_law::sim_mark_of(world, &op, tool.diameter * 0.5),
             radius,
             ball: tool.kind == crate::tools::ToolKind::BallNose,
@@ -400,6 +416,7 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
             rotary,
             lathe,
             electrode,
+            drill,
         });
     }
     Ok(planned)

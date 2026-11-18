@@ -112,6 +112,7 @@ fn drill_retract() -> String {
         outline: Vec::new(),
         turning: None,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
     };
     let hole = |x: f64, floor_z: f64| Hole {
         xy: Point2::new(x, 10.0),
@@ -123,6 +124,8 @@ fn drill_retract() -> String {
     };
     let holes = [hole(10.0, -20.0), hole(30.0, -15.0)];
     let p = CycleParams {
+        through_clear: camcraft_app::drilling::THROUGH_CLEAR,
+        break_through_from: Default::default(),
         clearance_z: 10.0,
         r_z: 1.0,
         hop_z: Some(3.0),

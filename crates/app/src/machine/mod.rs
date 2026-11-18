@@ -61,6 +61,7 @@ pub mod library;
 // it shares with the cutting check.
 mod judge;
 mod plasma;
+mod waterjet;
 pub mod wire_edm;
 use judge::{c_letter_problem, move_extremes, pose_problems, say, slowest_axis, tap_gate};
 mod sheet;
@@ -161,6 +162,9 @@ pub fn check_document(world: &World, machine: &Machine) -> Result<MachineCheck, 
 /// [`check_document`] over a slice of the program (#388): the ops one
 /// machine runs, when setups mount different machines.
 pub fn check_ops(world: &World, machine: &Machine, program: &[(String, flecs_ecs::prelude::Entity)]) -> Result<MachineCheck, String> {
+    if kind(Some(machine)) == Kind::Waterjet {
+        return waterjet::check_waterjet_ops(world, machine, program);
+    }
     if kind(Some(machine)) == Kind::Plasma {
         return plasma::check_plasma_ops(world, machine, program);
     }
@@ -207,6 +211,7 @@ pub fn check_ops(world: &World, machine: &Machine, program: &[(String, flecs_ecs
         // origin law (one copy, in posting), so a G54 slide shifts
         // what passes exactly as it shifts the G-code.
         let (_, origin) = posting::wcs_context(world, op.setup.as_deref());
+        let flip = crate::setup_wcs_flip::of_setup(world, op.setup.as_deref());
         let lathe = kind(Some(machine)) == Kind::Lathe;
 
         // Spindle: the speed the program commands for this op - the
@@ -349,10 +354,12 @@ pub fn check_ops(world: &World, machine: &Machine, program: &[(String, flecs_ecs
                 for (k, w) in [p.x, p.y, p.z].iter().enumerate() {
                     let Some(ax) = machine.axis(k) else { continue };
                     let Some((lo, hi)) = ax.travel else { continue };
+                    // #1649: a flipped WCS axis posts the other sign too.
+                    let sign = ax.direction.sign() * if flip.get(k).copied().unwrap_or(false) { -1.0 } else { 1.0 };
                     let v = if spindle_arc && k == 0 {
-                        (p.x - origin[0]).hypot(p.y - origin[1]) * ax.direction.sign()
+                        (p.x - origin[0]).hypot(p.y - origin[1]) * sign
                     } else {
-                        (w - origin[k]) * ax.direction.sign()
+                        (w - origin[k]) * sign
                     };
                     if v < lo || v > hi {
                         let inv = if ax.direction.is_standard() { "" } else { " (inverted axis)" };

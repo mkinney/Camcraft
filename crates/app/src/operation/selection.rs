@@ -19,11 +19,11 @@ pub(super) const DEGENERATE_AREA: f64 = 1e-9;
 pub(super) const OUTSIDE_BIAS: f64 = 0.5;
 
 /// What a selection resolves to: the boundary loops and centerline runs
-/// it spells, plus Auto's inside verdict for a Contour (the fill law;
-/// `false` for every other kind and for a side the user named). Named
+/// it spells, plus Auto's verdict for a Contour (the level law, #1933;
+/// Outside for every other kind and for a side the user named). Named
 /// so the job struct (`super::job`) stores the same shape it reads -
 /// one truth for the tuple, not a second spelling to drift.
-pub(super) type SelectionGeometry = (Vec<Loop>, Vec<Vec<Point2>>, bool);
+pub(super) type SelectionGeometry = (Vec<Loop>, Vec<Vec<Point2>>, machining2d::AutoSide);
 
 /// The region loops and centerline runs a feature selection resolves to,
 /// as the world stands now: each picked face gives its closed boundary
@@ -45,7 +45,7 @@ pub(super) type SelectionGeometry = (Vec<Loop>, Vec<Vec<Point2>>, bool);
 /// air, which is what "machine out to the stock, the run is the limit"
 /// means on a bore rim (the material-side rule, [`OUTSIDE_BIAS`]). A
 /// contour with `Side::Auto` asks the same rings a narrower question -
-/// what fraction of the area THEY bound is material - and answers it in
+/// which side of them holds the material at their own level - in
 /// the third slot of [`selection_geometry_impl`]'s tuple; this wrapper
 /// hands out only the halves the region-shaped kinds want.
 pub(super) fn selection_geometry(
@@ -90,11 +90,9 @@ pub fn contour_auto_side(
 ) -> Option<bool> {
     match src {
         SrcRef::Stock | SrcRef::Entity(_) => Some(false),
-        SrcRef::Selection(items) => {
-            let (loops, _runs, inside) =
-                selection_geometry_impl(world, setup, items, params, None).ok()?;
-            (!loops.is_empty()).then_some(inside)
-        }
+        // The display's ask, one walk per input (#2249): generation
+        // reads the side from its own walk in `job`, never from here.
+        SrcRef::Selection(items) => super::selection_memo::answer(world, setup, items, params).inside,
     }
 }
 
@@ -108,7 +106,7 @@ pub fn contour_auto_side(
 /// are refused by name - this kind asks for curves, not boundaries.
 /// Resolution errors quote the same labels the 2D walk quotes, so a
 /// re-pick instruction reads identically in both.
-pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
+pub(super) fn drive_chains(world: &World, setup: Option<&str>, items: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
     let mut out: Vec<Vec<Point3>> = Vec::new();
     for g in items {
         let Some(entity) = model::find_by_name(world, &g.entity) else {
@@ -123,11 +121,11 @@ pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Po
                 g.entity
             )));
         };
-        let loc = model::transform_of(world, &entity).unwrap_or_default();
-        let label = format!("{} of '{}'", g.feature, g.entity);
+        let loc = crate::setup_align::pose_in(world, &entity, setup).unwrap_or_default();
+        let label = crate::pick::geo_label(world, g);
         match g.feature {
             FeatureSel::Chain(cid) => {
-                let Some(c) = feature::resolve_chain(&features, cid) else {
+                let Some(c) = crate::model::resolve_chain(&features, cid) else {
                     return Err(GenError::Invalid(format!(
                         "{label} is no longer in the model: re-pick it"
                     )));
@@ -170,9 +168,9 @@ pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Po
 /// [`selection_geometry`] with a human-readable account of what the
 /// selection resolved to (`notes`) accumulated on the side, so the
 /// account can never disagree with the geometry - they are one walk.
-/// The third return value is Auto's verdict for a Contour (material-fill
-/// on the picked rings); it is `false` for every other kind and for a
-/// contour whose side the user already named.
+/// The third return value is Auto's verdict for a Contour (the section
+/// at the picked rings' own level, #1933); it is Outside for every other
+/// kind and for a contour whose side the user already named.
 pub(super) fn selection_geometry_impl(
     world: &World,
     setup: Option<&str>,
@@ -180,7 +178,13 @@ pub(super) fn selection_geometry_impl(
     params: &OpParams,
     notes: Option<&mut Vec<String>>,
 ) -> Result<SelectionGeometry, GenError> {
-    selection_geometry_in(world, setup, items, params, notes, None)
+    let (loops, mut chains, auto) = selection_geometry_in(world, setup, items, params, notes, None)?;
+    if matches!(params, OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_))
+        && !chains.is_empty()
+    {
+        chains = boundary_chains::join_open_runs(chains);
+    }
+    Ok((loops, chains, auto))
 }
 
 /// A world point in the plane the walk projects to: world XY, or the
@@ -293,7 +297,7 @@ pub(super) fn selection_geometry_in(
             )));
         };
         let loc = opframe.pose_in_setup(world, &entity).unwrap_or_default();
-        let label = format!("{} of '{}'", g.feature, g.entity);
+        let label = crate::pick::geo_label(world, g);
         match g.feature {
             FeatureSel::Vertex(_) => {
                 // A point bounds no region: refuse by name, never drop it.
@@ -342,7 +346,7 @@ pub(super) fn selection_geometry_in(
                 }
             }
             FeatureSel::Chain(cid) => {
-                let Some(c) = feature::resolve_chain(&features, cid) else {
+                let Some(c) = crate::model::resolve_chain(&features, cid) else {
                     return Err(GenError::Invalid(format!(
                         "{label} is no longer in the model: re-pick it"
                     )));
@@ -479,37 +483,15 @@ pub(super) fn selection_geometry_in(
         }
         loops = region.loops().to_vec();
     }
-    let mut contour_inside = false;
-    if contour && contour_side == Side::Auto && !loops.is_empty() {
-        // Auto asks the rings themselves what they bound: how much of the
-        // area they enclose is actually material. A boss or OD ring sits
-        // in its own metal (fill ≈ 1) - Outside, today's law. A bore rim
-        // rings air (fill ≈ 0) - the wall's metal is OUTSIDE the ring,
-        // and the Inside law is the one that grazes it. This is NOT the
-        // Face complement rule (that one compares the region to the rest
-        // of the part and would flip a small boss ring inside one
-        // entity's footprint); the loop count and winding are untouched
-        // either way, so the preview of a picked bore wall stays the wall
-        // the picks spelled - one walk, sign and traversal carrying the
-        // side (M1.5.4 issue 2).
-        let region = Region::new(loops.clone())?;
-        let whole = region.area().abs();
-        if whole > 0.0 {
-            let sil = match &material_sil {
-                Some(s) => Some(s.clone()),
-                None => material_of(world, setup, &SrcRef::Selection(items.to_vec()))
-                    .ok()
-                    .and_then(|m| silhouette(&m.facets)),
-            };
-            if let Some(mat) = sil {
-                let fill = region.intersect(&mat)?.area().abs() / whole;
-                if fill < OUTSIDE_BIAS {
-                    contour_inside = true;
-                    if let Some(n) = &mut notes {
-                        n.push("machining inside the ring - the selection bounds air".into());
-                    }
-                }
-            }
+    let mut auto = machining2d::AutoSide::Outside;
+    if matches!(params, OpParams::Contour { side: Side::Auto, .. }) && !loops.is_empty() {
+        // #1933: Auto asks which side of the rings holds the material AT
+        // THE RINGS' OWN LEVEL - a blind bore's floor fills the XY
+        // silhouette, never the section at the mouth. The loop count and
+        // winding are untouched either way (M1.5.4 issue 2).
+        auto = super::contour_auto_pick::auto_side_of_picks(world, setup, items, &loops, &stitched, frame)?;
+        if let (machining2d::AutoSide::Inside, Some(n)) = (&auto, &mut notes) {
+            n.push("machining inside the ring - the selection bounds air".into());
         }
     }
     if contour && contour_side != Side::Auto && loops.is_empty() && !chains.is_empty() {
@@ -517,11 +499,17 @@ pub(super) fn selection_geometry_in(
         // the cutter stays on the run's air side, read from the part
         // (#1777) - so say that plainly instead of letting the combo
         // imply an effect.
-        if let Some(n) = &mut notes {
+        // #1928: a run off the stock (any pick on the stock entity) obeys
+        // Side instead, so the note does not claim the part rule there.
+        let stock_name = crate::setup::stock_entity_name(world, setup);
+        let on_stock = items.iter().any(|g| g.entity == stock_name);
+        if let Some(n) = &mut notes
+            && !on_stock
+        {
             n.push("Side does not apply to open runs - the tool stays on the run's air side, read from the part".into());
         }
     }
-    Ok((loops, chains, contour_inside))
+    Ok((loops, chains, auto))
 }
 
 /// The region half of `selection_geometry` in the shape `region_of` and
@@ -555,7 +543,7 @@ pub(super) fn selection_region(
     // around the part, not a refusal).
     let past_edge = matches!(area.containment, Some(Containment::On | Containment::Outside));
     let region = match pocket_ladder(world, setup, items, params)? {
-        Some((part, planes)) if !past_edge => pocket_region_on_part(loops, &part, &planes, crate::units::of(world))?,
+        Some((part, planes)) if !past_edge => super::pocket_memo::pocket_region_memo(loops, &part, &planes, crate::units::of(world))?,
         _ => Region::new(loops)?,
     };
     // The area controls run after this, at the seam's call sites (the

@@ -110,6 +110,8 @@ fn drill_op(src: &str, top: f64, clear: f64, holes: Vec<Hole>, cross: Vec<CrossH
         tool: "DR-0400".into(),
         src: SrcRef::Entity(src.into()),
         params: OpParams::Drill {
+            break_through: None,
+            break_through_from: Default::default(),
             clearance_z: Height::fixed(top + clear),
             retract_z: None,
             top_z: Height::fixed(top),

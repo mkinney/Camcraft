@@ -136,7 +136,7 @@ pub(crate) fn first_body(world: &World, setup: Option<&str>, dex: Dexel) -> Resu
     let name = crate::setup::stock_entity_name(world, setup);
     let e = model::find_by_name(world, &name).ok_or_else(|| format!("no stock '{name}' to carry"))?;
     let shape = model::stock_def_of(world, &e).ok_or("the stock entity lost its shape")?;
-    let loc = model::transform_of(world, &e).unwrap_or_default();
+    let (shape, loc) = crate::stock_follow::sim_frame(&shape, model::transform_of(world, &e).unwrap_or_default())?;
     Ok(match shape {
         StockShape::FromModel { .. } => Body::on_mesh(dex, &model::world_facets(world, &e).unwrap_or_default()),
         _ => Body::on_floor(dex, loc.pos.z),
@@ -150,7 +150,7 @@ fn first_field(world: &World, setup: Option<&str>, dex: &Dexel, band: u32) -> Re
     let name = crate::setup::stock_entity_name(world, setup);
     let e = model::find_by_name(world, &name).ok_or_else(|| format!("no stock '{name}' to carry"))?;
     let shape = model::stock_def_of(world, &e).ok_or("the stock entity lost its shape")?;
-    let loc = model::transform_of(world, &e).unwrap_or_default();
+    let (shape, loc) = crate::stock_follow::sim_frame(&shape, model::transform_of(world, &e).unwrap_or_default())?;
     let lat = lattice_of_grid(dex);
     match shape {
         StockShape::Box { .. } => FieldBody::block(lat, loc.pos.z, dex.stock_z, band),
@@ -204,9 +204,18 @@ impl ElectrodeAtom {
 impl Held {
     /// Cut `ops` (current frame) into the stock.
     pub(crate) fn simulate(&mut self, ops: &[SimOp]) -> Result<(), String> {
+        self.simulate_with(ops, false)
+    }
+
+    /// Cut twist-drill `ops` (cone plus cylindrical flute, #2441).
+    pub(crate) fn simulate_drill(&mut self, ops: &[SimOp]) -> Result<(), String> {
+        self.simulate_with(ops, true)
+    }
+
+    fn simulate_with(&mut self, ops: &[SimOp], drill: bool) -> Result<(), String> {
         match self {
-            Held::Plain(s) => s.simulate(ops),
-            Held::Carried(c) => c.simulate(ops),
+            Held::Plain(s) => if drill { s.simulate_drill(ops) } else { s.simulate(ops) },
+            Held::Carried(c) => if drill { c.simulate_drill(ops) } else { c.simulate(ops) },
         }
         .map_err(|e| e.to_string())
     }

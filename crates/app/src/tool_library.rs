@@ -29,8 +29,14 @@ use crate::tools::Tool;
 
 /// The envelope's `format` tag.
 pub const FORMAT: &str = "camcraft-tools";
-/// The envelope's `version`; a reader refuses any other.
+/// The original envelope version, retained for libraries without left-hand taps.
 pub const VERSION: u64 = 1;
+/// Older readers must refuse libraries containing left-hand taps.
+pub const LEFT_HAND_VERSION: u64 = 2;
+/// #2015: older readers must refuse a library whose cutting data holds
+/// an `unknown` row or a stepdown / stepover (they would drop or refuse
+/// it); a library with neither keeps the older number.
+pub const CUTTING_STEPS_VERSION: u64 = 3;
 /// The extension the file dialogs offer.
 pub const EXTENSION: &str = "camtools";
 
@@ -72,8 +78,17 @@ impl LibraryTool {
 /// #889: a tool's body rides its definition as `body`.
 pub fn export_tool_library(world: &World) -> Result<String, String> {
     let mut tools: Vec<Value> = Vec::new();
+    let mut version = VERSION;
     for (n, e) in model::named_entities(world) {
         let Some(t) = model::tool_of(world, &e) else { continue };
+        if t.kind == crate::tools::ToolKind::Tap
+            && t.thread_hand == camcraft_tools::thread_hand::ThreadHand::Left
+        {
+            version = version.max(LEFT_HAND_VERSION);
+        }
+        if needs_steps_version(&t) {
+            version = version.max(CUTTING_STEPS_VERSION);
+        }
         let mut def = project::tool_to_json(&t);
         if let Some(b) = tool_body::body_of(world, &e) {
             let body = serde_json::to_value(ToolBodyDto::from_body(&b))
@@ -87,7 +102,7 @@ pub fn export_tool_library(world: &World) -> Result<String, String> {
     if tools.is_empty() {
         return Err("the document has no tools to export".into());
     }
-    let doc = json!({ "format": FORMAT, "version": VERSION, "units": "mm", "tools": tools });
+    let doc = json!({ "format": FORMAT, "version": version, "units": "mm", "tools": tools });
     serde_json::to_string_pretty(&doc).map_err(|e| format!("tool library not written: {e}"))
 }
 
@@ -108,8 +123,8 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
                 None => return Err(format!("not a tool library: no \"format\": \"{FORMAT}\"")),
             }
             match o.get("version").and_then(Value::as_u64) {
-                Some(VERSION) => {}
-                Some(v) => return Err(format!("tool library version {v} is not supported (this build reads {VERSION})")),
+                Some(VERSION | LEFT_HAND_VERSION | CUTTING_STEPS_VERSION) => {}
+                Some(v) => return Err(format!("tool library version {v} is not supported (this build reads {VERSION} to {CUTTING_STEPS_VERSION})")),
                 None => return Err("not a tool library: no \"version\"".into()),
             }
             if let Some(u) = o.get("units").and_then(Value::as_str)
@@ -140,10 +155,9 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
         if let Some(why) = tool.torch_refusal() {
             return Err(format!("tool '{name}' is refused: {why}"));
         }
-        if !tool.is_sane() {
-            return Err(format!(
-                "tool '{name}' is refused: its sizes must be finite and positive, corner radius within the diameter"
-            ));
+        // #1186: the rule the tool breaks, by name.
+        if let Some(why) = tool.why_not_sane() {
+            return Err(format!("tool '{name}' is refused: {why}"));
         }
         let body = read_body(def, &tool, name)?;
         out.push(LibraryTool { name: name.to_owned(), tool, body });
@@ -152,6 +166,17 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
         return Err("the tool library holds no tools".into());
     }
     Ok(out)
+}
+
+/// #2015: does `t` write cutting data a version-1/2 reader cannot keep:
+/// an `Unknown` row that is not just its own rpm / feed, or a row's
+/// stepdown / stepover?
+fn needs_steps_version(t: &Tool) -> bool {
+    t.cutting.iter().any(|r| {
+        (r.is_unknown() && !camcraft_tools::cutting_rows::is_derived_unknown(r, t.rpm, t.feed))
+            || r.stepdown.is_some()
+            || r.stepover.is_some()
+    })
 }
 
 /// #889: a definition's `body`, judged as the project loader judges it

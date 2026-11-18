@@ -46,10 +46,16 @@ use std::hash::{Hash, Hasher};
 
 use crate::geometry::Triangle;
 
+mod g1_seam;
+mod trail;
 mod runs;
 pub use runs::{RUN_LENGTH_RATIO, edge_runs, resolve_chain, run_containing, run_of_edges};
 mod vertex;
 pub use vertex::{VertexId, corner_verts, resolve_vertex, vertex_id, vertex_ids};
+mod names;
+mod patch_shape;
+pub use names::{FeatureNames, NameInputs, NameKind, build_feature_names};
+pub use patch_shape::{PatchShape, classify_patch};
 
 /// Weld lattice: 1e6 steps per mm = 1 µm. Coarser than the old viewport
 /// lattice (1/4096 mm), so clean meshes weld at least as aggressively.
@@ -1272,6 +1278,14 @@ pub fn chains(features: &Features) -> Vec<Chain> {
             }
         }
     }
+    // The G1 seam rule (#2209): a smooth crease between two curved
+    // patches has no face in common along it, so join its pieces here.
+    let mut seam: HashMap<(u32, u32), u32> = HashMap::new();
+    for (v, a, b) in g1_seam::seam_joins(features, &incident, &lattice) {
+        union(&mut parent, a, b);
+        seam.insert((v, a), b);
+        seam.insert((v, b), a);
+    }
 
     // Group by component, walk each into trails. Within a trail, the next
     // edge is the straightest unused turn - at branch vertices (where
@@ -1301,57 +1315,41 @@ pub fn chains(features: &Features) -> Vec<Chain> {
                 adj.entry(e.b).or_default().push((k, e.a));
             }
         }
+        let walk = trail::Walk {
+            edges: &features.edges,
+            lattice: &lattice,
+            es: &es,
+            adj: &adj,
+            seam: &seam,
+            slot: es.iter().enumerate().map(|(k, &e)| (e, k)).collect(),
+        };
         let mut used = vec![false; es.len()];
         while let Some(k0) = (0..es.len()).find(|&k| !used[k]) {
             // Euler start: an odd-degree endpoint if any, else either end.
-            let e0 = features.edges[es[k0] as usize];
-            let v0 = if deg.get(&e0.b).copied().unwrap_or(0) % 2 == 1 {
-                e0.b
-            } else {
-                e0.a
-            };
+            // A seam pair (#2209) at one end only: start at the other end,
+            // so the walk reaches the pair and keeps it in one trail.
+            let e0 = walk.edges[es[k0] as usize];
             used[k0] = true;
+            let at_a = walk.partner_unused(&used, e0.a, es[k0]).is_some();
+            let at_b = walk.partner_unused(&used, e0.b, es[k0]).is_some();
+            let mut v0 = match (at_a, at_b) {
+                (true, false) => e0.b,
+                (false, true) => e0.a,
+                _ if deg.get(&e0.b).copied().unwrap_or(0) % 2 == 1 => e0.b,
+                _ => e0.a,
+            };
+            let (rest, cur) = walk.run(&mut used, v0, other_end(&e0, v0), es[k0], v0);
             let mut trail = vec![es[k0]];
-            let mut cur = other_end(&e0, v0);
-            let mut prev = v0;
-            while let Some(cands) = adj.get(&cur) {
-                let mut pick: Option<(f64, usize, u32)> = None;
-                for &(k, nxt) in cands {
-                    if used[k] {
-                        continue;
-                    }
-                    // Straightest unused continuation; unrankable (an
-                    // unweldable position) still walks, ranked last.
-                    let rank = match (
-                        lattice.get(prev as usize),
-                        lattice.get(cur as usize),
-                        lattice.get(nxt as usize),
-                    ) {
-                        (Some(p), Some(q), Some(r)) => {
-                            let (d1, d2) = (delta(*p, *q), delta(*q, *r));
-                            let dot = d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2];
-                            let m = (norm2(d1) * norm2(d2)).sqrt();
-                            if m > 0.0 && m.is_finite() {
-                                dot / m
-                            } else {
-                                f64::MIN
-                            }
-                        }
-                        _ => f64::MIN,
-                    };
-                    match pick {
-                        None => pick = Some((rank, k, nxt)),
-                        Some((best, _, _)) if rank > best => pick = Some((rank, k, nxt)),
-                        _ => {}
-                    }
-                }
-                let Some((_, k, nxt)) = pick else { break };
-                used[k] = true;
-                trail.push(es[k]);
-                prev = cur;
-                cur = nxt;
-                if cur == v0 {
-                    break;
+            trail.extend(rest);
+            // An open trail whose first edge still has its seam partner at
+            // the start: walk back from the start and prepend that part.
+            if cur != v0 && walk.partner_unused(&used, v0, es[k0]).is_some() {
+                let (back, end) = walk.run(&mut used, other_end(&e0, v0), v0, es[k0], cur);
+                if !back.is_empty() {
+                    let mut t: Vec<u32> = back.into_iter().rev().collect();
+                    t.extend(trail);
+                    trail = t;
+                    v0 = end;
                 }
             }
             let closed = cur == v0 && trail.len() >= 3;
@@ -1375,15 +1373,19 @@ pub fn chains(features: &Features) -> Vec<Chain> {
 /// longer. Agrees with [`chains`] whenever a chain is a lone edge.
 #[must_use]
 pub fn singleton_chain_id(features: &Features, edge: u32) -> Option<ChainId> {
-    let e = *features.edges.get(edge as usize)?;
     let sentinel = (i64::MIN, i64::MIN, i64::MIN);
     let lattice: Vec<Pos> =
         features.verts.iter().map(|p| weld_pos(p).unwrap_or(sentinel)).collect();
+    singleton_chain_id_with_lattice(features, &lattice, edge)
+}
+
+pub(super) fn singleton_chain_id_with_lattice(features: &Features, lattice: &[Pos], edge: u32) -> Option<ChainId> {
+    let e = *features.edges.get(edge as usize)?;
     // Same Euler start a one-edge component gets in `chains`: the odd
     // degree at `b` sends the walk from there.
     let vs = trail_verts(&features.edges, &[edge], e.b);
     let mut segs = Vec::new();
-    ring_segments(&vs, &lattice, false, &mut segs);
+    ring_segments(&vs, lattice, false, &mut segs);
     Some(chain_id(segs, false))
 }
 

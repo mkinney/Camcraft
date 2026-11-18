@@ -62,13 +62,22 @@ mod backend;
 mod backend_build;
 mod backend_edit;
 mod carried;
+mod carried_boundary_scan;
 mod carried_read;
 mod carry;
+mod carry_boundary;
+mod carry_boundary_prune;
+mod carry_verdict;
+mod carry_exact;
+mod carry_history;
+mod carry_profile;
+mod carry_capsule;
 // #874: the side-on quarter turns.
 mod carry_side;
 mod columns;
 mod cut;
 mod dexel;
+mod dexel_ball;
 mod dexel_arc;
 // #541: the sinker electrode's box atom.
 mod dexel_box;
@@ -77,6 +86,7 @@ mod dexel_bull;
 mod dexel_outline;
 mod deviate;
 mod edge_break;
+mod wall_anchor;
 // #1595: the mark an Engrave or Trace declared.
 mod mark;
 mod display;
@@ -124,6 +134,8 @@ pub use backend::{Backend, Stock, FIELD_BAND, FIELD_VERDICT_EPS, LATHE_COLUMN_RE
 pub use backend_edit::SET_TOPS_FIELD_REFUSAL;
 pub use carried::{clip_columns_under, lattice_of_grid, CarriedStock, FieldBody};
 pub use carry::{Body, LatticeTurn, CARRY_TURN_REFUSAL};
+pub use carry_boundary::RegionStock;
+pub use carried_boundary_scan::{boundary_box_penetration, boundary_mesh_penetration};
 pub use carry_side::{CarryTurn, SideTurn, FIELD_SIDE_CARRY_REFUSAL};
 pub use columns::Columns;
 pub use partial::{clamp_frac, partial_move, PartialCut};
@@ -133,6 +145,7 @@ pub use dexel::{reach, Dexel};
 pub use dexel_box::{simulate_box, BOX_ARC_REFUSAL};
 pub use dexel_outline::{simulate_outline, OUTLINE_ARC_REFUSAL};
 pub use edge_break::credit_breaks;
+pub use wall_anchor::on_walls;
 pub use mark::{credit_marks, Mark};
 // The floor a mark must leave on the part's underside (#1595).
 pub use crate::verify::MARK_FLOOR;

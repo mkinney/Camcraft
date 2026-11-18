@@ -56,6 +56,8 @@ fn cross(depth: f64) -> Vec<CrossHole> {
 
 fn params(holes: Vec<Hole>, cross: Vec<CrossHole>) -> OpParams {
     OpParams::Drill {
+        break_through: None,
+        break_through_from: Default::default(),
         clearance_z: Height::fixed(25.0),
         retract_z: None,
         top_z: Height::fixed(20.0),

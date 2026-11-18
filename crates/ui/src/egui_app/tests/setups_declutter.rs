@@ -9,6 +9,7 @@
 
 use super::*;
 use crate::state::SetupPage;
+use egui_kittest::kittest::NodeT;
 
 // #771: the orientation section's dropdowns (Axes expanded by default)
 // stand in for the old separate alignment / plane rows.
@@ -18,9 +19,11 @@ fn cube_path() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/cube.stl")
 }
 
-/// Whether any painted label contains `text` (the page may repeat one).
+/// Whether any painted label on a page contains `text` (the page may repeat one;
+/// the browser tree always shows its own `Browser: ...` rows, #1989).
 fn shows(h: &Harness<'static, ShellUi>, text: &str) -> bool {
-    h.query_all_by_label_contains(text).next().is_some()
+    h.query_all_by_label_contains(text)
+        .any(|n| n.accesskit_node().label().is_none_or(|l| !l.starts_with("Browser: ")))
 }
 
 fn open(h: &mut Harness<'static, ShellUi>, t: UiTarget) {
@@ -50,7 +53,18 @@ fn two_setups_and_a_plate() -> Harness<'static, ShellUi> {
 fn the_setups_page_lists_setups_only_and_each_setup_page_keeps_its_settings() {
     let mut h = two_setups_and_a_plate();
     open(&mut h, UiTarget::Setups);
-    assert_eq!(h.get_all_by_label("Delete").count(), 2, "a Delete per setup row");
+    let pane = h
+        .state()
+        .dock
+        .iter_leaves()
+        .find(|(_, l)| l.tabs.contains(&Tab::Properties))
+        .map(|(_, l)| l.viewport)
+        .expect("the properties leaf");
+    assert_eq!(
+        h.get_all_by_label("Delete").filter(|n| pane.contains(n.rect().center())).count(),
+        2,
+        "a Delete per setup row"
+    );
     assert_eq!(h.get_all_by_label("Open page").count(), 2, "a way to each setup's page");
     h.get_by_label("New setup");
     h.get_by_label("Carry stock and WCS over");

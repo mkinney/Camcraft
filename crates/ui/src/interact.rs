@@ -109,6 +109,7 @@ pub fn op_pick_locked(state: &State) -> bool {
         && !crate::wcs_pick::collecting(state)
         && !crate::plane_pick::collecting(state)
         && !crate::axis_pick::collecting(state)
+        && !crate::start_exit_pick::collecting(state)
 }
 
 /// A click inside the viewport, routed by the pick mode: models,
@@ -142,7 +143,9 @@ pub(crate) fn pick_at(state: &mut State, p: [f32; 2], mods: Mods) {
 /// `feature_click`, or the draft never receives a pick. Disarmed or
 /// paused, the mode's own click behaviour is back.
 pub(crate) fn feature_routed(state: &State) -> bool {
-    state.geo_pick != GeoPick::Model || crate::wcs_pick::collecting(state)
+    state.geo_pick != GeoPick::Model
+        || crate::wcs_pick::collecting(state)
+        || crate::start_exit_pick::collecting(state)
 }
 
 /// Raycast at a logical-px point inside the viewport; queues Select
@@ -273,13 +276,14 @@ pub fn queue_feature_pick(state: &mut State, pick: GeoSel, append: bool) {
     } else {
         Vec::new()
     };
+    let what = camcraft_app::pick::geo_label(&state.world, &pick);
     if base.iter().any(|g| g.entity == pick.entity && g.feature == pick.feature) {
-        state.status = format!("{} of '{}' is already selected", pick.feature, pick.entity);
+        state.status = format!("{what} is already selected");
         return;
     }
     let mut items = base;
     items.push(pick.clone());
-    state.status = format!("{} of '{}' added to {name}", pick.feature, pick.entity);
+    state.status = format!("{what} added to {name}");
     state.pending.push_back(CommandKind::SetOperationGeometry { name, items });
 }
 
@@ -389,6 +393,18 @@ pub(crate) struct Gizmo {
     /// dimmed neutral axes. Drawn beside the origin so whose-zero is
     /// whose reads at a glance, with no hover.
     pub name: String,
+    /// #1720: the reversed axes (X, Y, Z) of this WCS; a flipped axis is
+    /// drawn pointing the other way, so the triad shows what is stored.
+    pub flip: [bool; 3],
+}
+
+impl Gizmo {
+    /// The world axis direction `dir` of axis `i`, reversed when that
+    /// axis is flipped.
+    pub(crate) fn axis_dir(&self, i: usize, dir: &[f64; 3]) -> [f64; 3] {
+        let s = if self.flip.get(i).copied().unwrap_or(false) { -1.0 } else { 1.0 };
+        [dir[0] * s, dir[1] * s, dir[2] * s]
+    }
 }
 
 /// The axis inks on a light viewport (#698): the dark set washes out on
@@ -481,6 +497,7 @@ pub(crate) fn gizmos(state: &State) -> Vec<Gizmo> {
             rot: loc.rot,
             world_axes: false,
             name: name.clone(),
+            flip: camcraft_app::setup_wcs_flip::of_entity(&state.world, &entity),
         });
     }
     let claims_origin = out.iter().any(|g| {
@@ -490,7 +507,7 @@ pub(crate) fn gizmos(state: &State) -> Vec<Gizmo> {
             && g.rot[1].abs() < 1e-6
             && g.rot[2].abs() < 1e-6
             && (1.0 - g.rot[3].abs()).abs() < 1e-6;
-        on_spot && unrotated
+        on_spot && unrotated && !g.flip.iter().any(|f| *f)
     });
     if !claims_origin && state.show_world_axes {
         out.push(Gizmo {
@@ -498,6 +515,7 @@ pub(crate) fn gizmos(state: &State) -> Vec<Gizmo> {
             rot: [0.0, 0.0, 0.0, 1.0],
             world_axes: true,
             name: WORLD_LABEL.to_string(),
+            flip: [false; 3],
         });
     }
     out
@@ -580,7 +598,7 @@ pub(crate) fn feature_segments(
             }
         }
         FeatureSel::Chain(cid) => {
-            let Some(chain) = feature::resolve_chain(&features, cid) else {
+            let Some(chain) = camcraft_app::model::resolve_chain(&features, cid) else {
                 return;
             };
             let pts = feature::chain_points(&features, &chain);
@@ -666,7 +684,8 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
     {
         for p in &planes {
             let (cx, cy) = plane_corner(rect, p.corner);
-            if let Some(uv) = project_uv(&mvp, [cx, cy, p.z]) {
+            let at = crate::height_display::point(state, cx, cy, p.z);
+            if let Some(uv) = project_uv(&mvp, [at.x, at.y, at.z]) {
                 const M: f32 = 0.02; // uv margin: pixels, whichever way the viewport measures
                 let uv = [uv[0].clamp(M, 1.0 - M), uv[1].clamp(M, 1.0 - M)];
                 // A reference plane names its source so the number on
@@ -674,8 +693,9 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
                 // 22.00 (G54 +0.00)". Fixed heights are their own
                 // number and carry no parenthetical.
                 let u = state.units();
+                let value = crate::height_display::value(state, p.z);
                 let chip = if p.src.is_fixed() {
-                    format!("{} · {} {}", state.op_ui.name, p.name, units::len(p.z, u, 2))
+                    format!("{} · {} {}", state.op_ui.name, p.name, value)
                 } else {
                     // A work-offset plane names the setup's WCS and its
                     // word (#329, #342) - the setup context
@@ -691,7 +711,7 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
                         "{} · {} {} ({} {})",
                         state.op_ui.name,
                         p.name,
-                        units::len(p.z, u, 2),
+                        value,
                         source,
                         units::len_signed(p.src.offset, u, 2),
                     )
@@ -704,6 +724,7 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
     // (the setup's own offset before the world axes) - the arrow is the
     // program frame and is never flipped.
     let mut notes = crate::axis_note::triad_notes(state);
+    let shown = crate::view_frame::axes_shown(state);
     for gizmo in gizmos(state) {
         let base = Point3::new(gizmo.pos[0], gizmo.pos[1], gizmo.pos[2]);
         // #727: the gizmo's own name, at its origin - whose zero this is,
@@ -725,6 +746,10 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
             out.push(([uv[0], uv[1] + NAME_DROP_UV], c, gizmo.name.clone()));
         }
         for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            if !shown[axis] {
+                continue; // #2019: no Y letter on a lathe without a Y axis
+            }
+            let dir = gizmo.axis_dir(axis, dir);
             let p = transform_point(
                 Point3::new(
                     dir[0] * len * 1.08,
@@ -758,13 +783,18 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
 pub(crate) fn gizmo_segments(state: &State, aspect: f64) -> Vec<([f32; 2], [f32; 2], [f32; 3])> {
     let len = gizmo_len(state);
     let mvp = state.cam.mvp(aspect);
+    let shown = crate::view_frame::axes_shown(state);
     let mut out = Vec::new();
     for gizmo in gizmos(state) {
         let base = Point3::new(gizmo.pos[0], gizmo.pos[1], gizmo.pos[2]);
         let Some(o) = project_uv(&mvp, gizmo.pos) else {
             continue;
         };
-        for (rgb, dir) in &axes() {
+        for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            if !shown[axis] {
+                continue;
+            }
+            let dir = gizmo.axis_dir(axis, dir);
             let p = transform_point(Point3::new(dir[0] * len, dir[1] * len, dir[2] * len), base, gizmo.rot);
             let Some(tip) = project_uv(&mvp, [p.x, p.y, p.z]) else {
                 continue;
@@ -803,7 +833,9 @@ const GRID_MAX_COORD: f64 = 1.0e9;
 /// Every fifth line is a major one (0.5, 1, 5, 10, 50 ... on a 1-2-5 step).
 const GRID_MAJOR_EVERY: i64 = 5;
 
-/// The Z=0 ground grid: the machine table plane under the part, one line
+/// The ground grid: the floor under the bodies (#2172: at
+/// [`crate::floor::floor_z`], the lowest point of the model, the stock and
+/// the setup's fixtures, so they all stand on it), one line
 /// per 1-2-5 step of `dist / 10`, centred on the camera target and snapped
 /// to round machine coordinates so the spacing reads in whole millimetres
 /// at any zoom. World-space geometry in the overlay buffer, not a
@@ -829,6 +861,7 @@ pub(crate) fn ground_grid_lines(state: &State) -> Vec<[f32; 6]> {
     {
         return Vec::new();
     }
+    let z = crate::floor::floor_z(state);
     let reach = step * GRID_HALF_STEPS as f64;
     let (k0x, k1x) = (
         ((cx - reach) / step).floor() as i64,
@@ -845,12 +878,12 @@ pub(crate) fn ground_grid_lines(state: &State) -> Vec<[f32; 6]> {
     for k in k0y..=k1y {
         let y = k as f64 * step;
         let c = grid_ink(k, ciy);
-        push_line(&mut out, Point3::new(cx - reach, y, 0.0), Point3::new(cx + reach, y, 0.0), c);
+        push_line(&mut out, Point3::new(cx - reach, y, z), Point3::new(cx + reach, y, z), c);
     }
     for k in k0x..=k1x {
         let x = k as f64 * step;
         let c = grid_ink(k, cix);
-        push_line(&mut out, Point3::new(x, cy - reach, 0.0), Point3::new(x, cy + reach, 0.0), c);
+        push_line(&mut out, Point3::new(x, cy - reach, z), Point3::new(x, cy + reach, z), c);
     }
     out
 }
@@ -904,9 +937,14 @@ pub(crate) fn is_axis_label(text: &str) -> bool {
 pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
     let len = gizmo_len(state);
     let mut out: Vec<[f32; 6]> = Vec::new();
+    let shown = crate::view_frame::axes_shown(state);
     for gizmo in gizmos(state) {
         let (px, py, pz) = (ftoz(gizmo.pos[0]), ftoz(gizmo.pos[1]), ftoz(gizmo.pos[2]));
-        for (rgb, dir) in &axes() {
+        for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            if !shown[axis] {
+                continue;
+            }
+            let dir = gizmo.axis_dir(axis, dir);
             let p = transform_point(
                 Point3::new(dir[0] * len, dir[1] * len, dir[2] * len),
                 Point3::new(gizmo.pos[0], gizmo.pos[1], gizmo.pos[2]),
@@ -941,11 +979,12 @@ pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
             }
         }
     }
-    out.extend(toolpath_lines(state));
-    out.extend(region_lines(state));
-    out.extend(height_plane_lines(state));
-    out.extend(crate::work_envelope::envelope_lines(state));
-    out.extend(selection_feature_lines(state));
+    use crate::frame_cost::time;
+    out.extend(time("scene/overlay.toolpaths", || toolpath_lines(state)));
+    out.extend(time("scene/overlay.regions", || region_lines(state)));
+    out.extend(time("scene/overlay.height_planes", || height_plane_lines(state)));
+    out.extend(time("scene/overlay.envelope", || crate::work_envelope::envelope_lines(state)));
+    out.extend(time("scene/overlay.selection_features", || selection_feature_lines(state)).iter().copied());
     capped(out)
 }
 
@@ -1140,7 +1179,7 @@ pub(crate) fn region_lines(state: &State) -> Vec<[f32; 6]> {
             continue; // the region plane's source is gone - draw nothing
                       // rather than an outline at a guessed level
         };
-        if let Some(region) = operation::region_of(&state.world, &op) {
+        if let Some(region) = crate::frame_memo::region_of(&state.world, &name, &op) {
             for l in region.loops() {
                 let pts = l.points();
                 if pts.len() < 3 {
@@ -1191,7 +1230,7 @@ pub(crate) fn shown_regions(state: &State) -> Vec<(f64, Option<Region>)> {
         let Some(op) = model::operation_of(&state.world, &entity) else {
             continue;
         };
-        let region = operation::region_of(&state.world, &op);
+        let region = crate::frame_memo::region_of(&state.world, &name, &op);
         if let Some(z) = operation::region_z(&state.world, op.setup.as_deref(), Some(&op.src), &op.params)
             && (region.is_some() || !operation::chains_of(&state.world, &op).is_empty())
         {
@@ -1213,9 +1252,10 @@ pub(crate) const RETRACT_RGB: [f32; 3] = [0.40, 0.70, 0.95];
 /// The depth the stock is cut to: red, unmistakably the low water mark.
 pub(crate) const CUT_RGB: [f32; 3] = [0.90, 0.35, 0.30];
 
-/// One horizontal level of the open operation's DRAFT parameters: a plane
+/// One level of the open operation's DRAFT parameters: a plane
 /// to mark in the viewport, with the corner label it carries.
 pub(crate) struct HeightPlane {
+    /// The generation fold coordinate; subtract origin.z before to_world.
     pub z: f64,
     /// The draft height this plane resolved from - the chip suffix names
     /// its source, but only when it is one (`Fixed` planes are their own
@@ -1260,11 +1300,19 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         return Vec::new(); // a typed name is not an operation
     }
     let draft = &state.op_ui.params;
+    let Ok(frame) = crate::height_display::frame(state) else {
+        return Vec::new();
+    };
     // Where the orange outline actually stands, level by level: the
     // shared `shown_region_levels` gate, so `region_lines` and the
     // plane rectangles answer to one predicate, never two.
-    let levels = shown_region_levels(state);
-    let stands = |z: f64| levels.contains(&z);
+    let levels = if frame.is_none_or(|f| f.is_upright()) {
+        shown_region_levels(state)
+    } else {
+        Vec::new()
+    };
+    // Tilted region outlines cannot replace a rectangle in the tool plane.
+    let stands = |z: f64| frame.is_none_or(|f| f.is_upright()) && levels.contains(&z);
     // Heights resolve against the world before they reach the viewport:
     // an unavailable source drops its plane (never a rectangle at a
     // guessed z) - the panel says why, and generation refuses by name.
@@ -1275,9 +1323,10 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
     // A From: Selection height reads the open op's own source (M11.3 A).
     let src_owned = state.op_ui.src();
     let src = Some(&src_owned);
+    let resolve = |h| crate::height_memo::height(world, setup, src, draft.tilt(), h).ok();
     let mut out = Vec::new();
     let clr = draft.clearance();
-    if let Some(z) = clr.z_in(world, setup, src) {
+    if let Some(z) = resolve(clr) {
         out.push(HeightPlane {
             z,
             src: clr,
@@ -1379,7 +1428,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         | operation::OpParams::SinkerSideBurn(_) => None,
     };
     if let Some(hop) = hop
-        && let (Some(r), Some(c)) = (hop.z_in(world, setup, src), draft.clearance().z_in(world, setup, src))
+        && let (Some(r), Some(c)) = (resolve(hop), resolve(draft.clearance()))
     {
         out.push(HeightPlane {
             z: r.min(c),
@@ -1396,9 +1445,9 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // stages: then its Top is the first level, drawn like the depth
         // kinds' Top, with the finished Cut below it.
         operation::OpParams::Face { top_z, cut_z, .. } => {
-            let cut = cut_z.z_in(world, setup, src);
+            let cut = resolve(*cut_z);
             if let (Some(t), Some(c)) = ((*top_z).to_owned(), cut)
-                && let Some(tz) = t.z_in(world, setup, src)
+                && let Some(tz) = resolve(t)
                 && tz != c
             {
                 out.push(HeightPlane {
@@ -1516,7 +1565,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
             ..
         })
         | operation::OpParams::Deburr { top_z, bottom_z, .. } => {
-            if let Some(z) = top_z.z_in(world, setup, src) {
+            if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {
                     z,
                     src: *top_z,
@@ -1526,7 +1575,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
                     skip_rect: stands(z),
                 });
             }
-            if let Some(z) = bottom_z.z_in(world, setup, src) {
+            if let Some(z) = resolve(*bottom_z) {
                 out.push(HeightPlane {
                     z,
                     src: *bottom_z,
@@ -1546,7 +1595,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // blade severs comes from the model, so painting a Top the
         // path never walks to would advertise a window it cuts past.
         operation::OpParams::Part { bottom_z, .. } => {
-            if let Some(z) = bottom_z.z_in(world, setup, src) {
+            if let Some(z) = resolve(*bottom_z) {
                 out.push(HeightPlane {
                     z,
                     src: *bottom_z,
@@ -1565,7 +1614,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // measured against is not. The corner Z rides the pane's read
         // of the same two numbers.
         operation::OpParams::Chamfer2D { top_z, .. } => {
-            if let Some(z) = top_z.z_in(world, setup, src) {
+            if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {
                     z,
                     src: *top_z,
@@ -1585,7 +1634,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         operation::OpParams::Drill { top_z, bottom_z, .. }
         | operation::OpParams::Bore { top_z, bottom_z, .. }
         | operation::OpParams::Thread { top_z, bottom_z, .. } => {
-            if let Some(z) = top_z.z_in(world, setup, src) {
+            if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {
                     z,
                     src: *top_z,
@@ -1596,7 +1645,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
                 });
             }
             if let Some(b) = bottom_z
-                && let Some(z) = b.z_in(world, setup, src)
+                && let Some(z) = resolve(*b)
             {
                 out.push(HeightPlane {
                     z,
@@ -1618,7 +1667,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
 /// of the material. Nothing resolvable, or a non-finite pad, leaves the
 /// planes unplaced - never a rectangle of nonsense extent.
 pub(crate) fn plane_rect(state: &State) -> Option<[f64; 4]> {
-    let b = model::stock_world_aabb(&state.world).or_else(|| model::solid_world_aabb(&state.world))?;
+    let b = crate::height_display::bounds(state)?;
     let pad = model::find_by_name(&state.world, &state.op_ui.tool)
         .and_then(|e| model::tool_of(&state.world, &e))
         .map(|t| t.diameter)
@@ -1661,8 +1710,8 @@ pub(crate) fn height_plane_lines(state: &State) -> Vec<[f32; 6]> {
             let b = ring[(i + 1) % 4];
             push_line(
                 &mut out,
-                Point3::new(a[0], a[1], p.z),
-                Point3::new(b[0], b[1], p.z),
+                crate::height_display::point(state, a[0], a[1], p.z),
+                crate::height_display::point(state, b[0], b[1], p.z),
                 p.rgb,
             );
         }
@@ -1682,7 +1731,18 @@ pub(crate) fn height_plane_lines(state: &State) -> Vec<[f32; 6]> {
 /// selection gates as the rest of `collect_overlay`, so picks hold their
 /// place while orbiting. A vanished pick - hidden model, deleted entity,
 /// stale id - draws nothing rather than a ghost, the hover rule again.
-pub(crate) fn selection_feature_lines(state: &State) -> Vec<[f32; 6]> {
+///
+/// #2250: the lines are built when the input changes and read from
+/// [`crate::pick_line_memo`] on other frames.
+pub(crate) fn selection_feature_lines(state: &State) -> std::sync::Arc<[[f32; 6]]> {
+    let items = shown_picks(state);
+    crate::pick_line_memo::lines(state, &items, overlay(Overlay::Pick), || gizmo_len(state), || feature_lines(state, &items))
+}
+
+/// [`selection_feature_lines`] without the memo: one real build, for the
+/// pins that prove a hit equals a fresh build.
+#[cfg(test)]
+pub(crate) fn selection_feature_lines_fresh(state: &State) -> Vec<[f32; 6]> {
     feature_lines(state, &shown_picks(state))
 }
 
@@ -1760,7 +1820,7 @@ fn feature_lines(state: &State, items: &[GeoSel]) -> Vec<[f32; 6]> {
                 }
             }
             FeatureSel::Chain(cid) => {
-                let Some(chain) = feature::resolve_chain(&features, cid) else {
+                let Some(chain) = camcraft_app::model::resolve_chain(&features, cid) else {
                     continue;
                 };
                 let pts = feature::chain_points(&features, &chain);
