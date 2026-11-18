@@ -56,7 +56,7 @@ fn model_of(world: &World, picks: &[GeoSel]) -> Result<Option<String>, String> {
 /// `welded_wall` to be vertical. A strip also picked on its own is the
 /// same wall twice, which the cavity read takes as one.
 fn faces_of(world: &World, g: &GeoSel) -> Result<Vec<PickedFace>, String> {
-    let label = format!("{} of '{}'", g.feature, g.entity);
+    let label = crate::pick::geo_label(world, g);
     let pid = match g.feature {
         FeatureSel::Face(fid) => return Ok(vec![face_of(world, g, fid, label)?]),
         FeatureSel::Patch(pid) => pid,
@@ -75,7 +75,7 @@ fn faces_of(world: &World, g: &GeoSel) -> Result<Vec<PickedFace>, String> {
     let mut strips = Vec::with_capacity(patch.faces.len());
     for &fid in &patch.faces {
         let s = GeoSel { entity: g.entity.clone(), feature: FeatureSel::Face(fid) };
-        let strip = format!("{} (a strip of {label})", s.feature);
+        let strip = format!("{} (a strip of {label})", crate::pick::geo_label(world, &s));
         strips.push(face_of(world, &s, fid, strip)?);
     }
     welded_wall(&label, strips).map_err(words)

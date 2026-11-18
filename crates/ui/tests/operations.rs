@@ -619,6 +619,7 @@ fn chips_round_trip_clear_restores_stock_and_undo_is_exact() {
 
     // A plain pick replaces the source; one chip, resolved, named right.
     let top = face_pick(&state, "part", true);
+    let top_label = camcraft_app::pick::geo_label(&state.world, &top);
     queue_feature_pick(&mut state, top.clone(), false);
     state.drain_actions();
     state.sync_ops_ui();
@@ -626,16 +627,17 @@ fn chips_round_trip_clear_restores_stock_and_undo_is_exact() {
     let chips = state.geo_chips();
     assert_eq!(chips.len(), 1, "one chip per pick");
     assert!(!chips[0].missing);
-    assert!(chips[0].label.starts_with("Face part · "), "{}", chips[0].label);
+    assert!(chips[0].label.starts_with(&format!("{top_label} · ")), "{}", chips[0].label);
 
     // Ctrl adds a chain: the list is kind-blind and order-keeping.
     let chain = chain_pick(&state, "part");
+    let chain_label = camcraft_app::pick::geo_label(&state.world, &chain);
     queue_feature_pick(&mut state, chain.clone(), true);
     state.drain_actions();
     state.sync_ops_ui();
     let chips = state.geo_chips();
     assert_eq!(chips.len(), 2);
-    assert!(chips[1].label.starts_with("Chain part · "), "{}", chips[1].label);
+    assert!(chips[1].label.starts_with(&format!("{chain_label} · ")), "{}", chips[1].label);
     assert!(
         chips[1].label.contains(" · open · ") && chips[1].label.ends_with(" · 1 of 1"),
         "a lone box edge is one open run, length and count spelled out: {}",
@@ -784,22 +786,24 @@ fn selection_rows_read_as_human_descriptors() {
 
     // Face: axis locator and area. The 10 x 10 top of the box sits at z 5.
     let top = face_pick(&state, "part", true);
+    let top_label = camcraft_app::pick::geo_label(&state.world, &top);
     queue_feature_pick(&mut state, top, false);
     state.drain_actions();
     state.sync_ops_ui();
     let chips = state.geo_chips();
     assert!(!chips[0].missing);
-    assert!(chips[0].label.starts_with("Face part · z=5.00"), "{}", chips[0].label);
+    assert!(chips[0].label.starts_with(&format!("{top_label} · z=5.00")), "{}", chips[0].label);
     assert!(chips[0].label.contains("100.0 mm"), "area spelled out: {}", chips[0].label);
 
     // Chain: open or closed, length, and its number among the runs picked
     // on that entity. A lone box edge is one open run of one.
     let chain = chain_pick(&state, "part");
+    let chain_label = camcraft_app::pick::geo_label(&state.world, &chain);
     queue_feature_pick(&mut state, chain, true);
     state.drain_actions();
     state.sync_ops_ui();
     let chips = state.geo_chips();
-    assert!(chips[1].label.starts_with("Chain part · open · "), "{}", chips[1].label);
+    assert!(chips[1].label.starts_with(&format!("{chain_label} · open · ")), "{}", chips[1].label);
     assert!(chips[1].label.contains(" mm · 1 of 1"), "{}", chips[1].label);
 
     // Gone model: the digest resurfaces and the row admits it cannot read

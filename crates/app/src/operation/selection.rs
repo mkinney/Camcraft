@@ -122,7 +122,7 @@ pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Po
             )));
         };
         let loc = model::transform_of(world, &entity).unwrap_or_default();
-        let label = format!("{} of '{}'", g.feature, g.entity);
+        let label = crate::pick::geo_label(world, g);
         match g.feature {
             FeatureSel::Chain(cid) => {
                 let Some(c) = crate::model::resolve_chain(&features, cid) else {
@@ -291,7 +291,7 @@ pub(super) fn selection_geometry_in(
             )));
         };
         let loc = opframe.pose_in_setup(world, &entity).unwrap_or_default();
-        let label = format!("{} of '{}'", g.feature, g.entity);
+        let label = crate::pick::geo_label(world, g);
         match g.feature {
             FeatureSel::Vertex(_) => {
                 // A point bounds no region: refuse by name, never drop it.

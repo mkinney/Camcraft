@@ -206,6 +206,7 @@ fn picked_faces_fill_points_are_discs_and_edges_are_bold() {
         .count();
     assert!(bold >= 1, "the picked edge is drawn bold");
     const { assert!(EDGE_PX >= 3.0, "bold is well over the 1 px hover outline") };
-    assert!(harness.query_by_label_contains("edge on ").is_some(), "the row names the edge");
+    let edge_label = camcraft_app::pick::geo_label(&harness.state().state.world, &sel(FeatureSel::Chain(edge.id)));
+    assert!(harness.query_by_label_contains(&format!("+Y: {edge_label}")).is_some(), "the row names the edge");
     assert!(harness.query_all_by_label_contains("0x").next().is_none(), "no internal id on the page");
 }

@@ -66,18 +66,18 @@ pub fn collecting(state: &State) -> bool {
 pub fn take(state: &mut State, pick: GeoSel) {
     let Some(draft) = state.plane_pick.as_mut().filter(|d| d.picking) else { return };
     let setup = draft.setup.clone();
+    let what = camcraft_app::pick::geo_label(&state.world, &pick);
     state.status = match pick.feature {
         FeatureSel::Face(_) => {
             draft.picks = vec![pick];
-            format!("{setup}: face picked for the plane")
+            format!("{setup}: {what} picked for the plane")
         }
-        // #738: the kind in words, never the feature's internal id.
         FeatureSel::Chain(_) => format!(
-            "{setup}: that pick is an edge - an edge cannot set a plane; pick a flat face \
+            "{setup}: {what} is an edge - an edge cannot set a plane; pick a flat face \
              (edges set an axis: Part axes)"
         ),
         FeatureSel::Patch(_) | FeatureSel::Vertex(_) => {
-            format!("{setup}: that pick is {} - pick a flat face", crate::pick_words::kind(pick.feature))
+            format!("{setup}: {what} is {} - pick a flat face", crate::pick_words::kind(pick.feature))
         }
     };
 }

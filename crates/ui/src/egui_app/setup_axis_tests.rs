@@ -271,23 +271,29 @@ fn the_picked_rows_name_points_and_edges_in_document_units() {
     h.get_by_label("+X by Two points").click();
     h.run();
     let a = corner(h.state(), [0.0, 0.0, 0.0]);
+    let a_label = camcraft_app::pick::geo_label(&h.state().world, &a);
     crate::axis_pick::take(h.state_mut(), a);
     h.run();
-    assert!(h.query_by_label_contains("+X: 1 of 2 points on 'part' (0.000, 0.000, 0.000) mm").is_some());
+    assert!(h.query_by_label_contains(&format!("+X: 1 of 2 points: {a_label} (0.000, 0.000, 0.000) mm")).is_some());
     let b = corner(h.state(), [0.0, 20.0, 0.0]);
+    let b_label = camcraft_app::pick::geo_label(&h.state().world, &b);
     crate::axis_pick::take(h.state_mut(), b);
     h.get_by_label("+Y by Edge").click();
     h.run();
     let (edge, _) = front_top_edge(h.state());
+    let e_label = camcraft_app::pick::geo_label(&h.state().world, &edge);
     crate::axis_pick::take(h.state_mut(), edge);
     h.run();
     let label = |h: &Harness<'static, State>, head: &str| {
         h.query_all_by_label_contains(head).find_map(|n| n.accesskit_node().label().or_else(|| n.accesskit_node().value())).unwrap_or_default()
     };
     let pts = label(&h, "+X: 2 points");
-    assert_eq!(pts, "        +X: 2 points on 'part' (0.000, 0.000, 0.000) -> (0.000, 20.000, 0.000) mm");
-    let e = label(&h, "+Y: edge");
-    assert!(e.contains("edge on 'part', 20.000 mm long, along ("), "{e}");
+    assert_eq!(
+        pts,
+        format!("        +X: 2 points: {a_label} -> {b_label} (0.000, 0.000, 0.000) -> (0.000, 20.000, 0.000) mm")
+    );
+    let e = label(&h, &format!("+Y: {e_label}"));
+    assert!(e.contains(&format!("{e_label}, 20.000 mm long, along (")), "{e}");
     for t in [&pts, &e] {
         assert!(!t.contains("0x") && !t.contains("vertex") && !t.contains("chain"), "no feature id: {t}");
     }
@@ -295,7 +301,7 @@ fn the_picked_rows_name_points_and_edges_in_document_units() {
     h.run();
     let pts = label(&h, "+X: 2 points");
     assert!(pts.ends_with("(0.00000, 0.00000, 0.00000) -> (0.00000, 0.78740, 0.00000) in"), "{pts}");
-    let e = label(&h, "+Y: edge");
+    let e = label(&h, &format!("+Y: {e_label}"));
     assert!(e.contains("0.78740 in long"), "{e}");
 }
 

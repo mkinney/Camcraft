@@ -181,20 +181,28 @@ fn the_mates_read_in_plain_words_and_stay_drawn() {
     let top = face(h.state(), "vise", [50.0, 30.0, 0.0]);
     crate::locate_pick::take(h.state_mut(), top.clone());
     assert!(h.state().status.contains("hide the fixture (eye) to pick part faces hidden in it"), "{}", h.state().status);
-    { let f = face(h.state(), "part", [10.0, 5.0, 0.0]); crate::locate_pick::take(h.state_mut(), f); }
+    let part_face = face(h.state(), "part", [10.0, 5.0, 0.0]);
+    let part_label = camcraft_app::pick::geo_label(&h.state().world, &part_face);
+    let top_label = camcraft_app::pick::geo_label(&h.state().world, &top);
+    { crate::locate_pick::take(h.state_mut(), part_face); }
     crate::locate_pick::take(h.state_mut(), top);
     h.run();
     let mate = h.query_by_label_contains("Mate 1:").and_then(|n| n.accesskit_node().value()).expect("the mate is listed");
-    assert!(mate.contains("part face -Z (bottom), #") && mate.contains("on vise face +Z (top), #"), "{mate}");
+    assert!(
+        mate.contains(&format!("{part_label}, -Z (bottom)")) && mate.contains(&format!("on {top_label}, +Z (top)")),
+        "{mate}"
+    );
     assert!(!mate.contains("0x"), "no raw ids: {mate}");
     assert!(
         h.query_by_label_contains("Turn about mate 1 normal (+ = counter-clockwise looking down the normal)").is_some(),
         "the turn names its mate and its sense"
     );
     assert!(!crate::interact::selection_feature_lines(h.state()).is_empty(), "the drafted faces stay drawn");
-    // A point reads as its coordinates in the setup frame.
-    let corner = crate::locate_pick::describe(h.state(), "vise", &vertex(h.state(), "part", [0.0, 0.0, 0.0]));
-    assert_eq!(corner, "part point (150.00, 80.00, 30.00) mm");
+    // A point reads with its shared name and coordinates in the setup frame.
+    let corner_sel = vertex(h.state(), "part", [0.0, 0.0, 0.0]);
+    let corner_label = camcraft_app::pick::geo_label(&h.state().world, &corner_sel);
+    let corner = crate::locate_pick::describe(h.state(), "vise", &corner_sel);
+    assert_eq!(corner, format!("{corner_label} (150.00, 80.00, 30.00) mm"));
 }
 
 #[test]

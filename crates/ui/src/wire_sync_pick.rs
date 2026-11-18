@@ -69,7 +69,10 @@ fn pairs_mut(state: &mut State) -> Option<&mut Vec<WireSyncPair>> {
 /// refused by name and changes nothing.
 pub fn take(state: &mut State, pick: GeoSel) {
     let FeatureSel::Vertex(id) = pick.feature else {
-        state.status = format!("wire sync: {} on '{}' is not a vertex - click a corner of a profile", pick.feature, pick.entity);
+        state.status = format!(
+            "wire sync: {} is not a vertex - click a corner of a profile",
+            camcraft_app::pick::geo_label(&state.world, &pick)
+        );
         return;
     };
     let Some(w) = crate::vertex_pick::vertex_world(state, &pick.entity, id) else {

@@ -108,7 +108,8 @@ fn three_points_draft_a_round_edge_as_its_centre_and_refuse_a_straight_one() {
     let rim = run_where(&state, rim_at(TOP));
     crate::points_pick::take(&mut state, rim.clone());
     assert_eq!(drafted(&state), vec![rim.clone()], "{}", state.status);
-    assert!(state.status.contains("point 1 picked"), "{}", state.status);
+    let rim_label = camcraft_app::pick::geo_label(&state.world, &rim);
+    assert!(state.status.contains(&rim_label) && state.status.contains("as point 1"), "{}", state.status);
     for p in [[CX + HALF, CY + HALF, TOP], [CX - HALF, CY + HALF, TOP]] {
         let c = corner(&state, p);
         crate::points_pick::take(&mut state, c);
@@ -133,7 +134,8 @@ fn an_axis_by_two_points_drafts_a_round_edge_and_reads_out_its_centre() {
     let rim = run_where(&state, rim_at(TOP));
     crate::axis_pick::take(&mut state, rim.clone());
     assert_eq!(picks(&mut state), vec![rim.clone()], "{}", state.status);
-    // The readout names the centre's coordinates, as a point - not an edge.
-    let text = crate::axis_pick::picks_text(&state.world, &[rim], Unit::Millimeters);
-    assert_eq!(text, "1 of 2 points on 'plate' (5.000, -3.000, 10.000) mm");
+    // The readout names the edge's shared name and centre coordinates as a point.
+    let text = crate::axis_pick::picks_text(&state.world, std::slice::from_ref(&rim), Unit::Millimeters);
+    let rim_label = camcraft_app::pick::geo_label(&state.world, &rim);
+    assert_eq!(text, format!("1 of 2 points: {rim_label} (5.000, -3.000, 10.000) mm"));
 }

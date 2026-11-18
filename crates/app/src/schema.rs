@@ -78,6 +78,17 @@ pub struct GeoSig {
     pub sig: u64,
 }
 
+/// Derived user-friendly feature name lookup table (#2403), paired with the
+/// revision and facet allocation it describes. Valid only while `&Facets`
+/// remains mounted at the same revision and allocation; derived only, never
+/// serialized, dies with its entity.
+#[derive(Component, Debug, Clone)]
+pub struct FeatureNamesMemo {
+    pub rev: u64,
+    pub tris: std::sync::Weak<[Triangle]>,
+    pub table: std::sync::Arc<crate::geometry::feature::FeatureNames>,
+}
+
 /// A model whose mesh stands for its curved surfaces more coarsely than
 /// the STEP importer promises (#864): `chord_mm` is the chord error the
 /// import actually kept, always above `step::CHORD_CAP`. Present ONLY on
@@ -822,6 +833,7 @@ pub fn register_schema(world: &World) {
     world.component::<Facets>();
     world.component::<Revision>();
     world.component::<GeoSig>();
+    world.component::<FeatureNamesMemo>();
     world.component::<ReducedFidelity>();
     world.component::<StepBudget>();
     world.component::<StepSource>();

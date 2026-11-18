@@ -86,7 +86,7 @@ pub fn take(state: &mut State, pick: GeoSel) {
     let Some(draft) = state.wcs_pick.as_mut().filter(|d| d.picking) else { return };
     let role = draft.role;
     let setup = draft.setup.clone();
-    let what = format!("{} of '{}'", pick.feature, pick.entity);
+    let what = camcraft_app::pick::geo_label(&state.world, &pick);
     match draft.picks.iter_mut().position(|(_, r)| *r == role) {
         Some(i) => draft.picks[i] = (pick, role),
         None => draft.picks.push((pick, role)),

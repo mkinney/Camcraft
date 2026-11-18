@@ -228,12 +228,12 @@ pub fn take(state: &mut State, pick: GeoSel) {
     d.applied = false;
     let by = d.by(axis);
     let setup = d.setup.clone();
-    let words = format!("that pick on '{}'", pick.entity); // #738: no internal id
+    let words = pick::geo_label(&state.world, &pick);
     let refuse = |what: &str| format!("{setup}: {words} is {what} - {} takes {}", axis.label(), by.noun());
     let status = match (by, pick.feature) {
         (AxisBy::Edge, FeatureSel::Chain(_)) => {
             d.slot(axis).picks = vec![pick];
-            format!("{setup}: edge picked for {}", axis.label())
+            format!("{setup}: {words} picked for {}", axis.label())
         }
         // #692: a round edge picked for its centre is a point; any other
         // edge is refused with the reason.
@@ -245,7 +245,11 @@ pub fn take(state: &mut State, pick: GeoSel) {
             picks.push(pick);
             let extra = picks.len().saturating_sub(2);
             picks.drain(..extra);
-            format!("{setup}: {} point{} for {}", picks.len(), if picks.len() == 1 { "" } else { "s" }, axis.label())
+            if picks.len() == 1 {
+                format!("{setup}: {words} picked (1 of 2 points for {})", axis.label())
+            } else {
+                format!("{setup}: {words} picked (2 points for {})", axis.label())
+            }
         }
         (_, FeatureSel::Face(_) | FeatureSel::Patch(_)) => refuse("a face (a face sets no direction)"),
         (AxisBy::Edge, FeatureSel::Vertex(_)) => refuse("a point"),
@@ -253,34 +257,25 @@ pub fn take(state: &mut State, pick: GeoSel) {
     state.status = status;
 }
 
-/// One picked point where it is (#738): "on 'block' (x, y, z) mm", in
+/// One picked point where it is (#738 / #2403): "<name> (x, y, z) mm", in
 /// the document's units and frame - never its internal id.
 #[must_use]
 pub fn point_words(world: &World, g: &GeoSel, unit: Unit) -> String {
+    let name = pick::geo_label(world, g);
     match pick::pick_coords(world, g).as_deref() {
         Some([p]) => {
             let c: Vec<String> = p.iter().map(|v| units::len(*v, unit, 3)).collect();
-            format!("on '{}' ({}) {}", g.entity, c.join(", "), unit.suffix())
+            format!("{name} ({}) {}", c.join(", "), unit.suffix())
         }
-        _ => format!("on '{}' (no longer in the model - re-pick it)", g.entity),
+        _ => format!("{name} (no longer in the model - re-pick it)"),
     }
 }
 
-/// The picked row's words (#557 hand check): what was picked and where,
-/// in the document's units - never an internal feature id. Points read
-/// "1 of 2 points on 'block' (x, y, z) mm" / "2 points on 'block' (..)
-/// -> (..) mm"; an edge reads "edge on 'block', 50.000 mm long, along
-/// (dx, dy, dz)". Coordinates are the document frame (as modelled).
+/// The picked row's words (#557 hand check / #2403): what was picked and where,
+/// using the shared feature names in the document's units.
 #[must_use]
 pub fn picks_text(world: &World, picks: &[GeoSel], unit: Unit) -> String {
     let Some(first) = picks.first() else { return "nothing picked".to_owned() };
-    let mut names: Vec<&str> = Vec::new();
-    for g in picks {
-        if !names.contains(&g.entity.as_str()) {
-            names.push(&g.entity);
-        }
-    }
-    let on = names.iter().map(|n| format!("'{n}'")).collect::<Vec<_>>().join(", ");
     let at = |p: &[f64; 3]| {
         let c: Vec<String> = p.iter().map(|v| units::len(*v, unit, 3)).collect();
         format!("({})", c.join(", "))
@@ -289,24 +284,28 @@ pub fn picks_text(world: &World, picks: &[GeoSel], unit: Unit) -> String {
     let suffix = unit.suffix();
     let centre = coords.first().is_some_and(|c| c.len() == 1); // #692: a round edge's centre
     match first.feature {
-        FeatureSel::Chain(_) if !centre => match coords.first().map(Vec::as_slice) {
-            Some([a, b]) => {
-                let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-                let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-                let dir = if l > 0.0 && l.is_finite() {
-                    format!(", along ({:.3}, {:.3}, {:.3})", d[0] / l, d[1] / l, d[2] / l)
-                } else {
-                    String::new()
-                };
-                format!("edge on {on}, {} {suffix} long{dir}", units::len(l, unit, 3))
+        FeatureSel::Chain(_) if !centre => {
+            let edge_name = pick::geo_label(world, first);
+            match coords.first().map(Vec::as_slice) {
+                Some([a, b]) => {
+                    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                    let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                    let dir = if l > 0.0 && l.is_finite() {
+                        format!(", along ({:.3}, {:.3}, {:.3})", d[0] / l, d[1] / l, d[2] / l)
+                    } else {
+                        String::new()
+                    };
+                    format!("{edge_name}, {} {suffix} long{dir}", units::len(l, unit, 3))
+                }
+                _ => format!("{edge_name} (no longer straight or in the model - re-pick it)"),
             }
-            _ => format!("edge on {on} (no longer straight or in the model - re-pick it)"),
-        },
+        }
         _ => {
+            let labels: Vec<String> = picks.iter().map(|g| pick::geo_label(world, g)).collect();
             let pts: Vec<String> = coords.iter().filter_map(|c| c.first()).map(at).collect();
             let head = match picks.len() {
-                1 => format!("1 of 2 points on {on}"),
-                n => format!("{n} points on {on}"),
+                1 => format!("1 of 2 points: {}", labels.join(", ")),
+                n => format!("{n} points: {}", labels.join(" -> ")),
             };
             if pts.is_empty() { head } else { format!("{head} {} {suffix}", pts.join(" -> ")) }
         }

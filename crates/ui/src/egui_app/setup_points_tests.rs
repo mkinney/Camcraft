@@ -186,10 +186,14 @@ fn the_pick_status_counts_the_points_and_never_shows_an_id() {
     h.run();
     assert!(h.query_by_label_contains("1 point selected").is_some(), "one point, singular");
     let b = corner(h.state(), [20.0, 0.0, 10.0]);
+    let b_label = camcraft_app::pick::geo_label(&h.state().world, &b);
     crate::points_pick::take(h.state_mut(), b);
     h.run();
     assert!(h.query_by_label_contains("2 points selected").is_some(), "two points, plural");
-    assert!(h.query_by_label_contains("Point 2: on 'part' (20.000, 0.000, 10.000) mm").is_some(), "where point 2 is");
+    assert!(
+        h.query_by_label_contains(&format!("Point 2: {b_label} (20.000, 0.000, 10.000) mm")).is_some(),
+        "where point 2 is"
+    );
     let face = top_face(h.state());
     crate::points_pick::take(h.state_mut(), face);
     h.run();
