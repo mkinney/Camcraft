@@ -100,7 +100,7 @@ pub(super) fn plan_all_lanes(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn plan_lane_safe(
+pub(super) fn plan_lane_safe(
     chain: &[Point2],
     b_room: f64,
     loop_w: Option<f64>,
@@ -147,7 +147,10 @@ fn try_single_fast_path(
                 return Ok(false);
             }
             let b = clearance(comp, &chain) - WALL_MARGIN;
-            if b <= MIN_BAND_PER_D * d || b > 2.2 * r {
+            // #1587: a straight lane's arcs are translates of one another and
+            // never cross, so its band may take all the free width. A bent
+            // line, or an asked loop width, keeps the 2.2 r bound.
+            if b <= MIN_BAND_PER_D * d || (b > 2.2 * r && (t.loop_width.is_some() || chain.len() > 2)) {
                 return Ok(false);
             }
             let b_used = t.loop_width.map_or(b, |w| 0.5 * w);
@@ -166,7 +169,7 @@ fn try_single_fast_path(
             }
         }
         Ok((Spine::Closed(pts), half)) => {
-            let simplified = dedup_open(&straightened(&pts, 0.005 * half));
+            let simplified = dedup_open(&straightened(&pts, 1e-4 * half));
             let rotated = rotate_to_longest_edge(&simplified);
             let mut chain = dedup_open(&rotated);
             if let Some(&first) = chain.first()
@@ -178,7 +181,9 @@ fn try_single_fast_path(
                 return Ok(false);
             }
             let room_b = clearance(comp, &chain) - WALL_MARGIN;
-            let b_max = (room_b - (0.015 * half).max(WALL_MARGIN)).min(1.40 * r);
+            // HELD (#1587, not for merge): the 1.40 r bound is off and the line
+            // is kept dense, to read the wide closed lane (see the issue).
+            let b_max = room_b - (0.015 * half).max(WALL_MARGIN);
             for scale in [0.95, 0.84, 0.70, 0.55] {
                 let b_loop = t.loop_width.map_or(b_max * scale, |w| (0.5 * w).min(b_max * scale));
                 if b_loop <= MIN_BAND_PER_D * d {
@@ -215,6 +220,9 @@ fn fill_component(
     cleared: &mut Region,
 ) -> Result<(), GenError> {
     let (d, r) = (p.tool_diameter, 0.5 * p.tool_diameter);
+    // #1587: the widest straight lanes first; the passes below fill what
+    // they leave with lanes of at most the tool's own width.
+    super::adaptive_troch_wide::fill_wide(comp, center, reach, p, t, layouts, used_center, cleared)?;
     for pass in 0..3 {
         let uncut = reach.difference(cleared)?;
         if uncut.offset(-0.025)?.is_empty() {

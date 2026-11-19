@@ -124,12 +124,12 @@ pub(super) fn candidate_angles(reg: &Region) -> Vec<f64> {
     angles
 }
 
-fn rotate_pt(q: Point2, a: f64) -> Point2 {
+pub(super) fn rotate_pt(q: Point2, a: f64) -> Point2 {
     let (s, c) = a.sin_cos();
     Point2::new(q.x * c - q.y * s, q.x * s + q.y * c)
 }
 
-fn rotate_region(reg: &Region, a: f64) -> Result<Region, GenError> {
+pub(super) fn rotate_region(reg: &Region, a: f64) -> Result<Region, GenError> {
     let mut loops = Vec::with_capacity(reg.loops().len());
     for lp in reg.loops() {
         let pts = lp.points().iter().map(|&q| rotate_pt(q, a)).collect();

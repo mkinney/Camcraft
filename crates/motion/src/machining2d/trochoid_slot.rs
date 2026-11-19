@@ -40,6 +40,10 @@ const LADDER: [f64; 11] = [1.0, 0.85, 0.7, 0.55, 0.45, 0.35, 0.28, 0.22, 0.15, 0
 /// trochoid (the loops would be a slot with extra steps).
 pub(super) const MIN_BAND_PER_D: f64 = 0.02;
 
+/// A closed lane's band past this share of the tool radius is a wide
+/// band (the widest a closed lane was before #1587).
+pub(super) const WIDE_CLOSED_PER_R: f64 = 1.4;
+
 /// Loops a candidate step is first tried on.
 const TRIAL_LOOPS: usize = 12;
 
@@ -258,7 +262,16 @@ pub(super) fn plan_lane_layout(chain: &[Point2], p: &TrochoidParams, open: bool,
     let mut capped: Option<f64> = None;
     for f in LADDER {
         let step = p.step * f;
-        let lay_opt = if closed { layout_closed(&ch, b, step, p.smoothing, p.climb) } else { layout(&ch, b, step, p.smoothing, p.climb) };
+        // #1587: a closed band wider than [`WIDE_CLOSED_PER_R`] enters its
+        // arcs without the fillet (on a turning wall the straight lead to
+        // the next loop crosses the fillet it follows) and is closed up
+        // to its bore.
+        let wide = closed && b > WIDE_CLOSED_PER_R * r;
+        let lay_opt = if closed {
+            layout_closed(&ch, b, step, if wide { 0.0 } else { p.smoothing }, p.climb, wide)
+        } else {
+            layout(&ch, b, step, p.smoothing, p.climb)
+        };
         let Some(lay) = lay_opt else {
             capped = capped.or(Some(step));
             continue;

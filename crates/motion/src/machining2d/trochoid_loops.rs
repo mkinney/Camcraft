@@ -268,8 +268,8 @@ pub(super) fn layout(chain: &Chain, b: f64, step: f64, fillet: f64, climb: bool)
 
 /// Loops along a closed spine (`chain.closed`), stopping cleanly behind
 /// the starting bore circle (`|p - c0| > b + 0.02`) so closure overlaps
-/// without crossing.
-pub(super) fn layout_closed(chain: &Chain, b: f64, step: f64, fillet: f64, climb: bool) -> Option<Layout> {
+/// without crossing. With `close` the tail is the closing pencil.
+pub(super) fn layout_closed(chain: &Chain, b: f64, step: f64, fillet: f64, climb: bool, close: bool) -> Option<Layout> {
     if !(b.is_finite() && b > 0.0 && step.is_finite() && step > 0.0 && fillet.is_finite()) {
         return None;
     }
@@ -295,7 +295,8 @@ pub(super) fn layout_closed(chain: &Chain, b: f64, step: f64, fillet: f64, climb
         }
         pieces.push(pc);
     }
-    let loops = pieces.len();
+    // #1587: a wide band is closed up to its bore (`trochoid_close`).
+    let loops = if close { super::trochoid_close::closing_pencil(chain, &mut pieces, b, rho, spacing, ccw) } else { pieces.len() };
     Some(Layout { c0, b, entry: f0.at(0.0, -b), opposite: f0.at(0.0, b), ccw, pieces, loops, rho, spacing })
 }
 
