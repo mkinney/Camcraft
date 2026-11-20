@@ -1,0 +1,53 @@
+// Example catalog case: edm/wire-contour (#2871, part of #2392).
+// Builds wire-contour.camproj and posts wire-contour.nc headlessly through
+// CamCraft's undoable command verbs. Run with CWD = this case directory:
+//   camcraft-cli script build.camscript
+
+// The Sodick ALC400G wire EDM (assets/machines/sodick-alc400g.mch) and the
+// Sodick wire post (assets/posts/sodick-wire.cps). A setup carries the post.
+cam.call("load_machine", { builtin: "Sodick ALC400G" });
+cam.call("add_setup", { name: "Wire" });
+cam.call("set_setup_post", { post: "Sodick Wire EDM (Mark 21)" });
+
+// The shipped machine file states no condition table: conditions have no
+// public source. This one is SYNTHETIC - invented numbers of a plausible
+// size, from no machine's manual. It states the spark gap for a 0.25 mm wire.
+cam.call("edit_machine", {
+  patch: {
+    edm: {
+      conditions: [
+        { id: "C110", name: "synthetic rough", gap: 0.04, wire_diameter: 0.25, role: "rough",
+          notes: "SYNTHETIC - invented numbers, no machine's manual" }
+      ]
+    }
+  }
+});
+
+// A 60 x 40 x 10 mm plate. The punch outline comes from a DXF drawing.
+cam.call("set_stock", {
+  box: { dx: 60.0, dy: 40.0, dz: 10.0 }
+});
+cam.call("import_dxf", { path: "model/wire-contour.dxf", units: "mm", name: "punch" });
+
+cam.call("add_tool", { catalog: "EDM-W025", holder: "none" });
+
+cam.call("add_operation", {
+  kind: "Wire Contour",
+  name: "Wire Contour1",
+  tool: "EDM-W025",
+  source: "punch",
+  params: {
+    condition: "C110",
+    side: "punch",
+    start: [-28.0, 0.0]
+  }
+});
+
+cam.generate();
+var verdict = cam.verify();
+if (!verdict.ok) {
+  throw new Error("catalog verify failed: " + JSON.stringify(verdict));
+}
+cam.save("wire-contour.camproj");
+cam.post({ to: "wire-contour.nc" });
+cam.report();
