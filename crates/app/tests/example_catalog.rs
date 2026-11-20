@@ -21,6 +21,47 @@ use support::*;
 #[path = "example_catalog/contract.rs"]
 mod contract;
 
+mod catalog_plasma_profile {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("plasma", "profile", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("plasma", "profile", "rebuilds", rebuild);
+    }
+    #[test]
+    fn posts_the_hole_before_the_outline_with_pierce_and_lead_in() {
+        use camcraft_app::cl::ContourRole;
+        use camcraft_app::operation::OpParams;
+        use camcraft_app::{model, project, setup, sketch, world};
+
+        let dir = repo("examples/catalog/plasma/profile");
+        let w = world::new_world();
+        project::load(&w, &dir.join("profile.camproj")).expect("load Plasma Profile case");
+        assert!(model::model_entities(&w).is_empty(), "the source is a DXF sketch");
+        let (_, profile) = sketch::find(&w, "profile").expect("embedded DXF sketch");
+        let chains = profile.data.chains();
+        assert_eq!(chains.closed.len(), 2, "one hole and one outline");
+        assert!(chains.open.is_empty());
+        let ops = setup::operation_order(&w);
+        assert_eq!(ops.len(), 1);
+        let op = model::operation_of(&w, &ops[0].1).expect("profile operation");
+        assert!(matches!(op.params, OpParams::PlasmaProfile(_)));
+        let path = model::toolpath_of(&w, &ops[0].1).expect("cached plasma path").path;
+        let rec = path.plasma.as_ref().expect("plasma record");
+        assert_eq!(rec.torches.iter().map(|t| t.role).collect::<Vec<_>>(),
+            [ContourRole::Inner, ContourRole::Outer]);
+        assert_eq!(rec.pierce_delay, Some(0.5));
+        assert!(path.moves[rec.torches[1].on].arc.is_some(), "outer arc lead-in");
+        let nc = fs::read_to_string(dir.join("profile.nc")).expect("posted plasma program");
+        for code in ["M200", "G15", "G16", "M205", "M209 P0.5"] {
+            assert_eq!(nc.lines().filter(|line| *line == code).count(), 2, "{code}");
+        }
+    }
+}
+
 /// #2971: keep both named results for the groove and part-off case.
 #[test]
 fn groove_part_off_case_has_two_named_test_results() {

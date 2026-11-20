@@ -1,0 +1,31 @@
+// Provenance: original CamCraft DXF plasma example using public command verbs (#2873).
+// Run from this directory: camcraft-cli script build.camscript
+cam.call("load_machine", { builtin: "Tormach 1300PL" });
+cam.call("add_setup", { name: "Plasma" });
+cam.call("set_setup_post", { post: "Tormach PathPilot Plasma" });
+cam.call("set_stock", { box: { dx: 100.0, dy: 80.0, dz: 5.0 } });
+cam.importDxf("model/profile.dxf", { name: "profile", units: "mm" });
+cam.call("add_tool", { catalog: "PT-KERF-150", holder: "none" });
+cam.call("add_operation", {
+  kind: "Plasma Profile",
+  name: "Plate profile",
+  tool: "PT-KERF-150",
+  source: "profile",
+  params: {
+    clearance_z: 25.0,
+    top_z: 5.0,
+    bottom_z: 0.0,
+    lead_in: 4.0,
+    lead_out: 3.0,
+    overburn: 1.0,
+    pierce_delay: 0.5
+  }
+});
+cam.generate();
+var verdict = cam.verify();
+if (!verdict.ok) {
+  throw new Error("catalog verify failed: " + JSON.stringify(verdict));
+}
+cam.save("profile.camproj");
+cam.post({ to: "profile.nc" });
+cam.report();
