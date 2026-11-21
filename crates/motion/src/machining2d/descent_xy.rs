@@ -85,29 +85,43 @@ pub(super) fn plan_xy(l: &Lvl, m: &Motion) -> Result<XyArc, &'static str> {
     let a = &m.links.approach;
     let (&e, rest) = l.pass.split_first().ok_or("the pass has no start")?;
     let walk = l.walk.and_then(|w| w.first());
-    let dir = closing_dir(l.pass)
-        .or_else(|| walk.map_or_else(|| pts_dir(e, rest), |s| seg_dir(e, s)))
-        .ok_or("the first cut has no direction")?;
-    let len = dir.x.hypot(dir.y);
-    if !(len.is_finite() && len > 0.0) {
-        return Err("the first cut has no direction");
-    }
-    let u = Point2::new(dir.x / len, dir.y / len);
+    let unit = |d: Point2| {
+        let len = d.x.hypot(d.y);
+        (len.is_finite() && len > 0.0).then(|| Point2::new(d.x / len, d.y / len))
+    };
+    let dir = walk.map_or_else(|| pts_dir(e, rest), |s| seg_dir(e, s)).ok_or("the first cut has no direction")?;
+    let u = unit(dir).ok_or("the first cut has no direction")?;
+    // The closing edge's tangent is tried second, and only when it is
+    // within TANGENT_SLACK of the first cut's: the arc stays tangent to
+    // the first cut, and the ring behind the start is off the hull.
+    let uc = closing_dir(l.pass).and_then(unit).filter(|c| {
+        let cross = u.x * c.y - u.y * c.x;
+        let dot = u.x * c.x + u.y * c.y;
+        dot > 0.0 && cross.abs() <= TANGENT_SLACK && (c.x != u.x || c.y != u.y)
+    });
     let sweep = if a.arc_sweep > 0.0 { a.arc_sweep_rad() } else { std::f64::consts::FRAC_PI_2 };
-    let mut r = a.arc_nominal(m.arc_radius);
-    if !(r.is_finite() && r > 0.0 && sweep.is_finite() && sweep > 0.0) {
+    let r0 = a.arc_nominal(m.arc_radius);
+    if !(r0.is_finite() && r0 > 0.0 && sweep.is_finite() && sweep > 0.0) {
         return Err("the arc has no radius");
     }
-    for _ in 0..RADIUS_TRIES {
-        for ccw in [true, false] {
-            if let Some(arc) = arc_at(l, e, u, r, sweep, ccw) {
-                return Ok(arc);
+    for u in std::iter::once(u).chain(uc) {
+        let mut r = r0;
+        for _ in 0..RADIUS_TRIES {
+            for ccw in [true, false] {
+                if let Some(arc) = arc_at(l, e, u, r, sweep, ccw) {
+                    return Ok(arc);
+                }
             }
+            r *= 0.5;
         }
-        r *= 0.5;
     }
     Err("no radius down to a sixteenth of the nominal stays in the legal area off the other passes")
 }
+
+/// The largest turn (radians, as the sine) between the first cut and the
+/// closing edge for which the closing edge may give the arc its tangent:
+/// the noise of an arc fit or a lattice-step edge, never a ring corner.
+const TANGENT_SLACK: f64 = 1e-3;
 
 /// The shortest closing edge (mm) that gives the arc its tangent: a
 /// shorter one is a few lattice steps long, and the lattice turns its
@@ -116,13 +130,12 @@ const DIR_MIN_LEN: f64 = 1e-3;
 
 /// The direction the pass arrives at its start, when its first ring
 /// closes there: from the last vertex at least [`DIR_MIN_LEN`] before
-/// the return. The arc tangent on this line keeps the closing edge on
-/// the line itself, so the ring behind the start curves to one side and
-/// leaves the other side free. The tangent of the first cut can sit a
-/// fraction of a micron off that edge (an arc fit, a lattice-step
-/// edge), and then the ring behind the start crosses the arc's proof
-/// polylines on both sides (#2849). `None`: the pass does not return to
-/// its start (a row, an open chain).
+/// the return. The tangent of the first cut can sit a fraction of a
+/// micron off that edge (an arc fit, a lattice-step edge), and then the
+/// ring behind the start crosses the arc's proof polylines on both sides
+/// (#2849). On the closing edge's line, that edge is on the line itself,
+/// so the ring behind the start curves to one side only. `None`: the
+/// pass does not return to its start (a row, an open chain).
 fn closing_dir(pass: &[Point2]) -> Option<Point2> {
     let &e = pass.first()?;
     let back = (3..pass.len()).find(|&i| pass[i] == e)?;

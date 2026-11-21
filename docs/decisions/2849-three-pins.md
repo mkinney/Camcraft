@@ -16,9 +16,15 @@ with no change to their asserts. The third pin keeps its marker.
 
 **2. The horizontal arc entry reads its tangent from the closing edge of
 the first ring (`descent_xy::closing_dir`).**
-- Decided: when the first pass is a ring that returns to its start, the
-  arc tangent is the direction of the closing edge, from the last vertex
-  at least 1 micron before the start. Other passes keep the old tangent.
+- Decided: the first-cut tangent is tried first, as before. When no
+  radius fits and the first pass is a ring that returns to its start,
+  the direction of the closing edge (from the last vertex at least
+  1 micron before the start) is tried second. It is used only if it is
+  within 1e-3 rad of the first-cut tangent.
+- A first version used the closing edge always. It broke
+  `xy_arc_entry::the_arc_entry_starts_each_level_with_a_g17_arc_tangent_to_its_first_pass`:
+  on a polygon circle the closing edge differs from the first cut by the
+  vertex turn (0.7 degrees). The fallback keeps all paths that fit today.
 - Why: the old tangent came from the fitted arc of the walk. It was a
   fraction of a micron off the ring polyline that returns to the start.
   The ring behind the start then crossed the proof polylines of the arc
