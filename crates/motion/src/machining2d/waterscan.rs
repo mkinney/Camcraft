@@ -71,6 +71,9 @@ pub(super) fn waterline_passes(center: &Region, stepover: f64, climb: bool) -> R
     // order - the nesting order, so a chain step's honest candidates
     // (the adjacent ring of the same family) come first.
     let mut loops: Vec<(u32, Vec<Point2>)> = Vec::new();
+    // The winding of each listed loop as the region holds it: an outer
+    // boundary and a hole boundary are different ring families.
+    let mut outer: Vec<bool> = Vec::new();
     let mut converged = false;
     for k in 0..=cap {
         let ring = if k == 0 {
@@ -92,6 +95,7 @@ pub(super) fn waterline_passes(center: &Region, stepover: f64, climb: bool) -> R
             };
             if pts.len() >= 2 {
                 loops.push((k, pts));
+                outer.push(l.is_ccw());
             }
         }
     }
@@ -112,7 +116,10 @@ pub(super) fn waterline_passes(center: &Region, stepover: f64, climb: bool) -> R
     // are direction-blind - a chord between adjacent offsets is the
     // same chord either way; only the walking order differs. FINISH
     // waterline lives in `machining3d::rings` and is not touched here.
-    loops.sort_by_key(|(k, _)| std::cmp::Reverse(*k));
+    let mut order: Vec<usize> = (0..loops.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(loops[i].0));
+    let outer: Vec<bool> = order.iter().map(|&i| outer[i]).collect();
+    loops = order.into_iter().map(|i| std::mem::take(&mut loops[i])).collect();
     // Phase 2: chain. A chord to a loop's entry point must clear the
     // region and properly cross neither any ring of the level nor any
     // chord of its own chain (earlier join chords are real cut paths
@@ -147,8 +154,19 @@ pub(super) fn waterline_passes(center: &Region, stepover: f64, climb: bool) -> R
             let prev = loops[last].1[0];
             let last_k = loops[last].0;
             let mine = chain_chords(&loops, &chain);
+            // #2849: the step to the other family at the same offset (an
+            // outer ring to a hole ring, or back) is tried last. Once
+            // the chain has jumped, it walks that family out and leaves
+            // the rest of its own family for a later pass, so which wall
+            // is cut last depends on that jump. Deferred, the chain
+            // walks its own family to its wall first, and the hole
+            // family (the island or the part face) comes last.
+            let cross_family = |j: usize| loops[j].0 == last_k && outer[j] != outer[last];
+            let candidates = (0..loops.len())
+                .filter(|&j| !cross_family(j))
+                .chain((0..loops.len()).filter(|&j| cross_family(j)));
             let mut next = None;
-            for j in 0..loops.len() {
+            for j in candidates {
                 if used[j] || loops[j].0.abs_diff(last_k) > 1 {
                     continue;
                 }
