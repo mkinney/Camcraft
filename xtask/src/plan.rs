@@ -35,7 +35,7 @@ pub struct Step {
     pub in_ui: bool,
     /// A known-fail check (`known_fail`): the step is ok only when libtest reports this test as FAILED by
     /// its pinned assert.
-    pub expect_fail: Option<&'static crate::known_fail::KnownFail>,
+    pub expect_fail: Option<crate::known_fail::KnownFail>,
 }
 
 impl Step {
@@ -133,7 +133,7 @@ pub fn run_suites(root: &Path, dirs: &[&str], skip_slow: bool) -> Vec<Step> {
     out
 }
 
-/// The name of the one build step of batch and release; the executor stops when it fails.
+/// The name of the one debug build step of release; the executor stops when any `--no-run` build fails.
 pub const DEBUG_BUILD: &str = "debug build (--no-run)";
 
 /// One debug `--no-run` build step for `dirs` (`-p` each), run before their per-target steps (#1941).
@@ -145,6 +145,17 @@ pub fn debug_build(dirs: &[&str]) -> Step {
     }
     args.push("--no-run".into());
     Step::new(DEBUG_BUILD, &[], "").with(&args)
+}
+
+/// One debug `--no-run` prebuild step for a single crate `d`, keeping its own feature resolution and
+/// CWD (`crates/ui` for `ui`) so later suite steps reuse the compiled artifacts (#2727). Its JSON
+/// messages name the test executables, and the suite steps of `d` then start those without cargo (#1951).
+pub fn debug_build_crate(d: &str) -> Step {
+    Step::new(
+        format!("debug build: {d} (--no-run)"),
+        &["test", "-j", J, "-p", &pkg(d), "--no-run", crate::direct::JSON],
+        d,
+    )
 }
 
 pub fn clippy() -> Step {
@@ -165,9 +176,10 @@ pub fn batch(root: &Path) -> Plan {
         "batch: debug suites (kernel included) minus SLOW_BINARIES ({}), ui, clippy",
         SLOW_BINARIES.join(", ")
     ));
-    plan.notes.push("one build (--no-run), then one step for each test target (#1941)".into());
-    let built: Vec<&str> = BATCH_CRATES.iter().copied().chain(["ui"]).collect();
-    plan.steps.push(debug_build(&built));
+    plan.notes.push("per-crate prebuilds (--no-run), then one step for each test target in parallel lanes (#1941, #2727)".into());
+    for &d in BATCH_CRATES.iter().chain(&["ui"]) {
+        plan.steps.push(debug_build_crate(d));
+    }
     plan.steps.extend(run_suites(root, BATCH_CRATES, true));
     plan.steps.extend(run_suites(root, &["ui"], false));
     plan.steps.push(clippy());
@@ -201,17 +213,19 @@ fn may_run_ignored(root: &Path, d: &str, b: &str) -> bool {
 /// `cargo test --release -p <crate> -- --ignored` runs. Kernel joins the heavy coverage in #1783;
 /// a red step names one binary, and `--only "app heavy: <binary>"` re-runs it alone.
 pub fn heavy_steps(root: &Path) -> Vec<Step> {
+    heavy_steps_where(root, &|_, _| true)
+}
+
+/// The heavy steps whose `(crate dir, target label)` the caller keeps (`gate heavy`, #2568): the release
+/// build names only the crates that keep a target, and a selection that keeps nothing gives no step.
+pub fn heavy_steps_where(root: &Path, keep: &dyn Fn(&str, &str) -> bool) -> Vec<Step> {
+    let entries = crate::known_fail::entries(root);
     let mut out = Vec::new();
     let mut build: Vec<String> = vec!["test".into(), "--release".into(), "-j".into(), J.into()];
-    for d in HEAVY_CRATES {
-        build.push("-p".into());
-        build.push(pkg(d));
-    }
-    build.push("--no-run".into());
-    out.push(Step::new("heavy build (release --no-run)", &[], "").with(&build));
+    type Targets = Vec<(String, Vec<String>)>;
+    let mut kept: Vec<(&str, Targets)> = Vec::new();
     for &d in HEAVY_CRATES {
-        let p = pkg(d);
-        let mut targets: Vec<(String, Vec<String>)> = vec![
+        let mut targets: Targets = vec![
             ("lib".into(), vec!["--lib".into()]),
             ("bins".into(), vec!["--bins".into()]),
         ];
@@ -221,21 +235,35 @@ pub fn heavy_steps(root: &Path) -> Vec<Step> {
             }
         }
         targets.push(("doc".into(), vec!["--doc".into()]));
+        targets.retain(|(label, _)| keep(d, label));
+        if !targets.is_empty() {
+            build.push("-p".into());
+            build.push(pkg(d));
+            kept.push((d, targets));
+        }
+    }
+    if kept.is_empty() {
+        return out;
+    }
+    build.push("--no-run".into());
+    out.push(Step::new("heavy build (release --no-run)", &[], "").with(&build));
+    for (d, targets) in kept {
+        let p = pkg(d);
         for (label, sel) in targets {
             let mut args = vec!["test", "--release", "-j", J, "-p", &p, "--no-fail-fast"];
             args.extend(strs(&sel));
             args.extend(["--", T]);
-            let skip = crate::known_fail::skip_args(d, &label);
+            let skip = crate::known_fail::skip_args(&entries, d, &label);
             args.extend(strs(&skip));
             args.push("--ignored");
             out.push(Step::new(format!("{d} heavy: {label}"), &args, ""));
             // Each skipped test runs alone and must fail: a pass means the skip is stale (#1950 decision).
-            for k in crate::known_fail::of(d, &label) {
+            for k in crate::known_fail::of(&entries, d, &label) {
                 let mut args = vec!["test", "--release", "-j", J, "-p", &p, "--no-fail-fast"];
                 args.extend(strs(&sel));
-                args.extend(["--", T, "--exact", k.test, "--ignored"]);
+                args.extend(["--", T, "--exact", &k.test, "--ignored"]);
                 let mut step = Step::new(crate::known_fail::step_name(k), &args, "");
-                step.expect_fail = Some(k);
+                step.expect_fail = Some(k.clone());
                 out.push(step);
             }
         }
@@ -261,15 +289,9 @@ pub fn release_with(root: &Path, snapshots: bool) -> Plan {
             "--no-snapshots: the ui pixel-snapshot lanes are skipped (Windows-made goldens); run them locally at the cut".into(),
         );
     }
-    plan.notes.extend(crate::known_fail::KNOWN_FAIL.iter().map(crate::known_fail::note));
+    plan.notes.extend(crate::known_fail::entries(root).iter().map(crate::known_fail::note));
     let non_ui: Vec<&str> = ALL_CRATES.iter().copied().filter(|d| *d != "ui").collect();
-    let mut build = vec!["test", "-j", J];
-    let packages: Vec<String> = ALL_CRATES.iter().map(|d| pkg(d)).collect();
-    for p in &packages {
-        build.extend(["-p", p]);
-    }
-    build.push("--no-run");
-    plan.steps.push(Step::new(DEBUG_BUILD, &build, ""));
+    plan.steps.push(debug_build(ALL_CRATES));
     let mut heavy = heavy_steps(root).into_iter();
     if let Some(build) = heavy.next() {
         plan.steps.push(build);

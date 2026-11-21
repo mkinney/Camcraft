@@ -592,12 +592,44 @@ tests are in `crates/ui/tests/`; they start the real app through
   | Tier | When | Target | Runs |
   |---|---|---|---|
   | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches, one step for each binary; debug; no heavy lanes |
-  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build, then one step for each debug test binary that is not slow (kernel and ui included), clippy |
+  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build for each crate, then one step for each debug test binary that is not slow (kernel and ui included), in parallel lanes; clippy |
   | release | only at a cut | - | one step for each debug test binary and the `--ignored` heavy lanes in release |
+- **The light lane** (#2569). `cargo xtask gate light` runs the light twins
+  of the heavy tests, in release, at review and merge time. A light twin is
+  next to its full test, on a smaller fixture or a reduced set. The full
+  test keeps its golden asserts and its pinned readings. A red light run is
+  a note on the PR: the author runs the full heavy steps locally, and they
+  must pass before the cut gate starts again. A local run never replaces
+  the cut gate.
+  - A twin has the ignore reason `light lane: ...` and the name
+    `<full test>_light`. The gate refuses a twin whose file has no
+    `#[ignore]`d full test.
+  - A red light run prints the note: each red step, with the command of
+    its full heavy step (`cargo xtask gate release --only "<crate> heavy:
+    <target>"`).
+- **Heavy lanes at review** (#2568). `cargo xtask gate heavy [--base main]`
+  maps the diff to the heavy lanes that it reaches and runs them in release
+  with `--ignored`. The reach follows the dependencies between our crates: a
+  change in `motion` reaches the `app` heavy lanes.
+  - A PR whose diff reaches a heavy lane is not ready while a reached heavy
+    test is red or not run. The author runs the command on the final head
+    before the PR is flagged ready. The PR body names the lanes that ran.
+  - The review comment lists the heavy lanes that ran and their results.
+    "Not run" is never a pass.
+  - The release tier at the cut stays the final check: the tagged tree is
+    exactly the gated tree.
 - **Test the change, not everything.** The tests that pin a fix prove it.
   Run them one by one: `cargo xtask gate test <name> [--crate c] [--binary b]
   [--exact]`. Run a full suite only when the change touches what that suite
   covers. Run the full set only at a release cut.
+- **Gate job budget** (#2814). The default is the available CPU count from
+  `std::thread::available_parallelism()`, with a floor of 2 and a cap of 64.
+  If CPU detection fails, the default is 2. `CAMCRAFT_GATE_JOBS` overrides
+  it with any positive whole number. The override has no floor or cap.
+  A bad value uses the default and prints a diagnostic. The gate and its
+  `--dry-run` plan print the budget and its source. Batch and release share
+  the budget over at most `max(1, budget / 2)` lanes. A build, an isolated
+  test, a UI step or clippy runs alone with the full budget.
 - **Shared compile cache** (optional, sccache, #900): never export
   `CARGO_TARGET_DIR`, because it makes each worktree miss the cache. The
   `gate` skill has the setup.
@@ -611,6 +643,21 @@ tests are in `crates/ui/tests/`; they start the real app through
   a cut, never for each edit. A split must not lose coverage: the `#[test]`
   count before and after is the same, and the ignored set keeps its golden
   asserts.
+- **Tests that start red use the known-fail marker** (#2567). A test that
+  is red on purpose must not use a plain `#[ignore]`. Use
+  `#[ignore = "known-fail #ISSUE | TARGET | FULL_TEST_NAME | PANIC_LINE_PREFIX"]`.
+  Set `TARGET` to `lib` or an integration binary in the `kernel`, `motion`
+  or `app` heavy lanes. Name the open issue and the full libtest name.
+  Put `// known-fail-assert` immediately before the one expected failing
+  assertion. The gate discovers the marker from the source. It pins the
+  assertion location and a panic message line prefix.
+  The release gate prints `SKIPPED (known fail, #N): <test>`, then checks
+  the test alone. The gate fails if the test passes, its issue closes, or
+  it fails for another reason. Both `cargo xtask gate release` and
+  `cargo xtask release` check the issue state. If `gh` cannot read the
+  state, the gate prints a warning and still checks the expected failure.
+  Reviewers reject a test that starts red with a plain ignore. They check
+  the issue, marker, assertion location and expected panic prefix.
 - **Pixel snapshots are release-lane** (#255). The PNG goldens
   (`crates/ui/tests/snapshots/*.png`) are `#[ignore]`d and run only in the
   release tier. A PR never changes a snapshot PNG. The goldens are made new
@@ -748,6 +795,11 @@ has the procedure. Its rules:
   `main`. From step 1 of the cut to the tag, nothing else merges.
 - The release tier runs on the cut runner (`cut.yml`). The tagged tree is
   exactly the gated tree.
+- **Local full rerun** (#2569). After a red cut gate, the author runs the
+  red steps in full, locally, in release mode: `cargo xtask gate release
+  --failed gate-logs/<run>` (the logs of the red run), or `--only "<step>"`.
+  They must pass before the cut gate starts again. A local run never
+  replaces the cut gate.
 - Cuts and tags stay with the maintainer.
 
 **Every cut tag is published.** A cut is not complete until its tag is on

@@ -4,9 +4,10 @@
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use crate::artifacts::{Built, Package};
 use crate::checkout::{self, Reading};
 use crate::plan::{self, Plan, Step};
 use crate::scan::re;
@@ -14,17 +15,22 @@ use crate::scan::re;
 pub struct Run {
     pub root: PathBuf,
     pub label: String,
+    /// Batch and release run their steps in the parallel lanes of `queue` (#2727); a quick gate that falls
+    /// back to the batch plan sets it too. Else the steps run one at a time.
+    pub lanes: bool,
     pub dry: bool,
     /// The job budget of the whole run (#2057): the release queue's lanes share it, a step alone gets all of it.
     pub budget: usize,
     budget_note: Option<String>,
     pub(crate) log_dir: PathBuf,
-    clock: Instant,
+    pub(crate) clock: Instant,
     pub(crate) done: Vec<Done>,
     /// HEAD and the working tree when the gate started (#1201); every later reading is compared with it.
     pub(crate) guard: Reading,
     /// The VOID line, once the checkout was seen to move; a void run has no verdict.
     pub(crate) void: Option<String>,
+    /// The test executables of the crates that this run built; their suite steps start no cargo (#1951).
+    pub(crate) built: Built,
 }
 
 pub(crate) struct Done {
@@ -32,6 +38,8 @@ pub(crate) struct Done {
     pub(crate) ok: bool,
     pub(crate) secs: u64,
     pub(crate) note: String,
+    /// What a green recording build step read from cargo's JSON messages (`direct::records`, #1951).
+    pub(crate) built: Option<(String, Package)>,
 }
 
 /// The cargo that launched us (`cargo xtask` sets CARGO), else the one on PATH.
@@ -144,12 +152,14 @@ impl Run {
             budget_note,
             root: root.to_path_buf(),
             label: label.into(),
+            lanes: matches!(label, "batch" | "release"),
             dry,
             log_dir,
             clock: Instant::now(),
             done: Vec::new(),
             guard,
             void: None,
+            built: Built::new(),
         })
     }
 
@@ -157,19 +167,13 @@ impl Run {
         for n in &plan.notes {
             println!("{n}");
         }
-        let lanes = self.label == "release";
+        let lanes = self.lanes;
         if let Some(n) = &self.budget_note {
             println!("{n}");
         }
         println!("{}", crate::budget::header(self.budget, lanes));
         if lanes {
-            if self.budget_note.is_none() && std::env::var_os(crate::budget::ENV).is_none()
-                && let Ok(n) = std::thread::available_parallelism()
-                && n.get() > self.budget
-            {
-                println!("note: this machine has {n} cores; {}={n} lets the gate use them", crate::budget::ENV);
-            }
-            self.run_release(plan)?;
+            self.run_lanes(plan)?;
         } else {
             for s in &plan.steps {
                 if self.check(&format!("before {}", s.name)) {
@@ -208,23 +212,34 @@ impl Run {
     }
 
     fn step(&mut self, s: &Step) -> Result<(), String> {
-        let done = Self::execute(&self.root, &self.log_dir, self.dry, self.done.len() + 1, s, self.budget)?;
-        self.done.push(done);
+        let done = Self::execute(&self.root, &self.log_dir, self.dry, self.done.len() + 1, s, self.budget, &self.built)?;
+        self.keep(done);
         Ok(())
     }
 
-    /// Runs one step with its `-j` and `--test-threads` set to `jobs` (`budget::scale`).
-    pub(crate) fn execute(root: &Path, log_dir: &Path, dry: bool, n: usize, s: &Step, jobs: usize) -> Result<Done, String> {
+    /// Adds a finished step; the executables that a build step recorded go to `built` for the later steps.
+    pub(crate) fn keep(&mut self, mut d: Done) {
+        self.built.extend(d.built.take());
+        self.done.push(d);
+    }
+
+    /// Runs one step with its `-j` and `--test-threads` set to `jobs` (`budget::scale`). A debug suite
+    /// step of a crate in `built` starts its test executable; each other step starts cargo (`direct`).
+    pub(crate) fn execute(root: &Path, log_dir: &Path, dry: bool, n: usize, s: &Step, jobs: usize, built: &Built) -> Result<Done, String> {
         let args = crate::budget::scale(&s.args, jobs);
         let log = log_dir.join(log_name(n, &s.name));
         let dir = if s.in_ui { root.join("crates").join("ui") } else { root.to_path_buf() };
-        let leaf = dir.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
+        let leaf = |d: &Path| d.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
+        let direct = crate::direct::chosen(s, &args, built, &cargo());
         println!("[{n:02}] {}", s.name);
-        println!("     (cwd {leaf}) cargo {}", args.join(" "));
-        if dry {
-            return Ok(Done { name: s.name.clone(), ok: true, secs: 0, note: "dry run".into() });
+        match &direct {
+            Some(d) => println!("     (cwd {}) {}", leaf(&d.cwd), crate::direct::describe(d, root)),
+            None => println!("     (cwd {}) cargo {}", leaf(&dir), args.join(" ")),
         }
-        let cache = gate_cache_env();
+        if dry {
+            return Ok(Done { name: s.name.clone(), ok: true, secs: 0, note: "dry run".into(), built: None });
+        }
+        let cache = if direct.is_some() { Vec::new() } else { gate_cache_env() };
         if !cache.is_empty() {
             println!("     (compile cache: sccache on)");
             if std::env::var_os("CARGO_TARGET_DIR").is_some() {
@@ -233,26 +248,30 @@ impl Run {
         }
         let t0 = Instant::now();
         let file = File::create(&log).map_err(|e| format!("create {}: {e}", log.display()))?;
-        let err = file.try_clone().map_err(|e| format!("log {}: {e}", log.display()))?;
-        let code = Command::new(cargo())
-            .envs(cache)
-            .args(&args)
-            .current_dir(&dir)
-            .stdin(Stdio::null())
-            .stdout(file)
-            .stderr(err)
-            .status()
-            .map(|st| st.code().unwrap_or(-1))
-            .map_err(|e| format!("cargo {}: {e}", args.join(" ")))?;
+        let records = crate::direct::records(s);
+        let (code, json) = match &direct {
+            Some(d) => (crate::direct::run(d, root, file)?, None),
+            None => crate::direct::cargo(&cargo(), cache, &args, &dir, file, records.is_some())?,
+        };
+        let mut recorded = None;
+        if let (Some(name), Some(json), 0) = (records.filter(|_| !crate::direct::opted_out()), json, code) {
+            match crate::direct::record(root, &cargo(), &name, &json) {
+                Ok(p) => {
+                    println!("     {} test executable(s) of {name} recorded: their steps start no cargo", p.count());
+                    recorded = Some((name, p));
+                }
+                Err(e) => println!("     note: no test executable of {name} recorded ({e}); its steps start cargo"),
+            }
+        }
         let secs = t0.elapsed().as_secs();
         let text = std::fs::read_to_string(&log).unwrap_or_default();
         let mut note = read_log(&text, code)?;
-        let ok = match s.expect_fail {
+        let ok = match &s.expect_fail {
             Some(k) => expect_fail_note(code, &mut note, &text, k),
             None => code == 0,
         };
         println!("     {} in {secs}s {note}", if ok { "ok" } else { "FAIL" });
-        Ok(Done { name: s.name.clone(), ok, secs, note })
+        Ok(Done { name: s.name.clone(), ok, secs, note, built: recorded })
     }
 
     /// Prints the summary table; the process exit code (0 all passed, 1 any failed).
@@ -263,11 +282,15 @@ impl Run {
         }
         let bad = self.done.iter().filter(|d| !d.ok).count();
         let mins = self.clock.elapsed().as_secs_f64() / 60.0;
-        if self.label == "release" {
+        if self.lanes {
             let serial: u64 = self.done.iter().map(|d| d.secs).sum();
             println!("  summed lane wall time {serial}s (serial estimate; not a serial benchmark)");
         }
         println!("  wall {mins:.1} min, {} step(s), {bad} failed", self.done.len());
+        if self.label == "light" {
+            let red: Vec<String> = self.done.iter().filter(|d| !d.ok).map(|d| d.name.clone()).collect();
+            crate::light::rerun_note(&red).iter().for_each(|l| println!("{l}"));
+        }
         if self.void.is_some() {
             println!("== gate VOID ({}) - the checkout moved during the run; no verdict, re-run on a checkout nobody pulls into", self.label);
             return 1;
@@ -278,13 +301,13 @@ impl Run {
 
 /// A known-fail step (`known_fail`) is ok only when libtest reports `k.test` itself as FAILED (the `read_log`
 /// note `failed: ... [tests: ...]` names it exactly) AND the test's panic block in `log` is the pinned
-/// assert: its `panicked at` line names `k.file` and a message line starts with `k.reason`. A pass, a renamed test, a
+/// assert: its `panicked at` line names `k.file` and `k.line`, and a message line starts with `k.reason`. A pass, a renamed test, a
 /// compile error, a crash of the test binary (no `test ... FAILED` line) or a failure for another reason (a
 /// planner panic, a gouge warning, another assert) is a FAIL.
 pub fn expect_fail_note(code: i32, note: &mut String, log: &str, k: &crate::known_fail::KnownFail) -> bool {
-    let test = k.test;
+    let test = &k.test;
     if code == 0 {
-        *note = "KNOWN FAIL NOW PASSES (or no such test): remove its entry from xtask/src/known_fail.rs".into();
+        *note = "KNOWN FAIL NOW PASSES (or no such test): remove its known-fail marker".into();
         return false;
     }
     let named = note.starts_with("failed:")
@@ -296,7 +319,8 @@ pub fn expect_fail_note(code: i32, note: &mut String, log: &str, k: &crate::know
         *note = format!("known fail did not fail as a test (crash, compile error or other test): {note}");
         return false;
     }
-    let pinned = |(at, msg): (String, String)| at.contains(k.file) && msg.lines().any(|l| l.starts_with(k.reason));
+    let pinned = |(at, msg): (String, String)| at.contains(&format!("{}:{}:", k.file, k.line))
+        && msg.lines().any(|l| l.starts_with(&k.reason));
     if !panic_block(log, test).is_some_and(pinned) {
         *note = format!("KNOWN FAIL, DIFFERENT REASON (want {:?} at {}): {note}", k.reason, k.file);
         return false;

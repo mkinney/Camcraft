@@ -86,7 +86,7 @@ fn heavy_steps_skip_only_binaries_without_ignored_tests() {
             if s.expect_fail.is_none() {
                 // Only a lane with a known-fail entry carries its `--exact --skip` args; every other lane has none.
                 let label = s.name.split_once("heavy: ").map(|x| x.1).unwrap_or_default();
-                let skip = crate::known_fail::skip_args(d, label);
+                let skip = crate::known_fail::skip_args(&crate::known_fail::entries(&root()), d, label);
                 assert_eq!(&tail[1..tail.len() - 1], skip.as_slice(), "{}: {:?}", s.name, s.args);
             }
             assert!(s.args.contains(&"--release".to_string()) && s.args.contains(&"--no-fail-fast".to_string()));

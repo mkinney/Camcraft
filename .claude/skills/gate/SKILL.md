@@ -20,7 +20,8 @@ wrappers `scripts/gate.ps1` (`-Tier quick`, `-Test <name>`) and
 | Tier | Command | Runs |
 |---|---|---|
 | quick | `cargo xtask gate quick [--base main]` | Only the test binaries that the diff touches, from the gate maps and the touched crates. One build for each crate, then one step for each binary. Debug. No heavy lanes. Target: 5 minutes. |
-| batch | `cargo xtask gate batch` | One debug build (`--no-run`), then one step for each test target (`<crate> suites: lib`, `<crate> suites: <binary>`) that is not in `SLOW_BINARIES`, the `camcraft-kernel` suites (#1702), the ui suites from `crates/ui`, clippy. No release-mode heavy lanes. Target: 20 minutes. |
+| batch | `cargo xtask gate batch` | One debug build (`--no-run`) for each crate, then one step for each test target (`<crate> suites: lib`, `<crate> suites: <binary>`) that is not in `SLOW_BINARIES`, the `camcraft-kernel` suites (#1702), the ui suites from `crates/ui`, clippy. The steps run in the parallel lanes of `lanes.rs` (#2727). No release-mode heavy lanes. Target: 20 minutes. |
+| heavy | `cargo xtask gate heavy [--base main]` | The release `--ignored` heavy lanes that the diff reaches, also through the crate dependencies (#2568). One release build of the reached crates, then one step for each reached target. Before a PR is ready and at its review. |
 | release | `cargo xtask gate release` | One step for each debug test target (`lib`, `bins`, each binary, `doc`) and the `--ignored` heavy lanes in release. Only at a cut. On the cut runner: `cargo xtask gate release --no-snapshots`. |
 | test | `cargo xtask gate test <name> [--crate c] [--binary b] [--exact]` | One test by name. The plain form is `cargo test -p <crate> --test <binary> -- <name> --exact`. |
 
@@ -33,6 +34,8 @@ Flags:
 - `--failed gate-logs/<run>` (each tier but `test`): run only the steps
   that failed in that run (#1702).
 - `--dry-run` with `--only` or `--failed` shows the selected steps.
+- `--lane N/M` (batch only): run lane N of M of the batch plan (#2908). See
+  "Batch lanes for separate runners".
 
 A fix for one red step then costs one step, not a full run.
 
@@ -41,13 +44,54 @@ A fix for one red step then costs one step, not a full run.
 - Quick, batch and release plan one step for each test target, as the heavy lanes do (#1714). A step name is
   `<crate> suites: lib`, `<crate> suites: bins`, `<crate> suites: <binary>` or `<crate> suites: doc`. The ui
   steps are `ui suites: ...` and run in `crates/ui`.
-- Quick and batch build one time first (`debug build (--no-run)`, or `<crate> build (--no-run)` in quick when
-  a crate has more than one step). Each step then calls `cargo test -p <crate> --test <binary>`, which finds
+- Quick and batch build first (`debug build: <crate> (--no-run)` for each crate in batch, or
+  `<crate> build (--no-run)` in quick when a crate has more than one step). Batch builds each crate alone
+  (#2727): one build of all the crates gives a shared dependency the features of all of them, and each step
+  then compiles its crate again. Each step then calls `cargo test -p <crate> --test <binary>`, which finds
   the build ready. A step has its own log, its own time and its own pass or fail line.
 - Run one binary again: `cargo xtask gate batch --only "app suites: cmds"`. `--only "app suites"` selects
   each app step. `--failed gate-logs/<run>` runs only the red steps.
-- Quick and batch run the steps one after the other. The release tier runs them in the waves of `lanes.rs`.
+- Quick runs the steps one after the other. Batch and release run them in the lanes of `lanes.rs`: the builds
+  first and alone, then a shared queue (longest first, by the newest `timings.tsv`), then the `ISOLATED`
+  targets, the ui steps and clippy one at a time. A quick gate that falls back to batch uses the lanes too.
+  `CAMCRAFT_GATE_JOBS=<cores>` sets the job budget that the lanes share.
 - Each step starts cargo, about 0.5 s on Windows. A batch plan has about 700 steps.
+
+## Batch lanes for separate runners (#2908)
+
+`cargo xtask gate batch --lane N/M` runs one part of the batch plan. M jobs,
+one for each lane, run the full batch tier. The lanes can run on M runners at
+the same time, or one after the other on one runner. The result is the same.
+
+- The split reads only the plan. It reads no timing file. Thus each machine
+  computes the same lanes for the same commit.
+- Each test step and clippy is in exactly one lane. The steps are dealt in
+  plan order, one lane after the other: first the steps that share the
+  machine, then the steps that run alone (`lanes::ISOLATED`, ui, clippy).
+- A lane builds only the crates that it tests (`debug build: <crate>`).
+- `--lane 1/1` is the full batch plan. M is 16 at most.
+- `--lane` on a different tier, a lane out of range, or a lane with no step
+  is an error with a message. It is not a green run.
+- `--dry-run`, `--only` and `--failed` apply to the steps of the lane.
+- A lane run writes `lane-result.tsv` into its `gate-logs/batch-<stamp>/`,
+  with the step logs. The file has the lane, the runner name
+  (`RUNNER_NAME`), the result (`green`, `red`, `void`), the wall time, the
+  planned step count, and one row for each step that ran.
+
+`cargo xtask gate-verdict <dir>...` reads each `lane-result.tsv` below the
+directories (the `gate-logs/` of one machine, or the downloaded artifacts of
+all lanes). It prints one Markdown verdict: a row for each lane with its
+runner, time, result and record path, then the red steps by name.
+
+- The exit code is 0 for green and 1 for red.
+- The verdict is red when a step is red, and also when a lane has no record,
+  has two records, is void, ran fewer steps than its plan, or has a record
+  that cannot be read. A lane that did not report is never green.
+- The failure of a red step is in the log of that step, in the artifact of
+  its lane. No second run is necessary to read it.
+
+`post-merge.yml` does not use the lanes yet. That workflow change is a
+different PR (#2908).
 
 ## What quick selects
 
@@ -64,16 +108,21 @@ Quick prints its selection before it runs:
 
 ## Job budget (#2057)
 
-- One budget sets the jobs of the whole gate: 6 by default.
-  `CAMCRAFT_GATE_JOBS=<n>` (1 or more) changes it.
+- One budget sets the jobs of the whole gate. The default is the available
+  CPU count from `std::thread::available_parallelism()`, with a floor of 2
+  and a cap of 64. If CPU detection fails, the default is 2.
+- `CAMCRAFT_GATE_JOBS=<n>` overrides it with any positive whole number.
+  The override has no floor or cap. An empty value uses the default.
+  A bad value uses the default and prints a diagnostic that names the value.
 - A step that runs alone gets `-j <budget>` and `--test-threads=<budget>`.
-- The lanes of a release wave share the budget. N lanes get
+  Builds, `ISOLATED` tests, UI steps and clippy still run alone.
+- Batch and release queues share the budget. N lanes get
   `-j <budget / N>` each, minimum 1.
-- A wave has at most `budget / 2` lanes. A budget of 6 gives 3 lanes of 2
-  jobs.
-- The gate prints the budget, the lane limit and the jobs of each lane at
-  the start, and `-- wave K: N lane(s) x -j M` before each wave. The
-  `--dry-run` output shows the same lines.
+- A queue has at most `max(1, budget / 2)` lanes. A budget of 6 gives 3
+  lanes of 2 jobs. A budget of 32 allows 16 lanes of 2 jobs.
+- The gate prints the chosen budget and its source: available CPUs, the
+  fallback, or `CAMCRAFT_GATE_JOBS`. It also prints the lane limit and the
+  jobs of each lane. The `--dry-run` output shows the same information.
 - **The sum of `-j` of all builds on one machine stays at or below its core
   count.** This includes gates, reviews, worker builds and plain `cargo`
   calls. When other builds run, lower the budget of each one (for example
@@ -99,6 +148,22 @@ Quick prints its selection before it runs:
 - One red binary is one red step. Its note names the failed tests and each
   test that libtest reports as running for more than 60 s.
 - Run one heavy binary again with `--only "app heavy: <binary>"`.
+- `cargo xtask gate heavy [--base main]` runs only the heavy lanes that the
+  diff reaches (AGENTS.md "Heavy lanes at review", `xtask/src/heavy.rs`).
+  `--dry-run` prints the reach and the reason for each lane.
+  - A changed suite file reaches its own heavy binary.
+  - Shared test code under `crates/<crate>/tests/` reaches the heavy lanes
+    of that crate.
+  - A changed source file, `Cargo.toml` or `build.rs` of a crate reaches the
+    heavy lanes of that crate and of each crate that depends on it. The
+    dependencies are read from `crates/*/Cargo.toml`.
+  - A workspace manifest, `Cargo.lock`, `.cargo/` or toolchain change
+    reaches each heavy lane.
+  - A post script, machine file, catalog case or fixture reaches the heavy
+    binaries that read it.
+  - A diff that reaches no heavy lane gives a plan with no step.
+  - The steps have the names of the release tier (`<crate> heavy:
+    <target>`), so `--only` and `--failed` select them.
 - When you move a test to a lane, the `#[test]` count before and after must
   be the same, and the ignored set keeps its golden asserts.
 

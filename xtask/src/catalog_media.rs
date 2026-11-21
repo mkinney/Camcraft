@@ -64,8 +64,10 @@ pub fn run_screenshots(
     }
 
     commit_images_to_branch(root, branch, &pngs)?;
+    let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+    exec::git(root, &["push", "origin", &refspec])?;
     println!(
-        "committed {} screenshot(s) to images-only branch '{branch}'",
+        "published {} screenshot(s) to origin images-only branch '{branch}'",
         pngs.len()
     );
     Ok(out_dir)
@@ -149,20 +151,28 @@ fn run_guide_renderer_hook(root: &Path, out_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn collect_pngs(
+pub(crate) fn collect_pngs(
     out_dir: &Path,
     cases: &[CatalogCase],
     with_guide: bool,
 ) -> Result<Vec<(String, PathBuf)>, String> {
     let mut out = Vec::new();
     for c in cases {
-        let p = out_dir
-            .join(&c.family)
-            .join(&c.name)
-            .join(format!("{}.png", c.name));
-        if p.is_file() {
-            let rel = format!("catalog/{}/{}/{}.png", c.family, c.name, c.name);
-            out.push((rel, p));
+        let dir = out_dir.join(&c.family).join(&c.name);
+        if !dir.is_dir() {
+            continue;
+        }
+        let entries = fs::read_dir(&dir)
+            .map_err(|e| format!("read screenshot directory {}: {e}", dir.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("read screenshot entry: {e}"))?;
+            let p = entry.path();
+            if p.is_file()
+                && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("png"))
+                && let Some(name) = p.file_name().and_then(|s| s.to_str())
+            {
+                out.push((format!("catalog/{}/{}/{name}", c.family, c.name), p));
+            }
         }
     }
     if with_guide {

@@ -1,4 +1,4 @@
-//! Known-fail heavy tests pinned to an open, blocked issue: the release heavy lanes skip them by name, and one
+//! Source-marked known-fail heavy tests pinned to an open issue: the release heavy lanes skip them by name, and one
 //! extra step for each runs it alone and must see it fail, so a skip that starts to pass fails the gate.
 //! Provenance: our own build law (AGENTS.md "Three gate tiers"; the #1950 known-fail decision, RECOMMENDED.md);
 //! libtest's public `--exact` / `--skip` / `--ignored` flags and the `gh issue view` CLI.
@@ -9,71 +9,42 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// One `#[ignore]`d test that is red on purpose: it pins the target of an open issue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KnownFail {
     /// Crate dir (`motion`, `app`).
-    pub dir: &'static str,
+    pub dir: String,
     /// Heavy target label: `lib` or the integration binary's name.
-    pub target: &'static str,
+    pub target: String,
     /// The libtest path of the test inside that target.
-    pub test: &'static str,
+    pub test: String,
     /// The open issue the test pins; the gate refuses the skip once the issue reads closed.
     pub issue: u32,
     /// The test's source file (from the workspace root, `/`): its `panicked at` line must name it.
-    pub file: &'static str,
-    /// The assert text in the test body whose failure is the issue's (pinned by `known_fail_tests`).
-    pub assert: &'static str,
+    pub file: String,
+    /// Source line of the marked assertion, to reject another assertion in the same test.
+    pub line: usize,
     /// A stable piece of that assert's panic message: the step is ok only when the panic block holds it.
-    pub reason: &'static str,
+    pub reason: String,
 }
 
-/// Only these tests. Each entry needs a `docs/decisions/` entry and an open issue; delete the entry when the
-/// test passes (its known-fail step then reads FAIL and says so).
-pub const KNOWN_FAIL: &[KnownFail] = &[
-    KnownFail {
-        dir: "motion",
-        target: "lib",
-        test: "machining2d::pocket_hsm::ring_tests::the_stock_ring_level_reaches_the_air_planner_with_the_stock",
-        issue: 1950,
-        file: "crates/motion/src/machining2d/pocket_hsm_ring.rs",
-        assert: "assert!(travel.hops <= HOP_BUDGET, \"hops {} over {HOP_BUDGET}\"",
-        reason: "hops ",
-    },
-    KnownFail {
-        dir: "motion",
-        target: "lib",
-        test: "machining2d::pocket_hsm::ring_tests::the_stock_ring_level_plans_adaptive_with_no_budget_note",
-        issue: 1950,
-        file: "crates/motion/src/machining2d/pocket_hsm_ring.rs",
-        assert: "assert_eq!(s, PocketStrategy::Adaptive, ",
-        // The assert_eq's own `right:` line; the note text before it carries moving numbers.
-        reason: " right: Adaptive",
-    },
-    KnownFail {
-        dir: "app",
-        target: "pocket3d_hsm",
-        test: "the_users_whole_model_bore_roughs_adaptive_on_each_level",
-        issue: 1950,
-        file: "crates/app/tests/pocket3d_hsm.rs",
-        assert: "assert!(fell.is_empty(), \"every level keeps the HSM plan",
-        reason: "every level keeps the HSM plan",
-    },
-];
+/// Read source markers. Invalid markers produce no skips; `check_issues` refuses the release.
+pub fn entries(root: &Path) -> Vec<KnownFail> {
+    crate::known_fail_scan::discover(root).unwrap_or_default()
+}
 
 /// The known-fail tests of one heavy target.
-pub fn of(dir: &str, target: &str) -> Vec<&'static KnownFail> {
-    KNOWN_FAIL.iter().filter(|k| k.dir == dir && k.target == target).collect()
+pub fn of<'a>(entries: &'a [KnownFail], dir: &str, target: &str) -> Vec<&'a KnownFail> {
+    entries.iter().filter(|k| k.dir == dir && k.target == target).collect()
 }
 
-/// The libtest args (before `--test-threads`/`--ignored`) that leave the known-fail tests of a target out.
-pub fn skip_args(dir: &str, target: &str) -> Vec<String> {
+pub fn skip_args(entries: &[KnownFail], dir: &str, target: &str) -> Vec<String> {
     let mut out = Vec::new();
-    for k in of(dir, target) {
+    for k in of(entries, dir, target) {
         if out.is_empty() {
             out.push("--exact".to_string());
         }
         out.push("--skip".to_string());
-        out.push(k.test.to_string());
+        out.push(k.test.clone());
     }
     out
 }
@@ -88,7 +59,7 @@ pub fn note(k: &KnownFail) -> String {
 
 /// The short step name of a known-fail check.
 pub fn step_name(k: &KnownFail) -> String {
-    let short = k.test.rsplit("::").next().unwrap_or(k.test);
+    let short = k.test.rsplit("::").next().unwrap_or(&k.test);
     format!("{} heavy: known fail #{} {}", k.dir, k.issue, short)
 }
 
@@ -101,7 +72,12 @@ const GH_TIMEOUT: Duration = Duration::from_secs(30);
 /// `gh` cannot read (no token, as in the cut job, or no answer in 30 s) gives a note and no verdict, so the
 /// known-fail steps stay the guard.
 pub fn check_issues(root: &Path, dry: bool) -> Result<Vec<String>, String> {
-    let mut issues: Vec<u32> = KNOWN_FAIL.iter().map(|k| k.issue).collect();
+    let entries = crate::known_fail_scan::discover(root)?;
+    check_states(&entries, dry, |n| gh_state(root, n))
+}
+
+pub fn check_states(entries: &[KnownFail], dry: bool, state: impl Fn(u32) -> Option<String>) -> Result<Vec<String>, String> {
+    let mut issues: Vec<u32> = entries.iter().map(|k| k.issue).collect();
     issues.sort_unstable();
     issues.dedup();
     let mut notes = Vec::new();
@@ -110,11 +86,11 @@ pub fn check_issues(root: &Path, dry: bool) -> Result<Vec<String>, String> {
             notes.push(format!("known fail: #{n} state not read (dry run)"));
             continue;
         }
-        match gh_state(root, n) {
+        match state(n) {
             Some(state) => {
                 if state.eq_ignore_ascii_case("closed") {
                     return Err(format!(
-                        "known fail: #{n} is closed, but xtask/src/known_fail.rs still skips its tests - remove the entries"
+                        "known fail: #{n} is closed, but a known-fail marker still skips its test - remove the marker"
                     ));
                 }
                 notes.push(format!("known fail: #{n} is {state}"));
