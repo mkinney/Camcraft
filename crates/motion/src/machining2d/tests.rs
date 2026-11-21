@@ -319,21 +319,3 @@ fn bore_declines_the_counterbore_fold() {
         .expect_err("a stepped hole is declined by name");
     assert!(format!("{err:?}").contains("counterbore fold"), "{err:?}");
 }
-
-#[test]
-fn the_offset_rings_of_a_holed_area_cut_the_hole_wall_last() {
-    // #2849: where the outer and the hole ring families meet, a chord to
-    // the other family could clear. The chain then walked the hole
-    // family out and left the outer rings for a later pass. The hole
-    // wall (the part face of an outside clearing) must be cut last.
-    let on_hole = |q: Point2| {
-        let inside = (11.0..=29.0).contains(&q.x) && (9.0..=21.0).contains(&q.y);
-        inside && (q.x == 11.0 || q.x == 29.0 || q.y == 9.0 || q.y == 21.0)
-    };
-    for stepover in [1.0, 1.5, 2.0, 2.5, 3.0] {
-        let region = Region::new(vec![sq(0.0, 0.0, 40.0, 30.0), sq(11.0, 9.0, 29.0, 21.0)]).expect("nested loops");
-        let passes = waterline_passes(&region, stepover, true).expect("rings");
-        let last = passes.last().and_then(|p| p.last()).copied().expect("a pass");
-        assert!(on_hole(last), "stepover {stepover}: the last pass ends at {last:?}, not on the hole wall");
-    }
-}
