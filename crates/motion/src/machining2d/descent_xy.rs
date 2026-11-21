@@ -85,7 +85,9 @@ pub(super) fn plan_xy(l: &Lvl, m: &Motion) -> Result<XyArc, &'static str> {
     let a = &m.links.approach;
     let (&e, rest) = l.pass.split_first().ok_or("the pass has no start")?;
     let walk = l.walk.and_then(|w| w.first());
-    let dir = walk.map_or_else(|| pts_dir(e, rest), |s| seg_dir(e, s)).ok_or("the first cut has no direction")?;
+    let dir = closing_dir(l.pass)
+        .or_else(|| walk.map_or_else(|| pts_dir(e, rest), |s| seg_dir(e, s)))
+        .ok_or("the first cut has no direction")?;
     let len = dir.x.hypot(dir.y);
     if !(len.is_finite() && len > 0.0) {
         return Err("the first cut has no direction");
@@ -105,6 +107,27 @@ pub(super) fn plan_xy(l: &Lvl, m: &Motion) -> Result<XyArc, &'static str> {
         r *= 0.5;
     }
     Err("no radius down to a sixteenth of the nominal stays in the legal area off the other passes")
+}
+
+/// The shortest closing edge (mm) that gives the arc its tangent: a
+/// shorter one is a few lattice steps long, and the lattice turns its
+/// direction by up to a degree.
+const DIR_MIN_LEN: f64 = 1e-3;
+
+/// The direction the pass arrives at its start, when its first ring
+/// closes there: from the last vertex at least [`DIR_MIN_LEN`] before
+/// the return. The arc tangent on this line keeps the closing edge on
+/// the line itself, so the ring behind the start curves to one side and
+/// leaves the other side free. The tangent of the first cut can sit a
+/// fraction of a micron off that edge (an arc fit, a lattice-step
+/// edge), and then the ring behind the start crosses the arc's proof
+/// polylines on both sides (#2849). `None`: the pass does not return to
+/// its start (a row, an open chain).
+fn closing_dir(pass: &[Point2]) -> Option<Point2> {
+    let &e = pass.first()?;
+    let back = (3..pass.len()).find(|&i| pass[i] == e)?;
+    let p = pass[..back].iter().rev().find(|q| (e.x - q.x).hypot(e.y - q.y) >= DIR_MIN_LEN)?;
+    Some(Point2::new(e.x - p.x, e.y - p.y))
 }
 
 /// Rotate `v` by `t` radians.
@@ -246,4 +269,23 @@ pub(super) fn reseat_first(mut passes: Vec<Vec<Point2>>) -> Vec<Vec<Point2>> {
     out.push(mid);
     *first = out;
     passes
+}
+
+#[cfg(test)]
+mod closing_tests {
+    use super::*;
+
+    #[test]
+    fn the_arc_tangent_is_the_closing_edge_of_the_first_ring() {
+        // #2849: the ring starts with a 40 nm edge whose direction the
+        // lattice turns; the tangent comes from the closing edge, and a
+        // closing vertex nearer than DIR_MIN_LEN is skipped.
+        let e = Point2::new(0.051208, -2.296322);
+        let p = Point2::new(0.0, -2.297463);
+        let near = Point2::new(0.051168, -2.296323);
+        let ring = [e, Point2::new(0.051248, -2.296321), Point2::new(0.100384, -2.295225), Point2::new(0.0, 5.0), p, near, e, Point2::new(3.0, 3.0)];
+        assert_eq!(closing_dir(&ring), Some(Point2::new(e.x - p.x, e.y - p.y)));
+        // A row does not return to its start: no closing edge.
+        assert_eq!(closing_dir(&[e, p, Point2::new(1.0, 1.0)]), None);
+    }
 }
