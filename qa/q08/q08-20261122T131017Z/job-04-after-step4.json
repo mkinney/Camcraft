@@ -1,0 +1,400 @@
+{
+  "active_setup": null,
+  "can_redo": false,
+  "can_undo": true,
+  "document": "/home/mikekinney/qa/runs/q08-20261122T131017Z/q08-start.camproj",
+  "machine": {
+    "definition": {
+      "axes": [
+        {
+          "feed": 7620.0,
+          "name": "X",
+          "rapid": 7620.0,
+          "travel": [
+            -355.59999999999997,
+            355.59999999999997
+          ]
+        },
+        {
+          "feed": 7620.0,
+          "name": "Y",
+          "rapid": 7620.0,
+          "travel": [
+            -190.5,
+            190.5
+          ]
+        },
+        {
+          "feed": 6350.0,
+          "name": "Z",
+          "rapid": 6350.0,
+          "travel": [
+            -336.54999999999995,
+            336.54999999999995
+          ]
+        }
+      ],
+      "coolants": [
+        {
+          "mCode": "M8",
+          "name": "Flood"
+        },
+        {
+          "mCode": "M7",
+          "name": "Mist"
+        }
+      ],
+      "default_holder": "BT30 ER20",
+      "kind": "mill",
+      "max_tool_diameter": null,
+      "max_tool_length": null,
+      "model": "Tormach 770MX",
+      "post": "Tormach PathPilot",
+      "rigid_tapping": true,
+      "safe_retract_z": 0.0,
+      "spindle_d": null,
+      "spindle_len": null,
+      "spindle_max": 10000.0,
+      "spindle_min": 175.0,
+      "spindle_mount": "BT30",
+      "spindle_power": 1.1,
+      "spindle_ranges": [
+        [
+          175.0,
+          3250.0
+        ],
+        [
+          525.0,
+          10000.0
+        ]
+      ],
+      "spindles": 1,
+      "tool_count": 10,
+      "units": "inch",
+      "vendor": "Camcraft"
+    },
+    "path": "built-in: Tormach 770MX"
+  },
+  "models": [
+    {
+      "bounds": {
+        "max": [
+          60.0,
+          40.0,
+          12.0
+        ],
+        "min": [
+          -60.0,
+          -40.0,
+          0.0
+        ]
+      },
+      "facets": 92,
+      "fixture": false,
+      "name": "plate",
+      "source": {
+        "path": "/home/mikekinney/qa/runs/q08-20261122T131017Z/q08-plate.obj",
+        "sha256": "dfd73a2ffa4653f3e4f8d4e4c56cb6eddc404f33821b7c25e49c04fd67def582"
+      }
+    }
+  ],
+  "operations": [
+    {
+      "checks_against": null,
+      "coolant": "flood",
+      "key": "Pocket roughing",
+      "kind": "2D Pocket",
+      "name": "Pocket roughing",
+      "needs_review": [],
+      "params": {
+        "pocket": {
+          "bottom_z": {
+            "offset": 0.0,
+            "reference": "bottom_of_selection"
+          },
+          "clearance_z": {
+            "offset": 25.0,
+            "reference": "top_of_stock"
+          },
+          "climb": true,
+          "entry": "helix",
+          "feed": 1200.0,
+          "helix_radius": 1.2,
+          "optimal_load": 0.1464466094067262,
+          "plunge_feed": 300.0,
+          "stepdown": 5.0,
+          "stepover": 3.0,
+          "stock_to_leave": 0.0,
+          "strategy": "auto",
+          "top_z": {
+            "offset": 6.0,
+            "reference": "bottom_of_selection"
+          }
+        }
+      },
+      "setup": null,
+      "source": {
+        "selection": 1
+      },
+      "status": "ok",
+      "tool": "EM-0600-4FL",
+      "warnings": 0
+    },
+    {
+      "checks_against": null,
+      "coolant": "flood",
+      "key": "Pocket finishing",
+      "kind": "2D Pocket",
+      "name": "Pocket finishing",
+      "needs_review": [],
+      "params": {
+        "pocket": {
+          "bottom_z": {
+            "offset": 0.0,
+            "reference": "bottom_of_model"
+          },
+          "clearance_z": {
+            "offset": 25.0,
+            "reference": "top_of_stock"
+          },
+          "climb": true,
+          "entry": "helix",
+          "feed": 1200.0,
+          "helix_radius": 0.6,
+          "optimal_load": 0.1464466094067262,
+          "plunge_feed": 300.0,
+          "stepdown": 0.1,
+          "stepover": 3.0,
+          "stock_to_leave": 0.05,
+          "strategy": "auto",
+          "top_z": {
+            "offset": 0.0,
+            "reference": "top_of_model"
+          }
+        }
+      },
+      "setup": null,
+      "source": "stock",
+      "status": "never",
+      "tool": "EM-0300-2FL",
+      "warnings": 0
+    }
+  ],
+  "profiles": [],
+  "setups": [
+    {
+      "model_reference": {
+        "kind": "solid",
+        "solid": true
+      },
+      "name": null,
+      "post": null,
+      "post_offer": {
+        "hint": "post with \"post\": \"Tormach PathPilot\" uses it for one program; add_setup, then set_setup_post, keeps it",
+        "post": "Tormach PathPilot",
+        "why": "the machine names this post"
+      },
+      "posts_with": "Fanuc (built-in)",
+      "sheet_job": null,
+      "stock": {
+        "box": {
+          "dx": 126.0,
+          "dy": 86.0,
+          "dz": 13.0
+        }
+      },
+      "stock_bounds": {
+        "max": [
+          63.0,
+          43.0,
+          13.0
+        ],
+        "min": [
+          -63.0,
+          -43.0,
+          0.0
+        ]
+      },
+      "wcs": {
+        "entity": "G54",
+        "flip": {
+          "x": false,
+          "y": false,
+          "z": false
+        },
+        "index": 1,
+        "label": "WCS (G54)",
+        "name": "G54",
+        "origin": null,
+        "placed": false,
+        "rotation": null,
+        "word": "G54"
+      },
+      "workholding_max_rpm": null
+    }
+  ],
+  "tools": [
+    {
+      "definition": {
+        "corner_r": 0.0,
+        "diameter": 3.0,
+        "feed": 900.0,
+        "flute_len": 9.0,
+        "flutes": 2,
+        "holder_d": 44.0,
+        "holder_len": 35.0,
+        "kind": "end_mill",
+        "material_group": "aluminum",
+        "nose_radius": 0.0,
+        "pitch": 0.0,
+        "rpm": 15000.0,
+        "shank_d": 4.0,
+        "shank_len": 40.0,
+        "tip_angle": 0.0,
+        "tool_material": "carbide",
+        "width": 0.0
+      },
+      "holder": {
+        "lathe": false,
+        "library": {
+          "entry": "BT30 ER20",
+          "gauge_len": 60.0,
+          "projection": 49.0
+        },
+        "points": [
+          {
+            "arc": 0.0,
+            "r": 0.0,
+            "z": 49.0
+          },
+          {
+            "arc": 0.0,
+            "r": 17.5,
+            "z": 49.0
+          },
+          {
+            "arc": 0.0,
+            "r": 17.5,
+            "z": 68.5
+          },
+          {
+            "arc": 0.0,
+            "r": 17.5,
+            "z": 81.5
+          },
+          {
+            "arc": 0.0,
+            "r": 23.0,
+            "z": 87.0
+          },
+          {
+            "arc": 0.0,
+            "r": 23.0,
+            "z": 107.0
+          },
+          {
+            "arc": 0.0,
+            "r": 16.166666666666668,
+            "z": 107.0
+          },
+          {
+            "arc": 0.0,
+            "r": 16.166666666666668,
+            "z": 109.0
+          },
+          {
+            "arc": 0.0,
+            "r": 0.0,
+            "z": 109.0
+          }
+        ],
+        "source": "drawn profile"
+      },
+      "name": "EM-0300-2FL",
+      "number": 2,
+      "posts_as": 2
+    },
+    {
+      "definition": {
+        "corner_r": 0.0,
+        "diameter": 6.0,
+        "feed": 1800.0,
+        "flute_len": 15.0,
+        "flutes": 4,
+        "holder_d": 44.0,
+        "holder_len": 35.0,
+        "kind": "end_mill",
+        "material_group": "aluminum",
+        "nose_radius": 0.0,
+        "pitch": 0.0,
+        "rpm": 9500.0,
+        "shank_d": 8.0,
+        "shank_len": 40.0,
+        "tip_angle": 0.0,
+        "tool_material": "carbide",
+        "width": 0.0
+      },
+      "holder": {
+        "lathe": false,
+        "library": {
+          "entry": "BT30 ER20",
+          "gauge_len": 60.0,
+          "projection": 55.0
+        },
+        "points": [
+          {
+            "arc": 0.0,
+            "r": 0.0,
+            "z": 55.0
+          },
+          {
+            "arc": 0.0,
+            "r": 17.5,
+            "z": 55.0
+          },
+          {
+            "arc": 0.0,
+            "r": 17.5,
+            "z": 74.5
+          },
+          {
+            "arc": 0.0,
+            "r": 17.5,
+            "z": 87.5
+          },
+          {
+            "arc": 0.0,
+            "r": 23.0,
+            "z": 93.0
+          },
+          {
+            "arc": 0.0,
+            "r": 23.0,
+            "z": 113.0
+          },
+          {
+            "arc": 0.0,
+            "r": 16.166666666666668,
+            "z": 113.0
+          },
+          {
+            "arc": 0.0,
+            "r": 16.166666666666668,
+            "z": 115.0
+          },
+          {
+            "arc": 0.0,
+            "r": 0.0,
+            "z": 115.0
+          }
+        ],
+        "source": "drawn profile"
+      },
+      "name": "EM-0600-4FL",
+      "number": 1,
+      "posts_as": 1
+    }
+  ],
+  "units": "mm",
+  "work_material": null
+}
