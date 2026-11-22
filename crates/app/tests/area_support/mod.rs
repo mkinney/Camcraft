@@ -62,6 +62,7 @@ pub fn pocket(top: f64, bottom: f64) -> OpParams {
         blend_turns: false,
         tilt: None,
         links: camcraft_app::links::Links::PLANAR,
+        corner_relief: Default::default(),
     }
 }
 
@@ -154,7 +155,7 @@ pub fn top_face(world: &World, name: &str, z: f64) -> FeatureSel {
             continue;
         }
         let ext = pts.iter().map(|p| p[0].abs().max(p[1].abs())).fold(0.0, f64::max);
-        if best.is_none_or(|(b, _)| ext > b) {
+        if best.as_ref().is_none_or(|(b, _)| ext > *b) {
             best = Some((ext, FeatureSel::Face(face.id)));
         }
     }

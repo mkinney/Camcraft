@@ -8,8 +8,8 @@
 
 use super::*;
 use crate::operation::{
-    AreaControls, BoundaryMode, BoundaryShape, ChainSide, Containment, CornerStyle, ExtraBoundary,
-    OpenBoundary,
+    AreaControls, BoundaryMode, BoundaryShape, ChainSide, Containment, CornerStyle, DoNotTouch,
+    ExtraBoundary, OpenBoundary,
 };
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -55,7 +55,7 @@ pub struct ExtraBoundaryDto {
     pub shape: BoundaryShapeDto,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ChainSideDto {
     Inside,
@@ -73,6 +73,21 @@ fn is_zero(v: &f64) -> bool {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct DoNotTouchDto {
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub clearance: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<GeoSelDto>,
+}
+
+impl DoNotTouchDto {
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        *self == DoNotTouchDto::default()
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct AreaDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub containment: Option<ContainmentDto>,
@@ -86,36 +101,58 @@ pub struct AreaDto {
     pub extra: Vec<ExtraBoundaryDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open: Option<OpenBoundaryDto>,
+    #[serde(default, skip_serializing_if = "DoNotTouchDto::is_default")]
+    pub do_not_touch: DoNotTouchDto,
 }
 
-fn sel_dto(items: &[GeoSel]) -> Vec<GeoSelDto> {
-    items
-        .iter()
-        .map(|g| GeoSelDto {
-            entity: g.entity.clone(),
-            feature: match g.feature {
-                FeatureSel::Face(id) => FeatureSelDto::Face { id },
-                FeatureSel::Chain(id) => FeatureSelDto::Chain { id },
-                FeatureSel::Patch(id) => FeatureSelDto::Patch { id },
-                FeatureSel::Vertex(id) => FeatureSelDto::Vertex { id },
-            },
-        })
-        .collect()
+pub(super) fn geo_sel_dto(g: &GeoSel) -> GeoSelDto {
+    GeoSelDto {
+        entity: g.entity.clone(),
+        feature: match &g.feature {
+            FeatureSel::Face(id) => FeatureSelDto::Face { id: *id },
+            FeatureSel::Chain(id) => FeatureSelDto::Chain { id: *id },
+            FeatureSel::Patch(id) => FeatureSelDto::Patch { id: *id },
+            FeatureSel::Vertex(id) => FeatureSelDto::Vertex { id: *id },
+            FeatureSel::SketchChain(id) => FeatureSelDto::SketchChain { id: ChainIdDto(*id) },
+            FeatureSel::SketchLayer(layer) => FeatureSelDto::SketchLayer { layer: layer.clone() },
+        },
+    }
 }
 
-fn sel_of(items: &[GeoSelDto]) -> Vec<GeoSel> {
-    items
-        .iter()
-        .map(|g| GeoSel {
-            entity: g.entity.clone(),
-            feature: match g.feature {
-                FeatureSelDto::Face { id } => FeatureSel::Face(id),
-                FeatureSelDto::Chain { id } => FeatureSel::Chain(id),
-                FeatureSelDto::Patch { id } => FeatureSel::Patch(id),
-                FeatureSelDto::Vertex { id } => FeatureSel::Vertex(id),
-            },
-        })
-        .collect()
+pub(super) fn geo_sel_of(g: &GeoSelDto) -> GeoSel {
+    GeoSel {
+        entity: g.entity.clone(),
+        feature: match &g.feature {
+            FeatureSelDto::Face { id } => FeatureSel::Face(*id),
+            FeatureSelDto::Chain { id } => FeatureSel::Chain(*id),
+            FeatureSelDto::Patch { id } => FeatureSel::Patch(*id),
+            FeatureSelDto::Vertex { id } => FeatureSel::Vertex(*id),
+            FeatureSelDto::SketchChain { id } => FeatureSel::SketchChain(id.0),
+            FeatureSelDto::SketchLayer { layer } => FeatureSel::SketchLayer(layer.clone()),
+        },
+    }
+}
+
+pub(super) fn chain_side_dto(s: ChainSide) -> ChainSideDto {
+    match s {
+        ChainSide::Inside => ChainSideDto::Inside,
+        ChainSide::Outside => ChainSideDto::Outside,
+    }
+}
+
+pub(super) fn chain_side_of(s: ChainSideDto) -> ChainSide {
+    match s {
+        ChainSideDto::Inside => ChainSide::Inside,
+        ChainSideDto::Outside => ChainSide::Outside,
+    }
+}
+
+pub(super) fn sel_dto(items: &[GeoSel]) -> Vec<GeoSelDto> {
+    items.iter().map(geo_sel_dto).collect()
+}
+
+pub(super) fn sel_of(items: &[GeoSelDto]) -> Vec<GeoSel> {
+    items.iter().map(geo_sel_of).collect()
 }
 
 impl AreaDto {
@@ -161,6 +198,10 @@ impl AreaDto {
                     ChainSide::Outside => ChainSideDto::Outside,
                 },
             }),
+            do_not_touch: DoNotTouchDto {
+                clearance: a.do_not_touch.clearance,
+                items: sel_dto(&a.do_not_touch.picks),
+            },
         }
     }
 
@@ -200,6 +241,10 @@ impl AreaDto {
                     ChainSideDto::Outside => ChainSide::Outside,
                 },
             }),
+            do_not_touch: DoNotTouch {
+                clearance: self.do_not_touch.clearance,
+                picks: sel_of(&self.do_not_touch.items),
+            },
         }
     }
 }

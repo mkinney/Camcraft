@@ -297,7 +297,7 @@ fn rotary_angle_words_are_degrees_in_an_inch_program() {
 /// inches word by word, on every mill golden.
 #[test]
 fn grbl_family_posts_write_the_mm_program_in_inches() {
-    for (stem, machine) in [("grblhal", "grblHAL 3-axis"), ("tinyg", "TinyG 3-axis")] {
+    for (stem, machine) in [("grblhal", "grblHAL 3-axis"), ("tinyg", "TinyG 3-axis"), ("grbl", "Grbl 3-axis")] {
         let cps = read(&format!("assets/posts/{stem}.cps"));
         let text = camcraft_app::posting::builtin_machine_text(machine)
             .unwrap_or_else(|why| panic!("the library ships {machine}: {why}"));

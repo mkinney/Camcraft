@@ -149,6 +149,7 @@ fn dome() -> Vec<Triangle> {
 
 fn fparams(pattern: FinishPattern) -> Finish3DParams {
     Finish3DParams {
+        gap_link: camcraft_motion::finishing3d::GapLink::Jump,
         pattern,
         stepover: None,
         tool_diameter: 6.0,

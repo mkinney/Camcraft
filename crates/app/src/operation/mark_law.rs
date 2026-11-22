@@ -186,6 +186,7 @@ pub(super) struct Marked {
 /// part; a rapid that does a `RapidInStock`. Returns what each reading
 /// found (a move two readings convict is counted under both and
 /// reported once).
+#[allow(clippy::too_many_arguments)] // the path, part, cutter, budget and recorded fidelity law
 pub(super) fn mark_into(
     warns: &mut Vec<Warning>,
     path: &Toolpath,
@@ -193,11 +194,12 @@ pub(super) fn mark_into(
     cutter: &verify::Cutter,
     budget: f64,
     excess: f64,
+    file_tolerance: bool,
 ) -> Marked {
     let law = verify::SolidLaw {
         step: STEP,
         // #864: less a coarse model's excess, while that is honest.
-        allow: verify::excess_floor(GOUGE_TOL, excess).unwrap_or(GOUGE_TOL),
+        allow: verify::excess_floor_for(GOUGE_TOL, excess, file_tolerance).unwrap_or(GOUGE_TOL),
         hole_walls: false,
     };
     let budget = if budget.is_finite() { budget.max(0.0) } else { 0.0 };

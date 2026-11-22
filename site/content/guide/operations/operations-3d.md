@@ -16,12 +16,21 @@ The defaults below are what a freshly created operation starts with: feed
 top at the model top, bottom at the model bottom, stepdown 5 and stepover
 3. A retyped operation keeps the numbers it already had.
 
-All three kinds work from the model itself, not from picked loops: the
+The three kinds work from the model itself: the
 area they work in is the model's shadow seen from above, and the levels,
-surfaces and edges come from the model's facets. Picking faces or edges
-does not draw a different region for them. 3D Pocket and 3D Finish take
+surfaces and edges come from the model's facets. Deburr can narrow its
+edge set with picked chains, as described below. 3D Pocket and 3D Finish take
 the Boundary settings on the Geometry tab (containment, offset, extra
-boundaries) to work a smaller area; Deburr has no area to bound.
+boundaries) to work a smaller area; **3D Pocket** also supports **Do not
+touch** protected faces and edges (keeping flutes, shank and holder
+clear across every cut, entry, shell lift, rest pass and rapid link at the
+configured **Clearance** plus **Stock to leave**, highlighted in the
+viewport while selected). Deburr has no area to bound.
+
+**Breaking file change:** Do not touch protection uses project format
+version 73. Builds that read only version 72 or earlier refuse the newer
+file instead of dropping the protection. Older projects load with empty
+protection. Keep an older copy when you need an older build.
 
 In a part-aligned milling setup, **3D Pocket**, **3D Adaptive** and
 **3D Finish** read the model, heights and area controls in that setup's
@@ -38,6 +47,12 @@ to add one to the tool library.
 Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
 
 ## 3D Pocket
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-pocket3d" /> }} ![View of roughing passes at successive levels around a 3D model.](../../../operation-paths.svg#Pocket3D)
 
@@ -66,6 +81,7 @@ Adaptive** uses this same roughing path with its adaptive strategy.
 | Passes | Stock to leave | 0 |
 | Passes | Strategy | Auto (Zigzag, Waterline, Adaptive, Offset rings) |
 | Passes | Optimal load (% of D) | about 14.6 (used by Adaptive and Offset rings) |
+| Passes | Method (Adaptive only) | Spiral (Trochoidal) |
 | Passes | Offset shells | off |
 | Passes | Rest roughing | off |
 | Passes | Feed optimization | off |
@@ -73,7 +89,13 @@ Adaptive** uses this same roughing path with its adaptive strategy.
 | Lead in / Lead out | Between passes / Between levels | Keep down / Clearance plane |
 
 Adaptive plans each level at a constant load; a level its planner refuses
-is cut with Offset rings, and the path says so. **Offset shells** lets the
+is cut with Offset rings, and the path says so. Under Adaptive, **Method**
+chooses Spiral or Trochoidal. Trochoidal clears each level with loops
+that stay inside the area of that level. The loops enter by their own
+bore helix and link over the retract plane, so the Entry and link
+settings are not read on a trochoidal level. A level that the loops
+cannot cut is cut by the Spiral plan, and the path names its Z. Offset
+shells and Rest roughing keep Offset rings. **Offset shells** lets the
 rings follow the model's surface between levels, so a steep wall is cut
 like a waterline instead of a staircase. **Rest roughing** adds a closing
 ladder at half the step for what the levels leave standing. **Feed
@@ -102,6 +124,12 @@ so a deep job can refuse even where there appears to be side clearance.
 
 ## 3D Finish
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-finish3d" /> }} ![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
 
 **For:** finishing 3D surfaces with a ball-nose, to a stated tolerance.
@@ -124,6 +152,14 @@ re-enters through the clearance plane.
 | Passes | Ramp angle (when ramping) | 45° |
 | Passes | Steep stepover (Steep and shallow only) | Auto |
 | Passes | Reference ball (Pencil only) | None: every concave corner |
+
+**Gap link** (`gap_link`) chooses how 3D Finish crosses a gap between
+surface runs. **Jump**, the default, keeps the retract hop. **Straight**
+tries a feed link at the runs' tip heights and checks the swept ball
+against the model. Where that line would cut the model, CamCraft keeps
+the Jump link. Straight therefore does not guarantee a continuous feed
+across every gap. This choice applies to the raster runs; geodesic rings
+keep their hops. Older projects keep Jump.
 
 There is no stepdown: the levels drop by 2 x sqrt(tool radius x
 tolerance), so the cusp under the ball stays within the tolerance.
@@ -169,21 +205,32 @@ exceed the op's ball".
 
 ## Deburr
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/edge-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/edge-work)
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-deburr" /> }} ![View of a toolpath following exposed edges of a 3D model.](../../../operation-paths.svg#Deburr)
 
-**For:** breaking every exposed edge of the model with a chamfer mill:
+**For:** breaking exposed edges of the model with a chamfer mill:
 an open model's rim, or a convex crease where two faces meet. The cone
 lies on the break. Choose it over 2D Chamfer for a light break on the
 model's own edges at any height; choose 2D Chamfer for a chamfer of a
 stated width and angle on picked edges.
 
-**Picks:** none. It finds the edges itself, and the Boundary settings are
-refused: there is no area to bound. It has no Passes or Lead in / Lead
-out tab.
+**Picks:** edge chains select only the exposed edges on those chains.
+With a whole model, or picks containing no edge chain, Deburr finds the
+edges automatically. Face picks name the model; they do not limit the
+ride to that face. Boundary settings are refused: there is no area to
+bound. It has no Passes or Lead in / Lead out tab.
 
 | Tab | Setting | Default |
 |---|---|---|
 | Geometry | Break width | 0.5 |
+| Geometry | Minimum edge angle | 40 degrees for a new operation |
+| Geometry | Skip round holes | off; optional minimum and maximum hole diameter |
+| Geometry | Unreachable edges | Skip with note (or Refuse) |
 | Heights | Window Top Z / Window Bottom Z | model top / model bottom |
 | Feeds | Feed / Plunge feed | 1200 / 300 |
 
@@ -191,6 +238,23 @@ The depth is not set: the tip stands width / tan(half the cone angle)
 below the edge, so the tool's own cone angle decides it. The window is the
 pair of planes the tip rides between; an edge running outside it is
 clipped along its own line, not dropped whole.
+
+On Geometry, **Exclude the picked edges** adds picked edge chains to the
+excluded list. Excluded edges stay sharp, including when they are also
+picked for cutting. A missing excluded chain is refused by name.
+
+The minimum edge angle removes shallow convex creases from the automatic
+edge set. The hole filter leaves recognized round-hole rims inside the
+stated diameter range. These two filters do not remove an explicitly
+picked edge. Each skipped group gives a toolpath note. Older files with
+no minimum angle keep zero degrees, so their automatic edge set stays
+unchanged. A stored edge-chain selection now cuts only those edges and
+must regenerate once.
+
+**Unreachable edges** controls edges steeper than the cone can reach.
+**Skip with note** leaves them and reports the skipped count. **Refuse**
+stops generation, names the count and leaves no toolpath. Edges outside
+the height window do not count. Read the notes before posting.
 
 **Common refusals:** "Deburr rides its cone over the edge - it needs a
 chamfer mill"; "the break reaches ... mm up the cone's flank; '<tool>' has

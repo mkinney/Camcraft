@@ -306,8 +306,13 @@ fn turned_multiaxis_rough_cuts_and_posts_like_the_baked_part() {
     prove_kind("MultiAxisRough", unturn_xz(cap_facets(true)), TURN, &box_stock(30.0, 30.0, 6.0, -3.0), SWARF_BALL, params);
 }
 
-fn prove_rotary(kind: &str, raw: Vec<Triangle>, stock: &(StockShape, Location), params: OpParams, want_dir: [f64; 3], opts: (bool, bool, bool)) {
-    let (mount_before, with_steady, expect_refusal) = opts;
+/// What the as-modelled stance must do: refuse by name, cut a path that
+/// differs from the turned one (or refuse), or cut about a named axis.
+#[derive(Clone, Copy)]
+enum OnModelled { Refuses, DiffersOrRefuses, CutsAbout([f64; 3]) }
+
+fn prove_rotary(kind: &str, raw: Vec<Triangle>, stock: &(StockShape, Location), params: OpParams, want_dir: [f64; 3], opts: (bool, bool, OnModelled)) {
+    let (mount_before, with_steady, on_modelled) = opts;
     let plant = |w: &World, h: &mut History| if with_steady {
         let block = cube(Point3::new(-1.0, -1.0, -60.0), Point3::new(1.0, 1.0, -58.0)).facets.to_vec();
         h.execute(w, ImportModel::from_mesh("steady", Mesh::from_facets(block)));
@@ -327,19 +332,36 @@ fn prove_rotary(kind: &str, raw: Vec<Triangle>, stock: &(StockShape, Location), 
     assert!((at.dir[0] - ab.dir[0]).abs() + (at.dir[1] - ab.dir[1]).abs() + (at.dir[2] - ab.dir[2]).abs() < 1e-6);
     let (wm, mut hm) = document(raw, TURN, Case::Modelled, stock, mount_before);
     let modelled = generate_and_post(&wm, &mut hm, Case::Modelled, BALL, part, params, false);
-    if expect_refusal { assert!(modelled.is_err(), "{kind}: expected refusal on modelled axis"); } else { assert_modelled_differs_or_refuses(kind, &p_t, modelled); }
+    match on_modelled {
+        OnModelled::Refuses => assert!(modelled.is_err(), "{kind}: expected refusal on modelled axis"),
+        OnModelled::DiffersOrRefuses => assert_modelled_differs_or_refuses(kind, &p_t, modelled),
+        OnModelled::CutsAbout(dir) => {
+            let (p_m, nc_m, op_m) = modelled.unwrap_or_else(|e| panic!("{kind}: the modelled stance must cut: {e}"));
+            let am = fixture::rotary_axis_of(&wm, &op_m).expect("modelled axis");
+            assert!((am.dir[0] * dir[0] + am.dir[1] * dir[1] + am.dir[2] * dir[2]).abs() > 0.999, "{kind}: modelled axis {:?}", am.dir);
+            let mut posed = 0usize;
+            for m in &p_m.moves {
+                let Some(a) = m.axis else { continue };
+                posed += 1;
+                let lean = a[0] * dir[0] + a[1] * dir[1] + a[2] * dir[2];
+                assert!(a.iter().all(|v| v.is_finite()) && lean.abs() < 1e-6, "{kind}: a modelled pose is not radial about {dir:?}: {m:?}");
+            }
+            assert!(posed >= 8, "{kind}: only {posed} posed moves about {dir:?}");
+            assert_modelled_differs_or_refuses(kind, &p_t, Ok((p_m, nc_m, op_m)));
+        }
+    }
 }
 
 #[test]
 fn turned_rotary_contour_cuts_posts_and_fits_axis_like_the_baked_part() {
     let rc = OpParams::RotaryContour { tolerance: 0.1, clearance_z: Height::fixed(25.0), retract_z: None, top_z: Height::fixed(6.0), bottom_z: Height::fixed(-6.0), feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0 };
-    prove_rotary("RotaryContour", unturn_xz(bar_facets()), &cyl_stock(12.4, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q), rc, [0.0, 0.0, 1.0], (false, true, true));
+    prove_rotary("RotaryContour", unturn_xz(bar_facets()), &cyl_stock(12.4, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q), rc, [0.0, 0.0, 1.0], (false, true, OnModelled::CutsAbout([0.0, 1.0, 0.0])));
 }
 
 #[test]
 fn turned_rotary_parallel_cuts_posts_and_fits_axis_like_the_baked_part() {
     let rp = OpParams::RotaryParallel { tolerance: 0.1, stepover: Some(4.0), clearance_z: Height::fixed(20.0), retract_z: None, top_z: Height::fixed(6.0), bottom_z: Height::fixed(1.0), feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0 };
-    prove_rotary("RotaryParallel", bar_facets(), &cyl_stock(12.4, 32.0, Point3::new(-16.0, 0.0, 0.0), quat_from_axis_angle(1, std::f64::consts::FRAC_PI_2)), rp, [1.0, 0.0, 0.0], (true, false, true));
+    prove_rotary("RotaryParallel", bar_facets(), &cyl_stock(12.4, 32.0, Point3::new(-16.0, 0.0, 0.0), quat_from_axis_angle(1, std::f64::consts::FRAC_PI_2)), rp, [1.0, 0.0, 0.0], (true, false, OnModelled::Refuses));
 }
 
 #[test]
@@ -351,7 +373,7 @@ fn turned_rotary_offset_cuts_posts_and_fits_axis_like_the_baked_part() {
         strategy: PocketStrategy::Auto, entry: Entry3D::Plunge, helix_radius: 1.0,
         optimal_load: DEFAULT_OPTIMAL_LOAD, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0,
     };
-    prove_rotary("RotaryOffset", unturn_xz(bar_facets()), &cyl_stock(20.0, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q), ro, [0.0, 0.0, 1.0], (false, false, false));
+    prove_rotary("RotaryOffset", unturn_xz(bar_facets()), &cyl_stock(20.0, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q), ro, [0.0, 0.0, 1.0], (false, false, OnModelled::DiffersOrRefuses));
 }
 
 #[test]
@@ -451,12 +473,14 @@ fn all_ten_multiaxis_and_rotary_kinds_stay_refused_on_aligned_mill_turn() {
         assert!(gen_err.contains("not supported yet in an aligned setup on a mill-turn machine"), "{ty:?}: {gen_err}");
     }
 
-    // Mill still names all 27 verified kinds in its Mill-only refusal branch.
+    // Mill still names all 28 verified kinds in its Mill-only refusal
+    // branch (#2285 added Probe): the kind that gets there is one the
+    // mill cannot spin, carried by hand the way a corrupt file could.
     let (wm, _) = document(unturn_xz(cap_facets(true)), TURN, Case::Turned, &stock, true);
-    let probe = Operation {
-        tool: "PRB-0400".into(),
+    let wire = Operation {
+        tool: "EDM-W025".into(),
         src: SrcRef::Entity("part".into()),
-        params: seed_params(OpType::Probe.ordinal()),
+        params: seed_params(OpType::WireContour.ordinal()),
         stamp: None,
         setup: Some("Setup1".into()),
         area: AreaControls::default(),
@@ -464,6 +488,7 @@ fn all_ten_multiaxis_and_rotary_kinds_stay_refused_on_aligned_mill_turn() {
         after: AfterOperation::default(),
         suppressed: false,
     };
-    let mill_err = setup_align::generation_problem(&wm, &probe).expect("Probe refused on aligned mill");
+    let mill_err = setup_align::generation_problem(&wm, &wire).expect("a wireEDM kind is refused on an aligned mill");
     assert!(mill_err.contains("5-Axis Contour") && mill_err.contains("Multi-Axis Contour"), "{mill_err}");
+    assert!(mill_err.contains("Probe,"), "the verified list names Probe: {mill_err}");
 }

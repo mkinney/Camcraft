@@ -21,8 +21,10 @@
 use egui::{RichText, Ui};
 
 use camcraft_app::operation::{
-    AreaControls, BoundaryMode, BoundaryShape, Containment, CornerStyle, ExtraBoundary, PickShape, area_unsupported,
+    self, AreaControls, BoundaryMode, BoundaryShape, Containment, CornerStyle, ExtraBoundary,
+    PickShape, area_unsupported,
 };
+use camcraft_app::{model, units};
 
 use crate::boundary_draft::{self, Entry, EntryRef, Role};
 use crate::boundary_summary;
@@ -132,6 +134,7 @@ fn body(ui: &mut Ui, state: &mut State, u: camcraft_app::units::Unit) {
         }
         add_row(ui, state, &mut acts);
         collecting_line(ui, state, &mut acts);
+        do_not_touch_ui(ui, state, u, &mut acts);
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("(i) roles, picking and the fill").small().weak())
                 .on_hover_text(hints().join("\n\n"));
@@ -150,6 +153,7 @@ fn body(ui: &mut Ui, state: &mut State, u: camcraft_app::units::Unit) {
 enum Act {
     Role(EntryRef, Role),
     Pick(Option<BoundaryPick>),
+    RemoveDoNotTouch(usize),
     Extend(EntryRef),
     Remove(EntryRef),
     Add(ExtraBoundary),
@@ -167,6 +171,12 @@ fn apply(state: &mut State, act: Act) {
             Ok(if t.is_some() { "click edges or faces in the viewport".to_owned() } else { "boundary picking stopped".to_owned() })
         }
         Act::Extend(at) => boundary_draft::extend(state, at).map(|()| "closed around its face loop".to_owned()),
+        Act::RemoveDoNotTouch(i) => {
+            if i < state.op_ui.area.do_not_touch.picks.len() {
+                state.op_ui.area.do_not_touch.picks.remove(i);
+            }
+            Ok("removed item from Do not touch".to_owned())
+        }
         Act::Remove(at) => {
             boundary_draft::remove(state, at);
             Ok("boundary removed from the draft".to_owned())
@@ -282,6 +292,7 @@ fn collecting_line(ui: &mut Ui, state: &State, acts: &mut Vec<Act>) {
         BoundaryPick::Exclude => "a new exclude boundary".to_owned(),
         BoundaryPick::Open => "the open boundary".to_owned(),
         BoundaryPick::Extra(i) => format!("boundary {}", i + 1),
+        BoundaryPick::DoNotTouch => "Do not touch".to_owned(),
     };
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(format!("Picking into {what} - viewport clicks fill it, not the selection.")).strong());
@@ -289,6 +300,58 @@ fn collecting_line(ui: &mut Ui, state: &State, acts: &mut Vec<Act>) {
             acts.push(Act::Pick(None));
         }
     });
+}
+
+fn do_not_touch_ui(ui: &mut Ui, state: &mut State, u: units::Unit, acts: &mut Vec<Act>) {
+    ui.separator();
+    ui.label(RichText::new("Do not touch").strong());
+    if let Some(why) = operation::do_not_touch_unsupported(state.op_ui.params.kind()) {
+        if state.boundary_pick == Some(BoundaryPick::DoNotTouch) {
+            state.boundary_pick = None;
+        }
+        ui.label(RichText::new(why).small().weak());
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.label("Clearance");
+        num(ui, u, &mut state.op_ui.area.do_not_touch.clearance);
+        if state.op_ui.area.do_not_touch.clearance < 0.0 || !state.op_ui.area.do_not_touch.clearance.is_finite() {
+            state.op_ui.area.do_not_touch.clearance = 0.0;
+        }
+        let picking = state.boundary_pick == Some(BoundaryPick::DoNotTouch);
+        let label = if picking { "Picking…" } else { "Pick protected" };
+        if ui
+            .selectable_label(picking, label)
+            .on_hover_text("click faces or edges in the viewport to keep the full tool (flutes, shank, holder) clear")
+            .clicked()
+        {
+            acts.push(Act::Pick(if picking { None } else { Some(BoundaryPick::DoNotTouch) }));
+        }
+    });
+    let picks = state.op_ui.area.do_not_touch.picks.clone();
+    if picks.is_empty() {
+        ui.label(RichText::new("None - pick faces or edges the tool assembly must never touch.").small().weak());
+    } else {
+        for (i, pick) in picks.iter().enumerate() {
+            let row = ui
+                .horizontal(|ui| {
+                    ui.label(operation::describe_sel(pick));
+                    if ui.small_button("×").on_hover_text("remove from Do not touch").clicked() {
+                        acts.push(Act::RemoveDoNotTouch(i));
+                    }
+                })
+                .response;
+            if row.hovered() {
+                state.geo_hover = Some(pick.clone());
+            }
+        }
+    }
+    let src = model::find_by_name(&state.world, &state.op_ui.name)
+        .and_then(|e| model::operation_of(&state.world, &e))
+        .map(|op| op.src);
+    if let Some(why) = operation::avoid_overlap_issue(&state.world, &picks, src.as_ref(), &state.op_ui.area) {
+        ui.colored_label(text_inks(ui, &state.world).warn, why);
+    }
 }
 
 #[cfg(test)]

@@ -106,7 +106,7 @@ fn include_and_exclude_boundaries_combine_by_the_region_booleans() {
     // Exclude the part's top face from a stock pocket: the tool body
     // never enters the 40 x 40 square.
     let ex = AreaControls {
-        extra: vec![ExtraBoundary { mode: BoundaryMode::Exclude, shape: BoundaryShape::Picks(pick("part", top)) }],
+        extra: vec![ExtraBoundary { mode: BoundaryMode::Exclude, shape: BoundaryShape::Picks(pick("part", top.clone())) }],
         ..Default::default()
     };
     let (t, warns) = run(&world, &op(SrcRef::Stock, pocket(8.0, 4.0), ex)).expect("excluded pocket");
@@ -144,7 +144,7 @@ fn a_boundary_that_leaves_nothing_refuses_by_name() {
     assert!(err.contains("exclude boundaries"), "{err}");
     // Face cannot follow a hole: an exclude inside its band refuses.
     let a = AreaControls {
-        extra: vec![ExtraBoundary { mode: BoundaryMode::Exclude, shape: BoundaryShape::Picks(pick("part", top)) }],
+        extra: vec![ExtraBoundary { mode: BoundaryMode::Exclude, shape: BoundaryShape::Picks(pick("part", top.clone())) }],
         ..Default::default()
     };
     let err = run(&world, &op(SrcRef::Stock, face(10.0), a)).expect_err("face over a hole");
@@ -292,6 +292,7 @@ fn a_tilt_with_a_non_finite_angle_still_refuses_by_name_under_a_boundary() {
 
 fn finish_parallel() -> OpParams {
     OpParams::Finish3D {
+        gap_link: camcraft_app::finishing3d::GapLink::Jump,
         pattern: camcraft_app::finishing3d::FinishPattern::Parallel,
         stepover: Some(2.0),
         tolerance: 0.05,

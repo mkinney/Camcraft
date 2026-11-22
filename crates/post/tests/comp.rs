@@ -189,7 +189,7 @@ fn every_wear_post_notes_the_register_once_and_control_writes_no_note() {
 
 #[test]
 fn every_other_shipped_post_refuses_control_compensation_by_name() {
-    for stem in ["heidenhain", "fanuc-lathe", "tormach", "grblhal", "tinyg"] {
+    for stem in ["heidenhain", "fanuc-lathe", "tormach", "grblhal", "tinyg", "linuxcnc", "grbl"] {
         let cps = post(stem);
         let out = engine::run(&cps, &Value::Null, STREAM).unwrap_or_else(|e| panic!("{stem}: {e}"));
         assert!(

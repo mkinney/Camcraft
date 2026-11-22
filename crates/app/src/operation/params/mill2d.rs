@@ -24,6 +24,7 @@ impl OpParams {
             OpParams::Offset2D {
                 blend_turns,
                 blend_radius,
+                corner_relief,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -64,6 +65,7 @@ impl OpParams {
                         w(h, *r);
                     }
                 }
+                digest::write_corner_relief(corner_relief, h);
             }
             OpParams::Slot {
                 links: _,

@@ -74,6 +74,7 @@ fn two_pockets() -> (World, History) {
         blend_turns: false,
         tilt: None,
         links: Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     let op = CreateOperation::new(&world, "Contour1", "EM-0400-2FL", SrcRef::Entity("part".into()), params);
     h.execute(&world, op.expect("contour op"));

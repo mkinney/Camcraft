@@ -90,7 +90,7 @@ fn op() -> Operation {
         params: OpParams::RotaryParallel {
             tolerance: 0.1,
             stepover: Some(2.0),
-            clearance_z: Height::fixed(25.0),
+            clearance_z: Height::fixed(40.0),
             retract_z: None,
             top_z: Height::fixed(6.0),
             bottom_z: Height::fixed(-8.0),

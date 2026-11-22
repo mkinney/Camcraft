@@ -64,7 +64,7 @@ fn stream() -> String {
 }
 
 fn id(number: Option<u32>, comment: &str) -> ProgramId {
-    ProgramId { number: number.unwrap_or(1), numbered: number.is_some(), comment: comment.to_owned() }
+    ProgramId { number: number.unwrap_or(1), numbered: number.is_some(), comment: comment.to_owned(), notes: Vec::new() }
 }
 
 fn post(stem: &str, id: &ProgramId) -> Result<String, String> {
@@ -219,7 +219,7 @@ fn a_typed_number_parses_or_refuses_by_name() {
 #[test]
 fn per_op_files_count_up_from_the_stated_number() {
     let none = ProgramInfo::default();
-    assert_eq!(posting::program_id(&none, 3).expect("id"), ProgramId { number: 3, numbered: false, comment: String::new() });
+    assert_eq!(posting::program_id(&none, 3).expect("id"), ProgramId { number: 3, numbered: false, comment: String::new(), notes: Vec::new() });
     let info = ProgramInfo { number: Some(100), comment: Some("Lid".into()) };
     assert_eq!(posting::program_id(&info, 1).expect("id"), id(Some(100), "Lid"));
     assert_eq!(posting::program_id(&info, 3).expect("id"), id(Some(102), "Lid"));

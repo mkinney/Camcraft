@@ -117,6 +117,13 @@ fn a_default_deburr_on_a_finished_brick_posts() {
         bottom_z: Height::fixed(6.0),
         feed: 500.0,
         plunge_feed: 100.0,
+        // #1888: the edge filters at rest - every exposed edge rides.
+        exclude_edges: Vec::new(),
+        min_edge_angle_deg: 0.0,
+        exclude_holes: false,
+        hole_min_diameter: 0.0,
+        hole_max_diameter: 0.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     });
     assert_posts(&world, "deburr-w2");
 }

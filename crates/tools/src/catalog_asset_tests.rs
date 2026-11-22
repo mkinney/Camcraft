@@ -6,11 +6,13 @@
 use crate::catalog_asset::{CATALOG_JSON, parse_catalog};
 use crate::tools::{Tool, ToolKind, ToolMaterial, catalog, probe_tool, torch_tool};
 
-const ORDER: [&str; 33] = [
+const ORDER: [&str; 37] = [
     "EM-0200-2FL", "EM-0300-2FL", "EM-0400-2FL", "EM-0600-4FL", "EM-0800-4FL", "EM-1000-4FL", "EM-1200-2FL",
     "BN-0600", "BN-1000", "BB-1000-R1", "DR-0200", "DR-0300", "DR-0400", "DR-0600", "CM-0400-90", "CM-0600-90",
     "CM-1000-90", "TAP-M4", "TAP-M6", "BR-1000", "TN-1600-0R8", "GT-0200", "GT-0300", "TD-0866-60", "TD-1732-60",
     "FG-0600-04", "FG-1200-08", "PRB-0400", "PT-KERF-150", "EDM-E10X6", "TM-0600-P125", "TMS-0600-P050-150", "EDM-W025",
+    // #1444: the undercut cutters.
+    "TS-2000-0600", "KS-1600-0300", "DT-2000-60", "LP-1000",
 ];
 
 fn tool(name: &str) -> Tool {
@@ -20,11 +22,60 @@ fn tool(name: &str) -> Tool {
 #[test]
 fn the_shipped_asset_parses_and_every_tool_is_valid() {
     let v = parse_catalog(CATALOG_JSON).expect("shipped asset parses");
-    assert_eq!(v.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ORDER);
+    let legacy = v.iter().filter(|(n, _)| !n.starts_with("Router ")).map(|(n, _)| n.as_str()).collect::<Vec<_>>();
+    assert_eq!(legacy, ORDER);
     for (n, t) in &v {
         assert!(t.is_sane(), "{n}");
     }
-    assert_eq!(catalog().len(), ORDER.len());
+    assert_eq!(catalog().len(), ORDER.len() + 22);
+}
+
+/// #3069: generic router sizes, cutting shapes and stated reach.
+#[test]
+fn router_starter_tools_state_their_shapes_and_reach() {
+    let cat = catalog();
+    let router: Vec<_> = cat.iter().filter(|(n, _)| n.starts_with("Router ")).collect();
+    assert_eq!(router.len(), 22, "the complete router starter set ships");
+    for (size, diameter, flute, reach) in [
+        ("3 mm", 3.0, 12.0, 25.0), ("6 mm", 6.0, 22.0, 38.0),
+        ("1/8 in", 3.175, 12.0, 25.0), ("1/4 in", 6.35, 22.0, 38.0),
+    ] {
+        for cut in ["up-cut", "down-cut", "compression", "ball nose"] {
+            let name = format!("Router {cut} {size}");
+            let t = &cat.iter().find(|(n, _)| *n == name).expect("router tool").1;
+            let ball = cut == "ball nose";
+            assert_eq!(t.kind, if ball { ToolKind::BallNose } else { ToolKind::EndMill }, "{name}");
+            assert_eq!((t.diameter, t.corner_r), (diameter, if ball { diameter / 2.0 } else { 0.0 }), "{name}");
+            assert_eq!((t.flute_len, t.flute_len + t.shank_len, t.shank_d), (flute, reach, diameter), "{name}");
+            assert!(t.center_cutting, "{name}");
+        }
+    }
+    for (size, diameter) in [("6 mm", 6.0), ("1/4 in", 6.35)] {
+        for angle in [60, 90] {
+            let name = format!("Router V-bit {angle} deg {size}");
+            let t = &cat.iter().find(|(n, _)| *n == name).expect("V-bit").1;
+            assert_eq!(t.kind, ToolKind::Taper, "{name}");
+            assert_eq!((t.diameter, t.tip_angle, t.corner_r), (diameter, f64::from(angle), 0.0), "{name}");
+            assert_eq!((t.flute_len, t.flute_len + t.shank_len, t.shank_d), (10.0, 25.0, diameter), "{name}");
+            assert!(t.center_cutting, "{name}");
+        }
+    }
+    for (size, diameter, shank) in [("25 mm", 25.0, 6.0), ("1 in", 25.4, 6.35)] {
+        let name = format!("Router surfacing {size}");
+        let t = &cat.iter().find(|(n, _)| *n == name).expect("surfacing bit").1;
+        assert_eq!(t.kind, ToolKind::EndMill, "{name}");
+        assert_eq!((t.diameter, t.corner_r, t.shank_d), (diameter, 0.0, shank), "{name}");
+        assert_eq!((t.flute_len, t.flute_len + t.shank_len), (8.0, 25.0), "{name}");
+        assert!(!t.center_cutting, "{name} cannot plunge");
+    }
+    for (name, t) in router {
+        assert_eq!((t.tool_material, t.flutes), (Some(ToolMaterial::Carbide), Some(2)), "{name}");
+        assert_eq!((t.holder_d, t.holder_len), (32.0, 25.0), "{name}");
+        assert_eq!(t.material_group, "wood", "{name}");
+        assert_eq!((t.rpm, t.feed), (if name.contains("surfacing") { 12000.0 } else { 18000.0 }, 600.0), "{name}");
+        assert!(t.cutting.is_empty(), "material-specific data waits for #3068");
+        assert!(t.is_sane(), "{name}");
+    }
 }
 
 #[test]

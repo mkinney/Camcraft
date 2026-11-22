@@ -134,6 +134,17 @@ impl OpParams {
                     w(h, s.undersize);
                 }
             }
+            // The slot undercut (#1444): every stored number.
+            OpParams::SlotUndercut(p) => {
+                wh(h, p.clearance_z);
+                digest::wh_opt(world, setup, src, h, p.retract_z);
+                wh(h, p.top_z);
+                wh(h, p.bottom_z);
+                for v in [p.a.x, p.a.y, p.b.x, p.b.y, p.bulge, p.width, p.run_in, p.neck_slot, p.stepover, p.feed, p.plunge_feed] {
+                    w(h, v);
+                }
+                h.write_u8(u8::from(p.climb));
+            }
             // The plasma profile (#670): every stored number, the
             // optional ones with a presence byte.
             OpParams::PlasmaProfile(p) => {

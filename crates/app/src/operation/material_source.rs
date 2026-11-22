@@ -87,6 +87,13 @@ pub(super) fn standing_above(material: &Material, z: f64) -> Option<Region> {
     slice::project(&above, FOOTPRINT_SAMPLES).ok()
 }
 
+/// The outline of the material standing at or above the plane `z`
+/// (#2437): [`standing_above`] read 1 um below it, so a face whose top
+/// lies on the plane counts. `None` as there (every hole lifted).
+pub(super) fn standing_at(material: &Material, z: f64) -> Option<Region> {
+    standing_above(material, z - 1e-3)
+}
+
 pub(super) fn region_core(
     material: &Material,
     params: &OpParams,
@@ -203,7 +210,7 @@ fn source_region(
         | OpParams::Engrave { .. }
         | OpParams::Trace { .. } => {
             let z = z?;
-            section(&material.facets, z - oz)
+            section(&material.facets, &material.bodies, z - oz)
         }
         // The chamfer ride's machine area is the edge the cone lies
         // along - a boundary ride the contour's way (M2.4 B). #2435: the
@@ -216,9 +223,10 @@ fn source_region(
         OpParams::Chamfer2D { width, angle_deg, .. } => {
             let z = z? - oz;
             let corner_z = z - width * angle_deg.to_radians().tan();
-            let top = section(&material.facets, z)?;
-            let wall = section(&material.facets, corner_z)?;
-            crate::machining2d::chamfer_ride_loops(&top, &wall, *width, corner_z)
+            let top = section(&material.facets, &material.bodies, z)?;
+            let wall = section(&material.facets, &material.bodies, corner_z)?;
+            let lean = crate::machining2d::chamfer_wall_lean(frame, z - corner_z);
+            crate::machining2d::chamfer_ride_loops(&top, &wall, *width, corner_z, lean)
         }
         // #1731: the Slot's machine area is the stadium of its EXTENDED
         // ends - the channel the pass is asked to cut. Where the
@@ -230,6 +238,8 @@ fn source_region(
             stadium(ea, eb, width * 0.5)
         }
         OpParams::TrochoidalSlot { a, b, width, .. } => stadium(*a, *b, width * 0.5),
+        // #1444: the undercut's authored band about its centreline.
+        OpParams::SlotUndercut(op) => super::slot_undercut_op::footprint(op),
         // The circular ladder's machine area is the AUTHORED disk -
         // the slot's authored-geometry law with a circle for a
         // stadium; the generator refuses a disk that meets no

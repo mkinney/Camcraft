@@ -24,7 +24,7 @@ use crate::state::{CommandKind, ErrorScope, State};
 use crate::shortcut_keys::chord;
 
 use super::colorvision::text_inks;
-use super::fields::combo_owned;
+mod header;
 use super::layout::{Action, ActionKind, BarInks, action_bar, group, prop_grid, status_banner_located};
 use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_LEADS, SEC_MACHINE, SEC_PASSES};
 use super::theme::Tokens;
@@ -73,6 +73,15 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
     // sideways), so the bar takes the same width under it.
     let max_h = (ui.available_height() - BAR_RESERVE).max(80.0);
     let out = ScrollArea::vertical().id_salt("op_page_scroll").max_height(max_h).auto_shrink([false, false]).show(ui, |ui| {
+        // egui draws the vertical scrollbar over the viewport's right
+        // edge. A control flush right in the control column - the box of
+        // a check_row is 18 px - then sits under the bar and the bar
+        // takes clicks meant for it. Stop the content short of that zone.
+        let style = ui.style();
+        let bar_total = style.spacing.scroll.bar_inner_margin
+            + style.spacing.scroll.bar_width
+            + style.spacing.scroll.bar_outer_margin;
+        ui.set_max_width((ui.available_width() - bar_total).max(120.0));
         ui.horizontal(|ui| {
             ui.heading(format!("Operation: {label}"));
             if exists && ui.small_button("Rename").clicked() {
@@ -101,7 +110,7 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         } else if cancel_rename {
             state.rename_draft = None;
         }
-        crate::frame_cost::time("ui/properties.op.header", || prop_grid(ui, "op_header", |ui| header_rows(ui, state, &target, live.as_ref(), exists)));
+        crate::frame_cost::time("ui/properties.op.header", || prop_grid(ui, "op_header", |ui| header::header_rows(ui, state, &target, live.as_ref(), exists)));
         if exists {
             crate::frame_cost::time("ui/properties.op.status", || status(ui, state, &target, pal));
             needs_review_banner(ui, state, &target);
@@ -176,144 +185,6 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
     crate::frame_cost::time("ui/properties.op.actions", || actions(ui, state, &target, live.as_ref(), exists, pal));
 }
 
-/// Tool, Source and Setup as label | control rows of the header grid.
-fn header_rows(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation>, exists: bool) {
-    // #535: a kind that mounts no library tool (the wire EDM's) has no
-    // Tool row - and must not adopt the rack's first tool into its draft.
-    let toolless = !state.op_ui.params.kind().info().mounts_tool();
-    let mut tools = state.tool_names();
-    if toolless {
-        tools.clear();
-    } else if !state.op_ui.tool.is_empty() && !tools.contains(&state.op_ui.tool) {
-        tools.push(state.op_ui.tool.clone());
-    } else if state.op_ui.tool.is_empty()
-        && let Some(first) = tools.first()
-    {
-        state.op_ui.tool = first.clone();
-    }
-    if toolless {
-        // no row: the wire is the machine's
-    } else if tools.is_empty() {
-        ui.label("Tool");
-        ui.label("none").on_hover_text("no tools in the document - the Tools page has a catalog");
-    } else {
-        ui.label("Tool");
-        let mut t_idx = tools.iter().position(|t| *t == state.op_ui.tool).unwrap_or(0);
-        let before = t_idx;
-        ui.horizontal(|ui| { super::tool_icons::named_glyph(ui, &state.world, &state.op_ui.tool); super::tool_icons::tool_combo(ui, &state.world, "op_tool", &mut t_idx, &tools); });
-        if t_idx != before
-            && let Some(t) = tools.get(t_idx)
-        {
-            state.op_ui.tool = t.clone();
-            if exists {
-                state.pending.push_back(CommandKind::EditOperationLinks {
-                    name: target.to_owned(),
-                    tool: Some(state.op_ui.tool.clone()),
-                    src: None,
-                });
-            }
-        }
-    }
-    if !toolless {
-        ui.end_row();
-    }
-    // #535: a wire EDM flushes with dielectric, which no coolant code
-    // of the machine states - no coolant row (the post ignores it).
-    if state.op_ui.params.kind().info().family() != camcraft_app::operation::Family::WireEdm {
-        coolant_row(ui, state, target, live);
-    }
-
-    // Source: the stock or one of the user's parts - never a work
-    // offset (G54...), a setup or a fixture (user review 2026-11-06).
-    let models: Vec<String> = model::model_entities(&state.world)
-        .into_iter()
-        .filter(|(_, e)| !model::is_fixture(&state.world, e))
-        .map(|(n, _)| n)
-        .collect();
-    ui.label("Source");
-    let mut src_items: Vec<String> = vec!["Stock".to_owned()];
-    src_items.extend(models.iter().cloned());
-    let mut s_idx: usize = if state.op_ui.src_kind != 0 && !state.op_ui.src_name.is_empty() {
-        match models.iter().position(|m| *m == state.op_ui.src_name) {
-            Some(p) => 1 + p,
-            None => {
-                state.op_ui.src_kind = 0;
-                state.op_ui.src_name.clear();
-                0
-            }
-        }
-    } else {
-        0
-    };
-    if state.op_ui.src_kind == 2 {
-        s_idx = 0;
-    }
-    let before = s_idx;
-    combo_owned(ui, "op_src", &mut s_idx, &src_items);
-    if s_idx != before {
-        match s_idx.checked_sub(1).and_then(|i| models.get(i)) {
-            None => {
-                state.op_ui.src_kind = 0;
-                state.op_ui.src_name.clear();
-            }
-            Some(m) => {
-                state.op_ui.src_kind = 1;
-                state.op_ui.src_name = m.clone();
-            }
-        }
-        if exists {
-            state.pending.push_back(CommandKind::EditOperationLinks {
-                name: target.to_owned(),
-                tool: None,
-                src: Some(state.op_ui.src()),
-            });
-        }
-    }
-    ui.end_row();
-
-    // Setup membership (M3.2 A): moving is never a stamp edit -
-    // SetOperationSetup keeps the stamp and lets the resolved-Z digest
-    // say whether the op went Stale.
-    ui.label("Setup");
-    let setups = camcraft_app::setup::names(&state.world);
-    if setups.is_empty() {
-        ui.label("global (no setups)").on_hover_text("this document has no setups yet - the global stock and offsets apply");
-    } else {
-        let cur = live.and_then(|o| o.setup.clone()).or_else(|| setups.first().cloned());
-        let mut s_idx = setups.iter().position(|n| Some(n) == cur.as_ref()).unwrap_or(0);
-        let before = s_idx;
-        combo_owned(ui, "op_setup", &mut s_idx, &setups);
-        if s_idx != before
-            && let Some(n) = setups.get(s_idx)
-        {
-            state.pending.push_back(CommandKind::SetOperationSetup { name: target.to_owned(), setup: Some(n.clone()) });
-        }
-    }
-    ui.end_row();
-}
-
-/// The Coolant row (#112), under the tool it feeds: the fluid the post
-/// switches on for this operation. A committed operation only - a draft
-/// takes the default (Flood) at creation and offers the row once it
-/// exists, so the row never edits a value no command would carry.
-fn coolant_row(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation>) {
-    let Some(op) = live else { return };
-    use camcraft_app::operation::CoolantMode;
-    ui.label("Coolant").on_hover_text(
-        "the cutting fluid the post switches on for this operation - the machine's own code for it; a choice the machine states no code for blocks the post by name",
-    );
-    let labels: Vec<String> = CoolantMode::ALL.iter().map(|m| m.label().to_owned()).collect();
-    let mut idx = CoolantMode::ALL.iter().position(|m| *m == op.coolant).unwrap_or(1);
-    let before = idx;
-    combo_owned(ui, "op_coolant", &mut idx, &labels);
-    if idx != before
-        && let Some(m) = CoolantMode::ALL.get(idx)
-    {
-        state.pending.push_back(CommandKind::EditOperationCoolant { name: target.to_owned(), coolant: *m });
-    }
-    ui.end_row();
-}
-
 /// The status banner's line and details, from the world (pure; the
 /// tests read it). M10.1 C: the tool law's verdict outranks the stamp.
 pub(super) fn status_text(state: &State, target: &str) -> (String, super::layout::Tone, Vec<String>) {
@@ -321,8 +192,8 @@ pub(super) fn status_text(state: &State, target: &str) -> (String, super::layout
     let ent = model::find_by_name(&state.world, target);
     let (moves, warnings, notes): (usize, Vec<Warning>, Vec<String>) = ent
         .as_ref()
-        .and_then(|e| model::toolpath_of(&state.world, e))
-        .map(|tp| (tp.path.len(), tp.warnings, tp.path.notes))
+        // #2201: read in place - a clone of the whole path each frame.
+        .and_then(|e| model::with_toolpath(&state.world, e, |tp| (tp.path.len(), tp.warnings.clone(), tp.path.notes.clone())))
         .unwrap_or((0, Vec::new(), Vec::new()));
     let blocked = ent.as_ref().and_then(|e| operation::tool_gate::tool_problem_of(&state.world, e));
     let st = ent.as_ref().map(|e| operation::status_of(&state.world, e));
@@ -359,8 +230,7 @@ fn status(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
     // #261: a warning line that names a move frames it on click (the
     // fold lines lead `details`, aligned with `warning_focus`).
     let focus: Vec<Option<[f64; 3]>> = model::find_by_name(&state.world, target)
-        .and_then(|e| model::toolpath_of(&state.world, &e))
-        .map(|tp| crate::path_lines::warning_focus(&tp))
+        .and_then(|e| model::with_toolpath(&state.world, &e, crate::path_lines::warning_focus))
         .unwrap_or_default();
     let links: Vec<bool> = focus.iter().map(Option::is_some).collect();
     let inks = text_inks(ui, &state.world);
@@ -408,7 +278,7 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
     // or which edited field the door will refuse (crate::feedback).
     let apply_hint = crate::feedback::apply_hint(live.map(|o| &o.params), &state.op_ui.params, unchanged);
     let has_path =
-        exists && model::find_by_name(&state.world, target).and_then(|e| model::toolpath_of(&state.world, &e)).is_some();
+        exists && model::find_by_name(&state.world, target).is_some_and(|e| model::has_toolpath(&state.world, &e));
     let inks = text_inks(ui, &state.world);
     if let Some(msg) = state.error_for(ErrorScope::Operation).map(str::to_owned) {
         // #261 part 2: a refusal that names its spot is a link that

@@ -694,6 +694,7 @@ mod path_tests {
                     helix_radius: 1.0,
                     blend_turns: false,
                     links: camcraft_app::links::Links::PLANAR,
+                    chain_overrides: Vec::new(),
                 },
             )
             .expect("operation"),
@@ -1118,7 +1119,7 @@ mod preview_tests {
         state.hover = None;
         state.geo_hover_drawn = Some(GeoSel { entity: "c".into(), feature: FeatureSel::Face(7) });
         assert!(row_hover_segments(&state, 4.0 / 3.0).is_empty(), "a stale face id draws no ghost");
-        state.geo_hover_drawn = Some(GeoSel { entity: "nope".into(), feature: face.feature });
+        state.geo_hover_drawn = Some(GeoSel { entity: "nope".into(), feature: face.feature.clone() });
         assert!(row_hover_segments(&state, 4.0 / 3.0).is_empty(), "a gone entity draws nothing");
         state.geo_hover_drawn = Some(face);
         state.hidden_models.push("c".into());
@@ -1145,7 +1146,7 @@ mod feature_pick_tests {
     /// The welded face a facet belongs to, by the one pick rule's graph
     /// (what a Face click on that facet stores).
     fn feature_of_facet(state: &State, entity: &str, facet: usize) -> Option<FeatureSel> {
-        camcraft_app::pick::graph_of(&state.world, entity)?.face_of(facet)?.sel
+        camcraft_app::pick::graph_of(&state.world, entity)?.face_of(facet)?.sel.clone()
     }
 
     /// The feature edge an Edge-only pick takes at `p`: (entity, edge).
@@ -1264,10 +1265,10 @@ mod feature_pick_tests {
         let bottom = face_sel(&state, "part", false);
         let part = |feature| GeoSel { entity: "part".into(), feature };
 
-        queue_feature_pick(&mut state, part(top), false);
+        queue_feature_pick(&mut state, part(top.clone()), false);
         assert!(state.status.contains("added to G1"), "the click says what it did: {}", state.status);
         state.drain_actions();
-        assert_eq!(src(&state), SrcRef::Selection(vec![part(top)]));
+        assert_eq!(src(&state), SrcRef::Selection(vec![part(top.clone())]));
         assert!(
             state.status.contains("updated for G1"),
             "and the executed command says so too: {}",
@@ -1275,9 +1276,9 @@ mod feature_pick_tests {
         );
 
         // Ctrl adds: the base is the applied list, so order is stable.
-        queue_feature_pick(&mut state, part(bottom), true);
+        queue_feature_pick(&mut state, part(bottom.clone()), true);
         state.drain_actions();
-        assert_eq!(src(&state), SrcRef::Selection(vec![part(top), part(bottom)]));
+        assert_eq!(src(&state), SrcRef::Selection(vec![part(top.clone()), part(bottom.clone())]));
 
         // A repeat is refused where it stands: no command, no history entry.
         let before = state.pending.len();
@@ -1286,7 +1287,7 @@ mod feature_pick_tests {
         assert!(state.status.contains("already selected"), "{}", state.status);
 
         // A plain click replaces: the list is exactly what was clicked.
-        queue_feature_pick(&mut state, part(bottom), false);
+        queue_feature_pick(&mut state, part(bottom.clone()), false);
         state.drain_actions();
         assert_eq!(src(&state), SrcRef::Selection(vec![part(bottom)]));
     }
@@ -1440,6 +1441,7 @@ mod height_plane_tests {
             helix_radius: 1.0,
             blend_turns: false,
             links: camcraft_app::links::Links::PLANAR,
+            chain_overrides: Vec::new(),
         }
     }
 
@@ -1461,6 +1463,7 @@ mod height_plane_tests {
             helix_radius: 1.0,
             optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
             blend_turns: false,
+            corner_relief: Default::default(),
         }
     }
 
@@ -1789,6 +1792,7 @@ mod height_plane_tests {
             helix_radius: 1.0,
             blend_turns: false,
             links: camcraft_app::links::Links::PLANAR,
+            chain_overrides: Vec::new(),
         };
         let mut state = state_with("C1", params);
         // G54 at z 3.0: stock top (20) + 5 = 25, G54 - 1 = 2.
@@ -1854,6 +1858,7 @@ mod height_plane_tests {
             helix_radius: 1.0,
             blend_turns: false,
             links: camcraft_app::links::Links::PLANAR,
+            chain_overrides: Vec::new(),
         };
         let state = state_with("C1", params);
         assert!(

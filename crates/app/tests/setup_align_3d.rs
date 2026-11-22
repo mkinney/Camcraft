@@ -121,6 +121,7 @@ fn rough(strategy: PocketStrategy) -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         feed_opt: false,
         shell: true,
+        method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
     }
 }
 
@@ -143,6 +144,7 @@ fn finish() -> OpParams {
         steep_stepover: None,
         pencil_reference: None,
         fill_openings: None,
+        gap_link: camcraft_app::finishing3d::GapLink::Jump,
     }
 }
 

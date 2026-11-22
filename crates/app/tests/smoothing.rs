@@ -28,7 +28,7 @@ fn program(name: &str, ask: Option<Smoothing>) -> String {
         Move::new(MoveKind::Feed, p(0.0, 5.0), p(20.0, -1.0), Some(600.0)),
         Move::new(MoveKind::Rapid, p(20.0, -1.0), p(20.0, 25.0), None),
     ]);
-    let d = Dump {
+    let mut d = Dump {
         op_name: "Contour1",
         tool_number: 1,
         tool_name: "EM",
@@ -39,8 +39,17 @@ fn program(name: &str, ask: Option<Smoothing>) -> String {
         smoothing: ask,
         ..Dump::default()
     };
+    let machine = if name == "Heidenhain Klartext" {
+        d.tool_kind = "Flat end mill";
+        d.stock = [-10.0, 30.0, -10.0, 10.0];
+        d.stock_bottom_z = Some(-2.0);
+        let mch = camcraft_app::posting::builtin_machine_text("Fehlmann Picomax 55 (iTNC 530)").unwrap();
+        post::machine::mirror(&camcraft_app::machine::parse_mch(mch).unwrap())
+    } else {
+        serde_json::Value::Null
+    };
     let text = cnc::serialize(&post::dump(&t, &d));
-    match post::post(script(name), &serde_json::Value::Null, &text) {
+    match post::post(script(name), &machine, &text) {
         Ok(out) => out.program,
         Err(e) => panic!("{name}: {e}"),
     }

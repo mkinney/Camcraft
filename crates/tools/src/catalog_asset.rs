@@ -58,6 +58,10 @@ enum KindWord {
     ThreadMill,
     ThreadMillSingle,
     Wire,
+    TSlot,
+    Keyseat,
+    Dovetail,
+    Lollipop,
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -139,6 +143,10 @@ impl Def {
                 KindWord::ThreadMill => ToolKind::ThreadMill,
                 KindWord::ThreadMillSingle => ToolKind::ThreadMillSingle,
                 KindWord::Wire => ToolKind::Wire,
+                KindWord::TSlot => ToolKind::TSlot,
+                KindWord::Keyseat => ToolKind::Keyseat,
+                KindWord::Dovetail => ToolKind::Dovetail,
+                KindWord::Lollipop => ToolKind::Lollipop,
             },
             diameter: self.diameter,
             corner_r: self.corner_r,

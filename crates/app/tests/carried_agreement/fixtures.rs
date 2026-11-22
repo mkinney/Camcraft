@@ -150,6 +150,7 @@ fn pocket(bottom_z: f64, stepover: f64, rest_rough: bool) -> OpParams {
         optimal_load: camcraft_app::load::load_of_degrees(60.0),
         feed_opt: false,
         shell: false,
+        method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
     }
 }
 
@@ -194,6 +195,7 @@ fn contour() -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 

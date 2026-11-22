@@ -248,29 +248,24 @@ fn rim_chamfer_want() -> Want {
     )
 }
 
-/// NOT YET - a finding against the port's default path, pinned: SMLib 1.0.1
-/// traces a chamfer along an arc as an offset intersection instead of a cone
-/// (upstream WR-421, solidcore#420), leaving the closed form by ~1.9e-6
-/// relative. Must stay a finding; an upstream default that fixes it fails
-/// here and is promoted into the passing bench. Never counted as agreement.
+/// Promoted from "not yet" (#917): up to solidcore 55d0e76 the port's default
+/// path traced a chamfer along an arc as an offset intersection instead of a
+/// cone (upstream WR-421, solidcore#420) and left the closed form by ~1.9e-6
+/// relative. From solidcore 2016386 the default path agrees. The result must
+/// heal as a closed solid (`heal` hands out nothing else) and measure at the
+/// cone's closed form, in volume and box.
 #[test]
-fn not_yet_rim_chamfer_default_path_stays_a_finding() {
+fn rim_chamfer_default_path_matches_the_cone() {
     let w = rim_chamfer_want();
     let mut sc = SolidcoreKernel::default();
-    let f = check(
-        &w,
-        blended_cylinder(&mut sc, &[[0.0, 3.0, 10.0]], 1.0, Blend::Chamfer),
-    );
-    println!(
-        "{} not yet (WR-421, default path): {}",
-        w.name,
-        f.as_deref().unwrap_or("NOW AGREES")
-    );
-    assert!(
-        f.is_some(),
-        "{} now agrees on the default path - promote it",
-        w.name
-    );
+    let m = (|| {
+        let c = sc.make_cylinder([0.0; 3], 3.0, 10.0)?;
+        let out = sc.blend_edges(c, &[[0.0, 3.0, 10.0]], 1.0, Blend::Chamfer)?;
+        let mut solid = sc.heal(out)?;
+        sc.measure(&mut solid)
+    })();
+    let f = check(&w, m);
+    assert!(f.is_none(), "default path, closed solid: {f:?}");
 }
 
 /// The same chamfer with the port's opt-in fix `fillet_chamfer_cone_on_arc`

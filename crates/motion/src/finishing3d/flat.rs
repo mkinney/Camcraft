@@ -15,6 +15,7 @@ use crate::machining2d::GenError;
 
 use super::params::{Finish3DParams, validate};
 use super::shadow::{shadow_pass, shadow_region};
+use super::grid::SupSet;
 use super::support::{Sup, build_sups};
 
 /// Is this facet a FLOOR? Two tests, both scale-honest:
@@ -61,10 +62,11 @@ pub fn flat(facets: &[Triangle], p: &Finish3DParams) -> Result<Toolpath, GenErro
     // The floors as a support set: geometry unchanged (clearance
     // still answers for EVERY facet), jurisdiction rewritten.
     let sups = build_sups(facets, r);
-    let fsups: Vec<Sup> = sups
-        .iter()
-        .map(|s| Sup { shallow: is_floor(s, p.tolerance), folds: [None; 3], ..*s })
-        .collect();
+    let fsups = SupSet::new(
+        sups.iter()
+            .map(|s| Sup { shallow: is_floor(s, p.tolerance), folds: [None; 3], ..*s })
+            .collect(),
+    );
     let region = shadow_region(&fsups, r)?;
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     // max_rings None: every pass until the floor collapses at its

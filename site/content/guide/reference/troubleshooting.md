@@ -167,7 +167,40 @@ plane itself is inside the stock. In the second case the operation also
 carries the note `Clearance in stock: ...` with the heights.
 
 **Fix.** Raise the clearance height on the operation's Heights tab to the
-stock top or above, or face the stock down first, and regenerate.
+stock top or above, and regenerate. Facing the stock down in an earlier
+operation does not fix a clearance plane that is inside the stock: the
+first move of the operation still has to clear the stock as it was at the
+start (see the next entry).
+
+### `the first rapid (move <n>) comes from an unknown X/Y at the clearance height Z<h>, under the <stock|fixture> top at Z<t> - raise the clearance height above Z<t>`
+
+**Means.** After a tool change the machine does not know where the tool
+stands across the table. It first goes up or down to the clearance height,
+and then moves across to the start of the operation at that height. That
+move can pass over any part of the stock or any fixture. Here the clearance
+height `Z<h>` is lower than the top of the stock or of a fixture (`Z<t>`),
+so the move could run into it. The check reads the whole stock as it was
+at the start and every fixture in the setup, wherever they stand, because
+the place the tool comes from is not known. On a tilted (3+2) operation
+the heights are measured along the tilted tool, from the origin of the
+tilted plane.
+
+**Fix.** Raise the clearance height on the operation's Heights tab above
+`Z<t>`, and regenerate. This also applies to an operation in a pocket that
+an earlier operation already cut: its clearance height must still clear
+the top of the stock as it was at the start, and the top of each fixture.
+
+### `the first rapid (move <n>) comes from an unknown position at the clearance height <h> mm, under the <stock|fixture> top at <t> mm (both measured along the tilted tool axis) - raise the clearance height by at least <d> mm`
+
+**Means.** The same check as the entry above, on a tilted (3+2) operation.
+The heights are measured along the tilted tool. `<h>` is the clearance
+height as the operation sets it, and `<t>` is the highest corner of the
+stock or of a fixture, measured the same way. The highest corner is on the
+side that the tilt lifts, so it can be higher than the top of the stock
+when the stock is upright.
+
+**Fix.** Raise the clearance height on the operation's Heights tab by at
+least `<d>` mm, and regenerate.
 
 ### `<shank|holder|spindle housing|rapid|flute> at move <n> strikes a fixture`
 
@@ -425,6 +458,35 @@ simulation.
 
 **Fix.** None; if the plasma laws refuse the program the post names the
 problem.
+
+## Report a problem or request a feature
+
+Open **Report an issue** on the status strip, next to **Debug info**.
+Enter a short title, then choose **Report a bug** or **Request a
+feature**. CamCraft opens a prefilled GitHub issue in your browser. The
+title, diagnostic information and bug or enhancement label are filled in.
+Add what happened and the steps that reproduce it, then submit the issue
+in GitHub. Opening the browser does not submit it for you.
+
+The same button asks for a screenshot of the whole application window
+and copies it to the clipboard. Paste the image into the GitHub issue
+description. The status line confirms the copy or reports that no
+screenshot arrived. Check the open issues first to avoid a duplicate.
+
+## AI Chat connection settings
+
+Open **AI Chat** from **View > Panels**. Choose a **Provider** and a
+**Model**. Desktop builds support Anthropic, OpenAI Chat and Responses,
+Gemini, and Ollama. All local panel presets use Ollama. The panel has
+no endpoint field. For other runtimes and external agents, see the
+[AI guide](../../automate/ai/). Cloud keys come from `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY` or `GEMINI_API_KEY` first, then the OS keychain. Keys are not saved in the project or preferences; there
+is no key-entry control in this panel yet.
+
+**Offline only** is remembered between runs and permits only loopback
+endpoints on this computer. Turn it off to use a cloud provider. A
+nonlocal plain HTTP endpoint is refused. This is a short connection
+pointer; see the [AI guide](../../automate/ai/) for the full setup steps.
 
 ## Not covered yet
 

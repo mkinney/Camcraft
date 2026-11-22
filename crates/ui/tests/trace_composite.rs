@@ -8,6 +8,7 @@
 //!
 //! Gate map (M4.4): covers ui::trace::{eye, composite} and
 //! viewport::View3D::render_with.
+//! #2958: the composite follows the pass's MSAA sample count.
 
 use std::sync::Arc;
 
@@ -69,7 +70,14 @@ fn centre(dev: &wgpu::Device, q: &wgpu::Queue, parts: &[GpuPart], traced: bool) 
 }
 
 fn centre_with(dev: &wgpu::Device, q: &wgpu::Queue, parts: &[GpuPart], traced: bool, cpu: bool) -> [u8; 4] {
+    centre_at(dev, q, parts, traced, cpu, 1)
+}
+
+/// `centre_with` at `samples` per pixel (#2958): the viewport and the
+/// composite build their pipelines for the same count.
+fn centre_at(dev: &wgpu::Device, q: &wgpu::Queue, parts: &[GpuPart], traced: bool, cpu: bool, samples: u32) -> [u8; 4] {
     let mut view = View3D::new(dev, FORMAT, W, H);
+    view.set_samples(dev, samples);
     view.set_document(dev, q, parts);
     let cam = Camera { target: [5.0, 5.0, 2.5], yaw: 0.9, pitch: 0.9, dist: 30.0, ..Camera::default() };
     let mvp = cam.mvp(f64::from(W) / f64::from(H));
@@ -77,6 +85,7 @@ fn centre_with(dev: &wgpu::Device, q: &wgpu::Queue, parts: &[GpuPart], traced: b
     if cpu {
         eye = eye.cpu_only();
     }
+    eye.set_samples(dev, samples);
     let mut enc = dev.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     let fv = field_view();
     if traced {
@@ -181,4 +190,20 @@ fn the_cpu_fallback_paints_what_the_gpu_eye_paints() {
     // Same field, same eye, same shade law: the fallback is a speedup
     // lost, never a different picture.
     assert!(gpu.iter().zip(cpu).all(|(a, b)| a.abs_diff(b) <= 8), "{gpu:?} vs {cpu:?}");
+}
+
+/// #2958: with 4x anti-aliasing the composite draws into the multisample
+/// pass (its pipeline is built for the same count), and the traced stock
+/// paints as it does at one sample.
+#[test]
+fn the_traced_stock_paints_the_same_with_msaa() {
+    let Some((dev, q)) = device_and_queue() else {
+        eprintln!("trace_composite: no adapter - skipped");
+        return;
+    };
+    let scope = dev.push_error_scope(wgpu::ErrorFilter::Validation);
+    let one = centre_at(&dev, &q, &[stock_part()], true, false, 1);
+    let four = centre_at(&dev, &q, &[stock_part()], true, false, 4);
+    assert!(pollster::block_on(scope.pop()).is_none(), "the 4x pass validates");
+    assert!(close(one, four), "the traced stock paints the same at 4x: {one:?} vs {four:?}");
 }

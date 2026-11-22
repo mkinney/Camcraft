@@ -95,7 +95,7 @@ pub(super) fn gouge_at(p: &Product<'_>, wire: &Wire, passes: &[Pass], z: f64, to
     for pass in passes {
         for i in pass.first..pass.last {
             let (Some(&a), Some(&b)) = (pts.get(i), pts.get(i + 1)) else { break };
-            let (d, at) = dist::clearance(p, a, b);
+            let (d, at) = dist::entry(p, a, b);
             read.take(i + 1, d, reach(pass.k, a, b, wire.lean.get(i).copied(), wire.lean.get(i + 1).copied(), at), at);
         }
     }

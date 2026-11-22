@@ -175,3 +175,35 @@ fn pocket3d_offset_rings_ignore_a_stale_wide_stepover() {
         other => panic!("Zigzag at 25 mm on an 8 mm tool must refuse, got {other:?}"),
     }
 }
+
+#[test]
+fn pocket3d_load_strategies_ignore_nonpositive_stepover() {
+    let slab = box_facets([0.0, 0.0, -20.0], [16.0, 12.0, -10.0]);
+    let region = camcraft_motion::geometry::slice::project(&slab, 64).unwrap();
+    for strategy in [PocketStrategy::Adaptive, PocketStrategy::OffsetRings] {
+        let mut params = p3(strategy, 3.0);
+        params.stepdown = 10.0;
+        let sane = pocket3d(&slab, &region, &params).unwrap();
+        assert!(!sane.moves.is_empty(), "{strategy:?} must generate moves");
+        for stepover in [0.0, -1.0] {
+            params.stepover = stepover;
+            let stale = pocket3d(&slab, &region, &params)
+                .unwrap_or_else(|err| panic!("{strategy:?}, stepover {stepover}: {err}"));
+            assert_eq!(sane.moves, stale.moves, "{strategy:?}, stepover {stepover}");
+        }
+    }
+}
+
+#[test]
+fn pocket3d_stepover_strategies_refuse_nonpositive_and_wide_stepover() {
+    let slab = box_facets([0.0, 0.0, -20.0], [16.0, 12.0, -10.0]);
+    let region = camcraft_motion::geometry::slice::project(&slab, 64).unwrap();
+    for strategy in [PocketStrategy::Zigzag, PocketStrategy::Waterline, PocketStrategy::Auto] {
+        for stepover in [0.0, -1.0, 25.0] {
+            match pocket3d(&slab, &region, &p3(strategy, stepover)) {
+                Err(GenError::Invalid(msg)) => assert!(msg.contains("stepover"), "{msg}"),
+                other => panic!("{strategy:?}, stepover {stepover} must refuse, got {other:?}"),
+            }
+        }
+    }
+}

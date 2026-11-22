@@ -63,7 +63,7 @@ pub struct ExtraBoundary {
 /// Which side of an open (or closed) boundary is machined. Inside is the
 /// side that holds more of the operation's own area (what the selection
 /// or source encloses) - the part's side; Outside the other one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ChainSide {
     Inside,
     Outside,
@@ -90,6 +90,7 @@ pub struct AreaControls {
     pub extension: f64,
     pub extra: Vec<ExtraBoundary>,
     pub open: Option<OpenBoundary>,
+    pub do_not_touch: super::avoid::DoNotTouch,
 }
 
 /// Largest offset / extension the door accepts, mm: far past any
@@ -97,6 +98,17 @@ pub struct AreaControls {
 pub const AREA_DISTANCE_MAX: f64 = 10_000.0;
 
 impl AreaControls {
+    /// Any 2D Boundary region control differs from the identity.
+    #[must_use]
+    pub fn has_boundary_edits(&self) -> bool {
+        self.containment.is_some()
+            || self.offset != 0.0
+            || self.corner != CornerStyle::Round
+            || self.extension != 0.0
+            || !self.extra.is_empty()
+            || self.open.is_some()
+    }
+
     /// The identity - nothing stamped, nothing saved, nothing changed.
     #[must_use]
     pub fn is_default(&self) -> bool {
@@ -104,10 +116,15 @@ impl AreaControls {
     }
 
     /// Door sanity, no world: finite in-range distances, no empty pick
-    /// list, and nothing but the identity on a kind without an area.
+    /// list, and nothing but the identity on a kind without support.
     #[must_use]
     pub fn is_sane_for(&self, params: &OpParams) -> bool {
-        if self.is_default() {
+        if !self.do_not_touch.is_default()
+            && (!super::avoid::do_not_touch_applies(params.kind()) || !self.do_not_touch.is_sane())
+        {
+            return false;
+        }
+        if !self.has_boundary_edits() {
             return true;
         }
         if !area_applies(params.kind()) {
@@ -124,7 +141,7 @@ impl AreaControls {
             && self.open.as_ref().is_none_or(|o| !o.picks.is_empty())
     }
 
-    /// Every pick the controls reference (boundaries and the open one),
+    /// Every pick the controls reference (boundaries, open chain, and Do not touch),
     /// for the stamp and the stale-reason walk.
     pub fn picks(&self) -> impl Iterator<Item = &GeoSel> {
         self.extra
@@ -135,6 +152,7 @@ impl AreaControls {
             })
             .flatten()
             .chain(self.open.iter().flat_map(|o| o.picks.iter()))
+            .chain(self.do_not_touch.picks.iter())
     }
 }
 
@@ -193,6 +211,7 @@ pub fn area_unsupported(kind: OpType) -> Option<String> {
         }
         OpType::Deburr => format!("{kind} breaks the model's own exposed edges - there is no area to bound"),
         OpType::SinkerBurn | OpType::SinkerSideBurn => format!("a {kind} burns its electrode's own face - there is no area to bound"),
+        OpType::SlotUndercut => format!("a {kind} cuts its authored slot at depth - there is no area to bound"),
         // Mesh-driven with a moving tool axis: the model's own shadow.
         OpType::Contour5D
         | OpType::Parallel5D

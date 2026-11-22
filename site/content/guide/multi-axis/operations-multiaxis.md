@@ -68,6 +68,12 @@ cannot, so post multi-axis work with a machine that states its rotaries.
 
 ## 5-Axis Contour
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-contour5d" /> }} ![View of waterline passes with a leaning tool axis.](../../../operation-paths.svg#Contour5D)
 
 **For:** finishing steep walls with waterline rings, with the tool leaning
@@ -86,6 +92,12 @@ shank would rub a deep wall at a vertical pose.
 | Feeds | Feed / Plunge feed / Climb milling | 1200 / 300 / on |
 
 ## 5-Axis Parallel
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-parallel5d" /> }} ![View of parallel surface passes with a leaning tool axis.](../../../operation-paths.svg#Parallel5D)
 
@@ -108,6 +120,12 @@ terrain's cosine.
 
 ## 5-Axis Flow
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-flow5d" /> }} ![View of curved surface passes following the surface direction.](../../../operation-paths.svg#Flow5D)
 
 **For:** the 5-Axis Parallel's lines, but following the surface's own
@@ -117,6 +135,12 @@ is cut in straight passes. The settings and defaults are 5-Axis
 Parallel's; the direction is read from the model, not set.
 
 ## Multi-Axis Contour
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-multiaxis-contour" /> }} ![View of a leaning tool following a picked spatial chain.](../../../operation-paths.svg#MultiAxisContour)
 
@@ -143,6 +167,12 @@ model to ride".
 
 ## Swarf
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-swarf" /> }} ![View of passes along a ruled flank with a leaning tool.](../../../operation-paths.svg#Swarf)
 
 **For:** finishing ruled flanks (surfaces straight in one direction, such
@@ -162,7 +192,7 @@ walls; doubly-curved ground is 5-Axis Parallel work.
 ![Unsafe CamCraft five-axis swarf example with red collision paths along a cylindrical blade](../../../images/guide/op-multiaxis-swarf.png)
 
 **Unsafe example — do not post or machine.** In
-`examples/guide-multiaxis.camproj`, `Swarf1` has **897 shank-hit warnings**
+`examples/guide-multiaxis.camproj`, `Swarf1` has **884 shank-hit warnings**
 (the shank or holder intersects material), **9 rapid-in-stock warnings**
 (rapid moves enter remaining material), and **2 sweep-hit warnings**
 (the tool assembly intersects material during a pose change). The red paths
@@ -188,6 +218,12 @@ refine it or finish with 5-Axis Parallel".
 
 ## Advanced Swarf
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-advanced-swarf" /> }} ![View of successive coarse and fine passes along a ruled flank.](../../../operation-paths.svg#AdvancedSwarf)
 
 **For:** Swarf run coarse to fine. Each rough pass relaxes the tolerance
@@ -199,6 +235,12 @@ Settings as Swarf, plus **Pass count** on the Passes tab: 2 on a new
 operation, 1 to 4 (the panel clamps it). Refusals as Swarf.
 
 ## Rotary Contour
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-rotary-contour" /> }} ![View of ring passes around the fitted rotation axis.](../../../operation-paths.svg#RotaryContour)
 
@@ -224,6 +266,12 @@ along it: Rotary Parallel".
 
 ## Rotary Parallel
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-rotary-parallel" /> }} ![View of passes along a bar at successive rotary positions.](../../../operation-paths.svg#RotaryParallel)
 
 **For:** finishing a turned bar with passes along its fitted axis, spaced
@@ -239,6 +287,12 @@ standing bar are its rings: Rotary Contour"; "Rotary Parallel reads its
 work's ... mm radius - raise it".
 
 ## Rotary Offset
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-rotary-offset" /> }} ![View of roughing passes wrapping around a turned workpiece.](../../../operation-paths.svg#RotaryOffset)
 
@@ -264,6 +318,12 @@ wrap's seam ..."; "the wrapped work has no radial extent to rough"; "the
 height window leaves no station of the work to rough".
 
 ## Multi-Axis Rough
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-multiaxis-rough" /> }} ![View of roughing levels with tool axes that lean near walls.](../../../operation-paths.svg#MultiAxisRough)
 

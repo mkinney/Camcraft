@@ -34,7 +34,7 @@ use crate::geometry::Point3;
 use crate::entry::Entry3D;
 use crate::machining2d::{
     ARC_FIT_TOL, GenError, PocketParams, PocketStrategy, ProofTally, Return, Seg, adaptive_passes, choose_entry,
-    crossing_free, in_air, fit_proved, microlift_link, plan_passes, push_segs,
+    crossing_free, in_air, fit_proved, microlift_link, plan_passes, push_segs, zigzag_ringed_passes,
 };
 
 /// Said once per path where the rest pass runs under Adaptive.
@@ -135,6 +135,13 @@ pub(super) fn plan_level(
     stock: Option<&Region>,
 ) -> Result<LevelPlan, GenError> {
     let step = p.tiling_step();
+    if seam.is_none() && matches!(p.strategy, PocketStrategy::Zigzag | PocketStrategy::Auto) {
+        // #3129: the level's rows close with a ring on each boundary loop,
+        // so no cusp stands between row ends on a wall or an island. The
+        // rotary wrap keeps its rows: its developed area ends at the seam,
+        // and a ring there would cut one seam line twice.
+        return Ok(LevelPlan::rings(zigzag_ringed_passes(center, step, p.climb)?, p.helix_radius));
+    }
     if p.strategy != PocketStrategy::Adaptive {
         return Ok(LevelPlan::rings(plan_passes(center, step, p.climb, p.strategy)?, p.helix_radius));
     }

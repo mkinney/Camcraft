@@ -8,13 +8,13 @@ weight = 3
 An operation is one machining step: a tool, an area to cut, and how to cut
 it. The ribbon shows the operation groups the mounted machine can run, so a
 mill document has no turning operations and a lathe document no 3D
-milling. A mill-turn shows both.
+milling. A mill-turn (a lathe with live tooling) shows both.
 
 ## Operation kinds
 
 | Group | Operations |
 |---|---|
-| Milling 2D | Face, Contour, Pocket, Slot, Trochoidal slot, Trace, Adaptive, Offset, Engrave, Chamfer, Circular, Thread |
+| Milling 2D | Face, Contour, Pocket, Slot, Trochoidal slot, Slot Undercut, Trace, Adaptive, Offset, Engrave, Chamfer, Circular, Thread |
 | Milling 3D | 3D Pocket, 3D Finish, Deburr |
 | Drilling | Drill, Bore, Probe |
 | Multi-axis | 5-Axis Contour, 5-Axis Parallel, Swarf, Adv. Swarf, Rotary Contour, Rotary Parallel, Rotary Offset, Multi-Axis Rough, 5-Axis Flow, Multi-Axis Contour |

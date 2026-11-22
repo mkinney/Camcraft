@@ -57,6 +57,7 @@ fn contour_params(comp: Compensation) -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: Links { approach: Approach { compensation: comp, ..Approach::DEFAULT }, ..Links::PLANAR },
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -189,7 +190,7 @@ fn the_lathe_and_the_other_mill_posts_refuse_a_control_op_by_name_and_the_gate_b
     let m = posting::machine_value(&world);
     let out = engine::run(&post_text("fanuc-lathe"), &m, &text).unwrap();
     assert!(out.warnings.iter().any(|w| w.contains("nose-radius compensation")), "{:?}", out.warnings);
-    for stem in ["heidenhain", "tormach", "grblhal", "tinyg"] {
+    for stem in ["heidenhain", "tormach", "grblhal", "tinyg", "linuxcnc", "grbl"] {
         let out = engine::run(&post_text(stem), &m, &text).unwrap();
         assert!(out.warnings.iter().any(|w| w.contains("G41/G42) is not supported")), "{stem}: {:?}", out.warnings);
         let mut path = std::env::temp_dir();

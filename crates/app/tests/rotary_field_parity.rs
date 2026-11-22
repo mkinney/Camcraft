@@ -355,15 +355,11 @@ fn the_column_verdict_refuses_every_rotary_kind_by_name() {
     }
 }
 
-/// The eye on the laid bar: its stock entity carries a rotation, which
-/// the field view refuses by name before any cut (the pre-existing
-/// axis-aligned-stock law) - the routed path is proved on the stock's
-/// own facets by the parity lane and the slice law below.
+/// The eye draws the laid bar from its placed stock mesh (#2758).
 #[test]
-fn the_eye_refuses_the_laid_bars_rotated_stock_by_name() {
+fn the_eye_draws_the_laid_bars_rotated_stock() {
     let world = world_for(Kind::Parallel);
-    let err = field_view(&world).expect_err("the rotated stock entity is refused");
-    assert!(err.contains("lies on its side"), "{err}");
+    field_view(&world).expect("the laid cylinder is supported");
 }
 
 /// A playback slice turns from where the head stood (M13.1): cutting

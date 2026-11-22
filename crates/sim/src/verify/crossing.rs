@@ -50,7 +50,7 @@ pub(super) fn crossings(path: &Toolpath, cx: &VerifyContext, chord_tol: f64) -> 
     // drilled at one height across one another ARE the cross-drilled
     // intersection the part asks for - the crossing point is kerf in
     // both bores, not a collision.
-    if matches!(cx.mode, Mode::Envelope | Mode::Revolve | Mode::Radial | Mode::Rotary) {
+    if matches!(cx.mode, Mode::Envelope | Mode::Revolve | Mode::Radial | Mode::Rotary | Mode::Undercut) {
         return Vec::new();
     }
     crossed_pairs(path, chord_tol)

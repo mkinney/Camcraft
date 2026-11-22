@@ -84,7 +84,7 @@ fn world() -> (World, History) {
     h.execute(&world, LoadMachine::new(&world, "millturn.mch".into(), Some(mill_turn())).expect("machine"));
     let params = OpParams::RotaryContour {
         tolerance: 0.05,
-        clearance_z: Height::fixed(25.0),
+        clearance_z: Height::fixed(40.0),
         retract_z: None,
         top_z: Height::fixed(6.0),
         bottom_z: Height::fixed(-8.0),

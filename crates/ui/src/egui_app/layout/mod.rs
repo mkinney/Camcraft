@@ -13,6 +13,8 @@
 
 mod controls;
 mod form;
+/// #2339: the saved panel arrangements - the dock's JSON, the start load.
+pub(crate) mod setups;
 // #2516: Tab, Shift+Tab and Enter over the pane's value fields.
 pub mod field_ring;
 pub(crate) use controls::*;
@@ -170,6 +172,11 @@ pub(crate) fn settle(state: &mut State, dock: &mut DockState<Tab>) {
     if let Some(req) = state.layout_request.take() {
         apply(dock, req);
     }
+    // #2339: the Panel setups window files one ask; the dock is read or
+    // swapped here, where the shell keeps it.
+    if let Some(ask) = state.panel_setup_ask.take() {
+        setups::apply_ask(state, dock, ask);
+    }
     state.panels_open = panels_open(dock);
     // #2262: the tab's own X closes the panel too, so the flag follows the dock.
     state.debug_info_open = is_open(dock, &Tab::DebugInfo);
@@ -183,15 +190,18 @@ pub(crate) enum ViewRow {
     /// Listed, always checked, inert: the viewport cannot close.
     Viewport,
     Panel(Panel),
+    /// #2339: open the Panel setups window (save, load, delete).
+    Setups,
     Reset,
 }
 
-const ROWS: [ViewRow; 6] = [
+const ROWS: [ViewRow; 7] = [
     ViewRow::Viewport,
     ViewRow::Panel(Panel::Browser),
     ViewRow::Panel(Panel::Properties),
     ViewRow::Panel(Panel::Machines),
     ViewRow::Panel(Panel::AiChat),
+    ViewRow::Setups,
     ViewRow::Reset,
 ];
 
@@ -202,6 +212,7 @@ fn row_label(r: ViewRow) -> &'static str {
         ViewRow::Panel(Panel::Properties) => "Properties",
         ViewRow::Panel(Panel::Machines) => "Machines",
         ViewRow::Panel(Panel::AiChat) => "AI Chat",
+        ViewRow::Setups => "Panel setups...",
         ViewRow::Reset => "Reset layout",
     }
 }
@@ -274,7 +285,7 @@ pub(super) fn view_drop(
                 let checked = match row {
                     ViewRow::Viewport => Some(true),
                     ViewRow::Panel(pn) => Some(open.get(*pn)),
-                    ViewRow::Reset => None,
+                    ViewRow::Setups | ViewRow::Reset => None,
                 };
                 super::painted::menu_item(&resp, row_label(*row), live, checked);
                 if let Some(on) = checked {
@@ -314,6 +325,10 @@ pub(super) fn view_drop(
         Some(ViewRow::Viewport) => {}
         Some(ViewRow::Panel(p)) => {
             state.layout_request = Some(LayoutRequest::Toggle(p));
+            state.ribbon_view_open = false;
+        }
+        Some(ViewRow::Setups) => {
+            state.panel_setups_open = true;
             state.ribbon_view_open = false;
         }
         Some(ViewRow::Reset) => {

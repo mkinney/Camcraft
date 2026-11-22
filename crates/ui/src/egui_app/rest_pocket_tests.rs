@@ -59,6 +59,7 @@ fn pocket(strategy: PocketStrategy, rest: Option<RestParams>) -> OpParams {
         blend_radius: None,
         rest,
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 

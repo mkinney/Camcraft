@@ -110,6 +110,32 @@ pub enum FinishPattern {
     Flow,
 }
 
+/// How the chain between two cut runs crosses the ground between
+/// them, asked once per break. `Jump` is every pre-gap-link file:
+/// retract (or clearance when no retract is stated) and rapid
+/// across. `Straight` first tries one direct link: a single
+/// straight move from where the last run ended to where the next
+/// begins, at the two points' own heights - no rise, no traverse,
+/// no plunge. That line is fixed, so nothing is chosen for it: the
+/// exact sweep verdict answers the whole question (a ball swept
+/// along a segment is that segment inflated by `r`, the same
+/// question the envelope scan asks), and its budget keeps every
+/// rest tangency - both ends are legal centers by the march's own
+/// construction, tangent to their ground at distance exactly `r` -
+/// while a real bite refuses. A refused link takes the `Jump` hop.
+/// `ramp`'s certified diagonal still wins the whole question when
+/// it can be struck: a chain that cuts its way across needs no
+/// link at all. The ladder is ramp, straight, jump - the smoothest
+/// answer the facets certify, and the jump stands when none can.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GapLink {
+    #[default]
+    Jump,
+    /// One straight link between the runs at their own heights,
+    /// where the exact sweep certifies the ball crosses clear.
+    Straight,
+}
+
 /// Everything the 3D finishers need that the tool and geometry don't
 /// already say. Heights arrive resolved to millimeters by the
 /// operation layer (same discipline as every other params shape).
@@ -213,6 +239,18 @@ pub struct Finish3DParams {
     /// raster fields ignore Waterline, inert as if it had never
     /// arrived.
     pub pencil_reference: Option<f64>,
+    /// The link's author between two runs (the linking menu): `Jump`
+    /// hops to `retract_z`/clearance exactly as every pre-gap-link
+    /// file ran; `Straight` links the runs with one direct move at
+    /// their own heights where the exact sweep certifies it, and
+    /// takes the hop when it cannot - see [`GapLink`] and
+    /// [`straight_ok`](super::gaplink::straight_ok). `ramp`'s
+    /// diagonal still takes the break first wherever
+    /// [`diagonal_ok`](super::march::diagonal_ok) certifies it; the
+    /// gap link governs the break the diagonal refused. It is the
+    /// raster run chain's height; the ring walk keeps the plain
+    /// retract/clearance hop for now.
+    pub gap_link: GapLink,
 }
 
 /// The stepdown the scallop law prescribes: cusp height

@@ -131,6 +131,7 @@ fn controls_of(env: &Env, v: &Value) -> Result<AreaControls, String> {
         extension: number(m, "extension")?,
         extra,
         open,
+        do_not_touch: Default::default(),
     })
 }
 
@@ -140,9 +141,10 @@ fn controls_of(env: &Env, v: &Value) -> Result<AreaControls, String> {
 /// closed boundary) with its text.
 pub(super) fn set_operation_area(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
     let key = find_op(env, req_str(a, "operation")?)?;
-    let area = controls_of(env, a.get("area").ok_or("\"area\" is required")?)?;
+    let mut area = controls_of(env, a.get("area").ok_or("\"area\" is required")?)?;
     let e = model::find_by_name(&env.world, &key).ok_or_else(|| format!("no operation named '{key}'"))?;
     let op = model::operation_of(&env.world, &e).ok_or_else(|| format!("'{key}' is not an operation"))?;
+    area.do_not_touch = op.area.do_not_touch;
     let cmd = EditOperationParams::with_area(&env.world, &key, op.params, area).map_err(|e| e.to_string())?;
     env.history.execute(&env.world, cmd);
     super::pick::geometry_view(env, &key)

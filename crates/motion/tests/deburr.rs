@@ -38,6 +38,11 @@ fn params(top_z: f64, bottom_z: f64) -> DeburrParams {
         bottom_z,
         feed: 500.0,
         plunge_feed: 100.0,
+        min_edge_angle_deg: 0.0, // #1888: the filters at rest (deburr_filters.rs)
+        exclude_holes: false,
+        hole_min_diameter: 0.0,
+        hole_max_diameter: 0.0,
+        unreachable: camcraft_motion::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 

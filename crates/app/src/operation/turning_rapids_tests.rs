@@ -271,7 +271,7 @@ fn a_banded_rapid_just_under_an_earlier_face_cut_is_convicted() {
     };
     let p = Point3::new;
     let (part, stock) = (cylinder(6.0, -60.0, 10.0), cylinder(10.0, -60.0, 16.0));
-    let ahead = [crate::rest::TurnedAhead { nose: 0.8, moves: vec![mv(MoveKind::Feed, p(11.0, 0.0, 15.8), p(0.0, 0.0, 15.8))] }];
+    let ahead = [crate::rest::TurnedAhead { nose: 0.8, band: 0.0, moves: vec![mv(MoveKind::Feed, p(11.0, 0.0, 15.8), p(0.0, 0.0, 15.8))] }];
     let judge = |c: f64| {
         let path = Toolpath {
             moves: vec![mv(MoveKind::Rapid, p(8.0, 0.0, 25.0), p(8.0, 0.0, c))],
@@ -331,7 +331,7 @@ fn the_margin_generation_hands_the_law_shrinks_with_a_coarse_models_excess() {
     // shrinks by it and so does the bar's skin - so an axial rapid
     // beside the r 10 bar is convicted from further out on a coarse
     // model, by twice the excess.
-    use crate::operation::fidelity_law::tightened;
+    use crate::operation::fidelity_law::tightened_strict as tightened; // #2996: turning never widens
     use crate::operation::material::GOUGE_TOL;
     let p = Point3::new;
     let params = OpParams::ProfileRough {

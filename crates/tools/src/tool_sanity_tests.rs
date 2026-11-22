@@ -93,11 +93,14 @@ fn old_is_sane(t: &Tool) -> bool {
             ToolKind::Wire => crate::wire::refusal(t).is_none(),
             ToolKind::Electrode => crate::electrode::is_sane(t),
             ToolKind::ThreadMill | ToolKind::ThreadMillSingle => crate::thread_mill::is_sane(t),
+            ToolKind::TSlot | ToolKind::Keyseat | ToolKind::Dovetail | ToolKind::Lollipop => {
+                crate::undercut::refusal(t).is_none()
+            }
             _ => true,
         }
 }
 
-const KINDS: [ToolKind; 18] = [
+const KINDS: [ToolKind; 22] = [
     ToolKind::EndMill,
     ToolKind::BallNose,
     ToolKind::BullNose,
@@ -116,6 +119,10 @@ const KINDS: [ToolKind; 18] = [
     ToolKind::Electrode,
     ToolKind::ThreadMill,
     ToolKind::ThreadMillSingle,
+    ToolKind::TSlot,
+    ToolKind::Keyseat,
+    ToolKind::Dovetail,
+    ToolKind::Lollipop,
 ];
 
 /// Each kind's place, with no catch-all: a new `ToolKind` does not compile
@@ -141,6 +148,10 @@ fn kind_slot(kind: ToolKind) -> usize {
         ToolKind::Electrode => 15,
         ToolKind::ThreadMill => 16,
         ToolKind::ThreadMillSingle => 17,
+        ToolKind::TSlot => 18,
+        ToolKind::Keyseat => 19,
+        ToolKind::Dovetail => 20,
+        ToolKind::Lollipop => 21,
     }
 }
 

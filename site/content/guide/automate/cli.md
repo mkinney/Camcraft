@@ -13,6 +13,29 @@ gate as the window, with no UI. Build it as shown in [Install](@/guide/getting-s
 is trimmed where noted. Log lines (timestamps) are shortened to their
 message.
 
+## Open a file in the window
+
+Use the desktop executable `camcraft-ui` to open one file from the
+command line. This starts the window; `camcraft-cli` remains the headless
+tool described below.
+
+```sh
+camcraft-ui part.step
+camcraft-ui job.camproj
+camcraft-ui --mcp-port 7915 part.stl
+```
+
+The window accepts `.stl`, `.obj`, `.step`, `.stp`, native `.sc`
+Solidcraft designs, and `.camproj` projects. A model goes through the
+normal import command; a project goes through the normal open command.
+An option's value is not treated as a file path.
+
+More than one file, an unknown extension or a path that is not a file is
+refused by name on the status line (`open refused: ...`). The window
+still starts with an empty project. This does not forward files to an
+already running window. On macOS, passing the path to the binary works;
+`open -a` file events are not supported by this startup argument path.
+
 ## Help and version
 
 There are three commands, `script`, `process` and `mcp`. There is no
@@ -108,7 +131,11 @@ $ echo $?
 ```
 
 (`cam.log` prints each argument on its own line.) `importTools` takes the
-mode `"add"`, `"update"` or `"replace"`.
+mode `"add"`, `"update"` or `"replace"`, optional `holders`, optional
+`format` (`"auto"`, `"camtools"`, `"pathpilot"` or `"hurco"`), and
+optional `units` (`"mm"` or `"inch"`). `exportTools` also takes optional
+`format` and `units` (or detects PathPilot `.csv` and Hurco `.TCM` from
+the path extension).
 Read [Tools and tool libraries](@/guide/set-up/tools.md) before replacing a
 library. That page explains the supported formats, tool numbers and
 import refusals. Export a copy before a replacement when you need to

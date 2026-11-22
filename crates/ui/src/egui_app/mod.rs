@@ -40,13 +40,21 @@ mod pick_button;
 mod gcode_highlight;
 mod gcode_view;
 mod debug_info;
+// #1696: the Report door - the window that fills GitHub's new-issue form
+// in, and the screenshot it puts on the clipboard.
+mod report;
+// #2744: the shared report names each path by its last component only.
+mod report_scrub;
 mod status_alert;
 
 mod stock_info;
 mod donate;
+// #2384: the Home button and the recent projects start page.
+pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
+mod stock_axis_rows;
 // pub: M13.4's ColorVision layer - the viewport, the traced stock and
 // the overlay lines read the palette; `cvd` is its maths.
 pub mod colorvision;
@@ -65,6 +73,8 @@ mod op_icons;
 mod tool_icons;
 mod layout;
 mod load_field;
+// #2339: the Panel setups window (save, load and delete dock arrangements).
+mod panel_setups;
 // pub(crate) past egui_app: `State::machine_editor` names its draft
 // type (M3.3 stage C), so state.rs has to see through the door.
 pub(crate) mod machine_editor;
@@ -89,12 +99,15 @@ mod lead_page;
 mod start_exit_rows;
 pub(crate) mod op_tabs;
 mod painted;
+mod ribbon_cell;
 mod tree_badges;
 mod tree_glyphs;
 mod pages;
 // #739: the WCS page, split out of pages.rs.
 mod wcs_page;
 mod step_budget_row;
+// #1339: the model page's "Vouch for this mesh" row.
+mod vouch_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
 mod stock_material_row;
@@ -108,9 +121,13 @@ mod tool_orientation_row;
 mod thread_page;
 // #894: the thread mills' pitch and form rows.
 mod tool_thread_mill_row;
+// #1444: the undercut cutters' seeding and dovetail flank angle row.
+mod tool_undercut_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
+// #2014: the tool Properties' label-left property grid and its groups.
+mod tool_settings_grid;
 mod tool_library;
 mod tool_preview;
 // #890: the tool editor's per-material cutting data.
@@ -149,6 +166,8 @@ mod wcs_pick_row;
 // #316: the setup page's "relative to the previous setup" control.
 mod setup_relative_pick;
 mod setup_workholding_row;
+// #3070: the guided sheet job checklist on the setup's Settings page.
+mod setup_sheet_job_row;
 // The operation dialog, split out of `pages` with the property grid
 // (user review 2026-11-06): the frame, the Geometry pick block, the
 // params dispatcher and its kind-family pages, the shared widgets.
@@ -170,7 +189,10 @@ mod wire_page;
 // #541: the Sinker Burn's fields.
 mod sinker_page;
 mod trochoid_page;
+// #1444: the Slot Undercut kind's fields.
+mod undercut_page;
 mod kind_editors;
+mod deburr_page;
 mod mill2d_more_page;
 mod mill2d_page;
 // #1815: 2D Pocket's "Rest machining" group on the Passes tab.
@@ -200,7 +222,7 @@ mod browser_tree;
 mod tree_entry;
 mod browser_pane;
 mod tree_menu;
-mod fixture_menu;
+pub(crate) mod fixture_menu;
 // #339 slice 6: the fixture library's Save / Insert dialogs.
 pub(crate) mod fixture_library_dialog;
 pub(crate) mod fixture_vise_dialog;
@@ -234,10 +256,12 @@ pub mod theme_files;
 // the view cube's pick law straight.
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
+pub(crate) mod display_menu;
 pub(crate) mod move_handles;
 pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
+mod world_verts;
 
 #[cfg(test)]
 mod tests;
@@ -306,6 +330,8 @@ mod machine_mode_tests;
 #[cfg(test)]
 mod debug_info_tests;
 #[cfg(test)]
+mod report_tests;
+#[cfg(test)]
 mod fresh_op_tests;
 #[cfg(test)]
 mod tool_number_tests;
@@ -352,8 +378,9 @@ mod sinker_machine_tests;
 mod rest_pocket_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
-/// selects the no-window proof (seeded document, fallback adapter, View3D
-/// readback); anything else opens the windowed shell.
+/// selects the no-window proof (seeded document, or the file named on the
+/// command line (#2648); fallback adapter, View3D readback); anything else
+/// opens the windowed shell.
 pub fn run(args: &[String]) -> i32 {
     // M4.2: the backend pick is validated before anything opens - a bad
     // name refuses by name (exit 2, the `--ui` shape), never silently auto.
@@ -387,17 +414,26 @@ pub fn run(args: &[String]) -> i32 {
         if pick != gpu::GpuPick::Auto || want.is_some() {
             diag_info!("gpu: --headless pins the fallback adapter for determinism; backend and adapter picks ignored");
         }
-        run_headless()
+        // #2648: a file named on a headless start opens there too, or is
+        // refused by name (rc 2) - never ignored.
+        match crate::launch_file::command(&crate::cli_options::files(args)) {
+            Ok(open) => run_headless(open),
+            Err(msg) => {
+                diag_warn!("egui shell headless: {msg}");
+                2
+            }
+        }
     } else {
-        run_windowed(pick, want, mcp_port)
+        // #2462: the file named on the command line opens in the window.
+        run_windowed(pick, want, mcp_port, &crate::cli_options::files(args))
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_headless() -> i32 {
-    match shell::headless::run() {
-        Ok(()) => {
-            diag_info!("egui shell headless: seeded document, command world, View3D green");
+fn run_headless(open: Option<crate::state::CommandKind>) -> i32 {
+    match shell::headless::run(open) {
+        Ok(drawn) => {
+            diag_info!("egui shell headless: {drawn}, View3D green");
             0
         }
         Err(err) => {
@@ -410,21 +446,21 @@ fn run_headless() -> i32 {
 /// #31: the headless proof blocks on the adapter and the readback; the
 /// browser build refuses it by name like the windowed entry.
 #[cfg(target_arch = "wasm32")]
-fn run_headless() -> i32 {
+fn run_headless(_open: Option<crate::state::CommandKind>) -> i32 {
     diag_warn!("{WASM_NO_WINDOW}");
     2
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>) -> i32 {
-    shell_window::run_windowed(pick, want, mcp_port)
+fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String]) -> i32 {
+    shell_window::run_windowed(pick, want, mcp_port, files)
 }
 
 /// #31: the browser build has no winit window to open - its shell is the
 /// web runner still owed on that issue - so the windowed entry refuses by
 /// name instead of pretending.
 #[cfg(target_arch = "wasm32")]
-fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>) -> i32 {
+fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>, _files: &[String]) -> i32 {
     diag_warn!("{WASM_NO_WINDOW}");
     2
 }

@@ -1,0 +1,3 @@
+kinds = ["Chamfering", "Multi-Pass Turning"]
+machine = "Lathe"
+expect = "Chamfer the bottom corner and rough and finish the step with multiple passes."

@@ -63,6 +63,7 @@ impl Shell {
             exit_requested,
             frame_watch,
             next_repaint,
+            capture,
             state,
             ..
         } = self;
@@ -94,7 +95,10 @@ impl Shell {
         view_pass::sync_scene(view, device, queue, &scene, scene_digest);
 
         let scale = window.scale_factor().clamp(0.1, 8.0);
-        let raw_input = winit_state.take_egui_input(window);
+        let mut raw_input = winit_state.take_egui_input(window);
+        // #1696: pictures the capture read-back finished arrive as egui's
+        // own Screenshot event, so the door that asked can match its token.
+        raw_input.events.extend(capture.drain_events());
 
         // Size the 3D target from last frame's layout, like the imgui shell.
         let want = view_pass::target_extent(*viewport_points, scale);
@@ -135,6 +139,17 @@ impl Shell {
             .map_or(std::time::Duration::MAX, |v| v.repaint_delay);
         let delay = view_pass::state_redraw_delay(state, egui_delay, followup_redraw);
         *next_repaint = delay.and_then(|d| now().checked_add(d));
+        // #1696: the Report door asked egui for a window picture. Record
+        // its token; this same frame's egui pass is the subject, so the
+        // dialog the user just pressed is in the picture too - the whole
+        // window, the picture a triage needs.
+        if let Some(root) = full_output.viewport_output.get(&egui::ViewportId::ROOT) {
+            for cmd in &root.commands {
+                if let egui::ViewportCommand::Screenshot(token) = cmd {
+                    capture.want(token.clone(), now());
+                }
+            }
+        }
         drain_textures(renderer, device, queue, &mut full_output);
         winit_state.handle_platform_output(window, full_output.platform_output);
 
@@ -174,7 +189,7 @@ impl Shell {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("egui-shell-frame"),
         });
-        view_pass::encode(state, view, stock_eye, device, queue, &mut encoder);
+        view_pass::encode(state, view, stock_eye, device, queue, &mut encoder, scale);
 
         // Pass 2: egui over the surface.
         let sd = ScreenDescriptor {
@@ -208,11 +223,55 @@ impl Shell {
             .forget_lifetime();
         renderer.render(&mut pass, &clipped, &sd);
         drop(pass);
+        // #1696: a wanted picture renders this same frame a second time
+        // into a private texture - egui re-draws the identical clipped
+        // primitives (the renderer keeps no per-frame state), the 3D view
+        // is an image widget reading its already-uploaded texture - then
+        // the copy to the read-back buffer rides this encoder. The surface
+        // keeps its own config; only the private texture carries COPY_SRC.
+        let shot = if capture.due(state, now()) {
+            capture.begin(device, [conf.width, conf.height], conf.format)
+        } else {
+            None
+        };
+        if let Some(shot) = &shot {
+            let mut cpass = encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("report-capture-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: shot.view(),
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                })
+                .forget_lifetime();
+            renderer.render(&mut cpass, &clipped, &sd);
+            drop(cpass);
+            shot.encode_copy(&mut encoder);
+        }
         frame_watch.mark("encode", now());
         let mut submits = extra;
         submits.push(buffer_encoder.finish());
         submits.push(encoder.finish());
         queue.submit(submits);
+        if let Some(shot) = shot {
+            shot.finish();
+        }
+        capture.pump(device);
+        if capture.busy() {
+            // A completion must reach a frame without waiting for input:
+            // keep redrawing while the read-back is outstanding (the
+            // capture's timeout bounds how long this can spin).
+            window.request_redraw();
+        }
         queue.present(st);
         frame_watch.mark("submit+present", now());
         if let Some(line) = frame_watch.end(now()) {

@@ -22,6 +22,13 @@ coolantModes = true;       // reads PARAM Coolant - to refuse every ask but Off
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; the plasma manuals read for this post state no more (#931)
 programUnits = "mm inch";  // #902: writes the document's unit (postOptions.Units), G21 / G20
+explains = "paren"; // #1389: PathPilot comments; torch meanings from UM10720 sections 7.1-7.2
+explainWords = {
+  G15: "PROBE PLATE", G16: "TORCH ON", M200: "LOAD PLASMA SETTINGS", M205: "TORCH OFF",
+  M207: { said: "PIERCE HEIGHT", takes: "P" },
+  M208: { said: "CUT HEIGHT", takes: "P" },
+  M209: { said: "PIERCE DELAY", takes: "P" }
+};
 
 // Determinism law: no timestamps, no randomness - the same stream always
 // posts to the same text (golden files depend on it).
@@ -57,7 +64,12 @@ function block(words) {
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) { writeln(a.join(" ")); atG30 = a.length === 1 && a[0] === "G30"; }
+  if (a.length > 0) {
+    var line = a.join(" "), c = explain(a);
+    if (c && line.length + 1 + c.length <= 80) line += " " + c;
+    writeln(line);
+    atG30 = a.length === 1 && a[0] === "G30";
+  }
 }
 function msg(s) { if (typeof message === "function") message(s); else writeln("(" + s + ")"); }
 function refuse(key, s) {  // once per key (an operation's name rides the key)
@@ -74,6 +86,8 @@ function clean(s) {
   return t.length > 40 ? t.substring(0, 40).trim() : t;
 }
 function note(s) { block(["(" + s + ")"]); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 
 // ------------------------------------------------------------- machine
 // This post writes words only PathPilot's plasma control reads (G15, G16,

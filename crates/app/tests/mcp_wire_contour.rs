@@ -96,8 +96,12 @@ fn prism(pts: &[(f64, f64)]) -> Mesh {
 /// A document with the synthetic wire EDM mounted from its file and a
 /// 40 x 20 slug imported.
 fn wire_job(tag: &str) -> Client {
+    wire_job_on(tag, WIRE)
+}
+
+fn wire_job_on(tag: &str, template: &str) -> Client {
     let dir = tmp_dir(tag);
-    let mut v: Value = serde_json::from_str(WIRE).expect("template json");
+    let mut v: Value = serde_json::from_str(template).expect("template json");
     v["edm"]["conditions"] = serde_json::from_str(TABLE).expect("conditions json");
     let mch = dir.join("wire.mch");
     std::fs::write(&mch, v.to_string()).expect("write mch");
@@ -148,6 +152,15 @@ fn wire_contour_is_added_with_a_wire_tool_edited_generated_undone_and_redone() {
         c.ok("redo", json!({}));
     }
     assert_eq!(c.side("W"), json!("punch"));
+}
+
+#[test]
+fn agiecut_template_refuses_a_wire_job_without_an_installed_condition() {
+    let mut client = wire_job("agiecut-template");
+    client.ok("load_machine", json!({ "builtin": "AGIECUT Classic 2S (template)" }));
+    let why = client.refused("add_operation", wire_args("C110"));
+    assert!(why.contains("states no EDM condition") && why.contains("edm.conditions"), "{why}");
+    assert_eq!(client.ok("get_job", json!({}))["operations"], json!([]));
 }
 
 #[test]
@@ -209,4 +222,21 @@ fn a_taper_edit_the_machine_cannot_post_is_a_tool_error() {
     let job = c.ok("get_job", json!({}));
     let op = job["operations"][0].to_string();
     assert!(!op.contains("\"taper_deg\":3"), "the refused taper never lands: {op}");
+}
+
+#[test]
+fn wire_contour_accepts_an_explicit_zero_taper_on_add_and_edit() {
+    let mut c = wire_job_on("zero-taper", include_str!("edm/wire-iso-fixture.mch"));
+    let mut args = wire_args("C110");
+    args["params"]["taper_deg"] = json!(0);
+    c.ok("add_operation", args);
+    let tapered = c.ok("edit_operation", json!({ "name": "W", "params": { "taper_deg": 3 } }));
+    assert_eq!(tapered["params"]["wire_contour"]["taper_deg"], json!(3.0));
+    let vertical = c.ok("edit_operation", json!({ "name": "W", "params": { "taper_deg": 0.0 } }));
+    assert!(vertical["params"]["wire_contour"].as_object().expect("wire parameters").get("taper_deg").is_none());
+
+    let why = c.refused("edit_operation", json!({ "name": "W", "params": { "taper_dge": 0 } }));
+    assert!(why.contains("unknown field taper_dge"), "{why}");
+    let why = c.refused("add_operation", json!({ "kind": "Face", "tool": "EDM-W025", "params": { "taper_deg": 0 } }));
+    assert!(why.contains("unknown field taper_deg"), "{why}");
 }

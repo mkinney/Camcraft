@@ -14,6 +14,9 @@ use egui_kittest::kittest::NodeT;
 
 use super::*;
 
+#[path = "structural/corner_relief.rs"]
+mod corner_relief;
+
 #[path = "tool_properties.rs"]
 mod tool_properties;
 
@@ -28,6 +31,9 @@ mod break_through;
 
 #[path = "structural/donate.rs"]
 mod donate;
+
+#[path = "structural/ops_count.rs"]
+mod ops_count;
 
 /// Every painted text of the last frame with its top-left, in paint order.
 pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)> {
@@ -117,6 +123,9 @@ fn assert_shell_skeleton(h: &Harness<'static, ShellUi>) {
     // Status strip: the status line and the Debug info door.
     let status = h.state().state.status.clone();
     assert!(status.starts_with("generated Contour1"), "seed status: {status}");
+    // #1696: the Report door stands beside it. The window it opens stays
+    // closed by the next pin (no floating window open by default).
+    assert!(h.get_by_label("Report an issue").rect().min.y > 600.0, "the Report door is on the status strip");
     assert!(shows(&status), "the status line paints {status:?}");
     assert!(h.query_by_label("Debug info").is_some(), "the Debug info door");
     // Every floating surface is closed by default.
@@ -173,9 +182,10 @@ fn shell_structure_light() {
     }
 }
 
-/// `egui_tool_editor.png`'s intent: Edit opens one floating window over
-/// the dock, titled by the tool, fields left of the to-scale profile,
-/// every field on the world's numbers, Apply/Close at its foot.
+/// #2397: `egui_tool_editor.png`'s intent, split in two. Properties keeps
+/// the tool settings; one floating window over the dock is the tool shape
+/// editor - titled by the tool, the holder library at its top, the Body /
+/// Profile tabs under it, Close at its foot.
 #[test]
 fn tool_editor_structure() {
     let _g = snapshot_guard();
@@ -183,62 +193,46 @@ fn tool_editor_structure() {
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
+    // The settings are Properties, with no second editable surface.
+    assert!(harness.query_by_label("Diameter").is_some(), "Properties owns the editable diameter");
+    assert!(
+        harness
+            .query_all_by_role(egui::accesskit::Role::Window)
+            .all(|n| n.accesskit_node().label().as_deref() != Some("Tool: EM-0600-4FL")),
+        "the old combined tool editor is gone"
+    );
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(3);
-    assert_eq!(harness.query_all_by_label("Diameter").count(), 1, "the explicit window owns the only editable tool surface");
     let win = harness
         .query_all_by_role(egui::accesskit::Role::Window)
-        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool: EM-0600-4FL"))
-        .expect("the explicit editor window is titled by the tool");
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
+        .expect("the shape editor window is titled by the tool");
     let wr = win.rect();
+    // The window owns the shape surface: the holder library first, then
+    // the Body / Profile tabs, then Close.
+    for label in ["Holder library", "Library holder", "Body", "Profile", "Close"] {
+        assert!(win.query_by_label(label).is_some(), "the shape window shows {label:?}");
+    }
+    assert!(
+        win.query_all_by_label("Diameter").next().is_none(),
+        "the settings do not stand in the shape window"
+    );
+    // The settings stay on the page behind it.
+    assert!(harness.query_by_label("Shank diameter").is_some(), "Properties keeps the settings");
     assert!(
         wr.min.x > 0.0 && wr.max.x < 1280.0 && wr.min.y > 0.0 && wr.max.y <= 720.0,
         "the editor floats inside the shell: {wr:?}"
     );
-    // Fields in their order, each on the seed tool's number.
-    let fields = [
-        ("Diameter", "6.0 mm"),
-        ("Corner radius", "0.0 mm"),
-        ("Flute length", "15.0 mm"),
-        ("Shank diameter", "8.0 mm"),
-        ("Shank length", "40.0 mm"),
-        ("Holder diameter", "44.0 mm"),
-        ("Holder length", "35.0 mm"),
-        ("Spindle rpm", "9500.0"),
-        ("Feed (mm/min)", "1800.0 mm/min"),
-    ];
-    let spins: Vec<_> = win.get_all_by_role(egui::accesskit::Role::SpinButton).collect();
-    let mut last_y = f32::MIN;
-    for (label, value) in fields {
-        let y = win.get_by_label(label).rect().center().y;
-        assert!(y > last_y, "{label:?} must follow the field above it");
-        last_y = y;
-        assert!(
-            spins.iter().any(|s| s.value().as_deref() == Some(value)),
-            "the editor must show {label:?} = {value}"
-        );
-    }
-    // Fields on the left half; the right half is the painted profile.
-    assert!(
-        win.get_by_label("Shank diameter").rect().max.x < wr.center().x,
-        "fields sit left of the profile"
-    );
-    assert!(win.query_by_label("Centre cutting (may plunge into solid)").is_some());
-    assert!(win.query_by_label("Apply").is_some() && win.query_by_label("Close").is_some());
-    assert!(
-        win.get_by_label("Apply").rect().min.y >= last_y,
-        "Apply sits at the window's foot"
-    );
 }
 
-/// #93 slice 3: the Draw cutter view's parameters stand in the editor's
-/// third column, right of the fields and the profile, in the order the
-/// tool is drawn (cutter, flutes, shank, neck), above Apply cutter.
+/// #93 slice 3: the Draw cutter view's parameters stand in the shape
+/// window under the tabs, in the order the tool is drawn (cutter, flutes,
+/// shank), above Apply cutter.
 #[test]
 fn tool_cutter_params_structure() {
     let mut harness = shell_harness();
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(2);
     harness.get_by_label("Profile").click();
     harness.run();
@@ -246,14 +240,12 @@ fn tool_cutter_params_structure() {
     harness.run_steps(2);
     let win = harness
         .query_all_by_role(egui::accesskit::Role::Window)
-        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool: EM-0600-4FL"))
-        .expect("the editor window");
-    let fields_right = win.get_by_label("Shank diameter").rect().max.x;
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
+        .expect("the shape editor window");
     let mut last_y = f32::MIN;
     for label in ["cutter Ø", "flutes", "shank Ø", "Neck", "Apply cutter"] {
         let r = win.get_by_label(label).rect();
         assert!(r.center().y > last_y, "{label:?} must follow the row above it");
-        assert!(r.min.x > fields_right, "{label:?} sits in the third column");
         last_y = r.center().y;
     }
     assert!(win.get_by_label("shank length").rect().min.x > win.get_by_label("shank Ø").rect().max.x, "shank length beside shank Ø");

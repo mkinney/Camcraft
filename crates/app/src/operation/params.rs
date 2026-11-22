@@ -4,7 +4,7 @@
 //! Provenance: our own digest law over this repo's operation registry.
 
 use super::*;
-use digest::{w, wt};
+use digest::{w, write_corner_relief, wt};
 
 impl OpParams {
     /// The digest-relevant scalars, written to a hasher in a fixed
@@ -101,6 +101,7 @@ impl OpParams {
                 blend_turns,
                 links: _,
                 tilt,
+                chain_overrides,
             } => {
                 w(h, *stock_to_leave);
                 wh(h, *clearance_z);
@@ -160,11 +161,29 @@ impl OpParams {
                 if *blend_turns {
                     h.write_u8(0xB1);
                 }
+                if !chain_overrides.is_empty() {
+                    h.write(b"chain-overrides");
+                    let mut sorted: Vec<_> = chain_overrides.iter().collect();
+                    sorted.sort_by(|a, b| a.entity.cmp(&b.entity).then(a.chain.cmp(&b.chain)));
+                    h.write_usize(sorted.len());
+                    for o in sorted {
+                        h.write_usize(o.entity.len());
+                        h.write(o.entity.as_bytes());
+                        h.write(&o.chain.0.to_le_bytes());
+                        h.write_u8(match o.side {
+                            None => 0,
+                            Some(ChainSide::Inside) => 1,
+                            Some(ChainSide::Outside) => 2,
+                        });
+                        h.write_u8(u8::from(o.reverse));
+                    }
+                }
                 // The level links ride the shared tail below (M11.2).
             }
             OpParams::Pocket {
                 blend_radius,
                 rest,
+                corner_relief,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -235,6 +254,7 @@ impl OpParams {
                         w(h, v);
                     }
                 }
+                write_corner_relief(corner_relief, h);
             }
             // The roughing twins (M2.4 A): the pocket's digest minus
             // the strategy byte - the kind tag at the head already
@@ -243,6 +263,7 @@ impl OpParams {
             OpParams::Adaptive2D {
                 blend_turns,
                 blend_radius,
+                corner_relief,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -310,6 +331,7 @@ impl OpParams {
                         w(h, *r);
                     }
                 }
+                write_corner_relief(corner_relief, h);
             }
             OpParams::Offset2D { .. }
             | OpParams::Slot { .. }
@@ -350,6 +372,7 @@ impl OpParams {
             OpParams::WireContour { .. }
             | OpParams::SinkerBurn { .. }
             | OpParams::SinkerSideBurn { .. }
+            | OpParams::SlotUndercut { .. }
             | OpParams::PlasmaProfile { .. } => self.stamp_cutting(world, setup, src, h),
         }
         self.stamp_links(h);

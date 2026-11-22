@@ -9,7 +9,7 @@
 use crate::approach::CENTER_CUT_REFUSAL;
 use crate::cl::{MoveKind, PathBuilder};
 use crate::entry::{Entry3D, chord_hits_plan};
-use crate::geo2d::Point2;
+use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 use crate::links::{Link, LinkTally, Links, NOT_PROVED, TOO_LONG};
 
@@ -17,6 +17,7 @@ use super::arcs::Seg;
 use super::descent::{Cuts, Lvl, entry_restart, feed_down, plan, push, restart, start};
 use crate::plunge_law;
 use super::levels::{Cert, Motion};
+use super::slots::chord_clears;
 
 /// One pass's place in the ladder, as a descent onto it reads it.
 pub(super) struct LevelWalk<'a> {
@@ -27,6 +28,9 @@ pub(super) struct LevelWalk<'a> {
     pub prev_z: f64,
     /// The material's top at this level (M11.3 B's plunge height).
     pub mat_top: f64,
+    /// Previous level's cutter-center region when per-level keep-outs vary
+    /// with height (#2055); `None` shares `cert`.
+    pub prev_center: Option<&'a Region>,
 }
 
 /// What the links remember across one ladder: the lifts to name, and the
@@ -117,7 +121,14 @@ pub(super) fn level_link(
             let l = Lvl { cen, passes: lv.passes, pass: lv.pass, walk: lv.walk, mat_top: lv.mat_top };
             let d = plan(arm, zig, &l, at, lv.z, lv.prev_z, m);
             let s = start(&d, &l, at, m);
-            match link_proof(cen, &[lv.passes, &st.level], at, s, &m.links) {
+            match link_proof(cen, &[lv.passes, &st.level], at, s, &m.links)
+                .and_then(|()| {
+                    if lv.prev_center.is_none_or(|pc| chord_clears(pc, at, s)) {
+                        Ok(())
+                    } else {
+                        Err(NOT_PROVED)
+                    }
+                }) {
                 Ok(()) => {
                     b.push(MoveKind::Feed, Point3::new(s.x, s.y, lv.prev_z), Some(m.feed));
                     push(b, &d, &l, lv.z, lv.prev_z, m)
@@ -183,7 +194,7 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
     {
         let l = Lvl { cen, passes, pass: lv.pass, walk: lv.walk, mat_top };
         let from = (mat_top + m.links.approach.plunge_height).min(plane);
-        let d = if cc { entry_restart(&l, at, z, from, m) } else { restart(&l, at, z, from, m) };
+        let d = if cc { entry_restart(&l, at, z, from, m) } else { restart(b, &l, at, z, from, plane, m) };
         st.level.extend(push(b, &d, &l, z, plane, m));
         return;
     }

@@ -154,7 +154,7 @@ pub fn adaptive_trochoidal_with(region: &Region, p: &PocketParams, t: &AdaptiveT
     let (clean, final_cleared) =
         plan_cleanup(&center, &reach, &planned.used_center, &planned.cleared, p.tool_diameter, p.optimal_load, p.climb, t)?;
 
-    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
+    let zs = super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,p.bottom_z, p.stepdown)?;
     let hop = p.retract_z.unwrap_or(p.clearance_z);
     let p3 = |q: Point2, z: f64| Point3::new(lattice(q.x), lattice(q.y), lattice(z));
     let first_entry = planned.layouts[0].entry;

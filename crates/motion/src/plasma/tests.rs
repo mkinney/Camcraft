@@ -34,6 +34,7 @@ fn params() -> PlasmaParams {
         cut_height: None,
         pierce_delay: None,
         model_excess: 0.0,
+        file_tolerance: false,
     }
 }
 

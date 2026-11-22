@@ -66,6 +66,9 @@ pub enum Side {
     Outside,
 }
 
+/// A cut level this near the tab top is the tab top (mm, #2579).
+const TAB_LEVEL_TOL: f64 = 1e-6;
+
 /// 2D contouring: trim a material region's boundary at successive depths.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContourParams {
@@ -218,6 +221,31 @@ impl ContourParams {
     /// Cut levels from `top_z` down to `bottom_z`, always ending exactly
     /// at the bottom (same snap rule as facing rows).
     pub(super) fn levels(&self) -> Result<Vec<f64>, GenError> {
-        super::levels::cut_levels_under(self.top_z, self.links.approach.stock_top, self.bottom_z, self.stepdown)
+        super::equal_steps::cut_levels_for(self.top_z, &self.links.approach,self.bottom_z, self.stepdown)
+    }
+
+    /// [`Self::levels`] for a closed ring, with the tab top as a level
+    /// (#2579): a ring is cut whole down to `bottom_z + tab_height` and
+    /// with tab windows below it, so the tab is `tab_height` tall for any
+    /// stepdown. Without that level the last whole ring was the stepdown
+    /// level above the tab top, and the tab stood up to it. A level
+    /// within [`TAB_LEVEL_TOL`] of the tab top becomes the tab top itself
+    /// (a float one step under it would carry the tabs). A tab top at or
+    /// above Top Z adds nothing: every level carries the tabs. An open
+    /// run has no tabs and reads [`Self::levels`].
+    pub(super) fn ring_levels(&self) -> Result<Vec<f64>, GenError> {
+        let mut zs = self.levels()?;
+        if self.tab_count == 0 || self.tab_height <= TAB_LEVEL_TOL {
+            return Ok(zs);
+        }
+        // The same sum the tabbed-level test reads (`contour::emit_band`).
+        let tab_top = self.bottom_z + self.tab_height;
+        if let Some(z) = zs.iter_mut().find(|z| (**z - tab_top).abs() <= TAB_LEVEL_TOL) {
+            *z = tab_top;
+        } else if tab_top < self.top_z - TAB_LEVEL_TOL {
+            let at = zs.iter().position(|&z| z < tab_top).unwrap_or(zs.len());
+            zs.insert(at, tab_top);
+        }
+        Ok(zs)
     }
 }

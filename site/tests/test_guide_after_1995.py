@@ -40,6 +40,13 @@ class GuideAfter1995(unittest.TestCase):
         self.assertIn("tool information", tools)
         self.assertIn("tool library", tools)
 
+    def test_tools_page_covers_pathpilot_and_hurco_tool_tables(self):
+        tools = read_page("set-up/tools.md")
+        for fact in ("pathpilot", "offsets", "pathpilot hub", ".csv",
+                     "hurco", ".tcm", "absolutegaugelength", "t<n>"):
+            with self.subTest(fact=fact):
+                self.assertIn(fact, tools)
+
     def test_contour_slot_and_bore_changes_are_documented(self):
         ops = read_page("operations/operations-2d.md")
         refusals = read_page("reference/refusals.md")

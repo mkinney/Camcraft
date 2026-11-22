@@ -15,10 +15,13 @@ use super::arc_cross::post_crossing_free;
 use super::blend_cross::{Bans, Blend, post_blended_crossing_free, round_walks};
 use super::arc_proof::{ProofTally, fit_proved};
 use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
+use super::corner_relief::ResolvedRelief;
+use super::corner_relief_spur::inject_relief_spurs;
 use super::face::GenError;
 use super::fillet::Legal;
 use super::fillet_tally::corner_arc_radius;
-use super::levels::{Cert, Motion, cut_levels_under, run_level_walks};
+use super::equal_steps::cut_levels_for;
+use super::levels::{Cert, Motion, run_level_walks};
 use super::pocket::{PocketParams, PocketStrategy};
 use super::pocket_hsm::EntryRoom;
 use super::predrilled::PreHole;
@@ -33,6 +36,7 @@ pub(super) struct PocketWalks<'a> {
     pub(super) joins: Vec<Option<Return>>,
     pub(super) hold_crossings: bool,
     pub(super) holes: &'a [PreHole],
+    pub(super) corner_reliefs: &'a [ResolvedRelief],
 }
 
 /// Fit, optionally fillet, descend, link, and post `walks` across all Z levels.
@@ -50,6 +54,7 @@ pub(super) fn emit_pocket_passes(
         joins,
         hold_crossings,
         holes,
+        corner_reliefs,
     } = walks;
     // The horizontal arc entry (M11.3) lands on the first pass: a closed
     // first ring starts mid its longest edge, where an arc has room.
@@ -65,7 +70,7 @@ pub(super) fn emit_pocket_passes(
         center,
         p.links.approach.predrilled && room.is_none(),
     );
-    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_for(p.top_z, &p.links.approach, p.bottom_z, p.stepdown)?;
     let fit = match strategy {
         PocketStrategy::Zigzag | PocketStrategy::Auto => None,
         PocketStrategy::Waterline | PocketStrategy::OffsetRings => Some(ARC_FIT_TOL),
@@ -106,15 +111,30 @@ pub(super) fn emit_pocket_passes(
         None => Cert::Region(center),
     };
     let post = |b: &mut PathBuilder, runs: Option<&[Vec<Seg>]>| {
-        run_level_walks(
-            b,
-            &passes,
-            &zs,
-            &motion,
-            runs,
-            Some(&cert),
-            Some(&Cert::Region(links_center)),
-        );
+        if corner_reliefs.is_empty() {
+            run_level_walks(
+                b,
+                &passes,
+                &zs,
+                &motion,
+                runs,
+                Some(&cert),
+                Some(&Cert::Region(links_center)),
+            );
+        } else {
+            let mut passes_r = passes.clone();
+            let mut runs_r = runs.map(<[Vec<Seg>]>::to_vec);
+            inject_relief_spurs(&mut passes_r, &mut runs_r, center, corner_reliefs);
+            run_level_walks(
+                b,
+                &passes_r,
+                &zs,
+                &motion,
+                runs_r.as_deref(),
+                Some(&cert),
+                Some(&Cert::Region(links_center)),
+            );
+        }
         let cur = b.at();
         b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
     };
@@ -126,6 +146,18 @@ pub(super) fn emit_pocket_passes(
             strategy,
             PocketStrategy::Adaptive | PocketStrategy::OffsetRings | PocketStrategy::Waterline
         );
+    let mut seed_bans = Bans::default();
+    if blend.is_some() && !corner_reliefs.is_empty() {
+        for (pi, pass) in passes.iter().enumerate() {
+            for r in corner_reliefs {
+                for &pt in pass {
+                    if (pt.x - r.start.x).hypot(pt.y - r.start.y) <= 1e-4 {
+                        seed_bans.ban(pi, pt);
+                    }
+                }
+            }
+        }
+    }
     let mut path = match (blend, fitted) {
         (Some(blend), fitted) => {
             let base = fitted
@@ -133,9 +165,9 @@ pub(super) fn emit_pocket_passes(
             if hold_fitted {
                 // #2317: the law on the rounded walks, one corner arc
                 // at a time - a crossing never costs a pass its arcs.
-                post_blended_crossing_free(b, &passes, base, &blend, &mut proof, post)
+                post_blended_crossing_free(b, &passes, base, &blend, &seed_bans, &mut proof, post)
             } else {
-                let rounded = round_walks(&passes, &base, &blend, &Bans::default());
+                let rounded = round_walks(&passes, &base, &blend, &seed_bans);
                 for n in rounded.notes() {
                     b.note(n);
                 }
@@ -225,6 +257,7 @@ mod tests {
                 joins: Vec::new(),
                 hold_crossings: false,
                 holes: &[],
+                corner_reliefs: &[],
             },
         ) else {
             panic!("emit_pocket_passes")

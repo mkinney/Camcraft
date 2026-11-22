@@ -100,9 +100,11 @@ pub fn missing_source(
                 .then_some("no stock yet - set it up in Setup > Stock")
         }
         HeightReference::TopOfModel | HeightReference::BottomOfModel => {
-            crate::setup_align::part_aabb_in(world, setup)
-                .is_none()
-                .then_some("no model loaded")
+            // #1862: a virtual model reference is a model with no solid,
+            // so it has no top or bottom - said by name, not "no model".
+            crate::setup_align::part_aabb_in(world, setup).is_none().then(|| {
+                if crate::sketch_model::of(world, setup).is_some() { crate::sketch_model::NO_SOLID_HEIGHT } else { "no model loaded" }
+            })
         }
         HeightReference::WorkOffset => crate::setup::wcs_entity(world, setup)
             .is_none()
@@ -183,6 +185,8 @@ pub fn region_z(
         OpParams::WireContour(p) => resolve(p.top_z),
         // The electrode enters at the work top (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(crate::operation::SinkerSideBurnOp { burn: p, .. }) => resolve(p.top_z),
+        // #1444: the material top over the slot.
+        OpParams::SlotUndercut(p) => resolve(p.top_z),
     }
 }
 
@@ -427,6 +431,14 @@ pub fn resolve_params_with(
             Some(req("Cavity Floor Z", p.floor_z)?),
             None,
             None,
+        ),
+        // #1444: the undercut's floor is its only cut plane.
+        OpParams::SlotUndercut(p) => (
+            req("Clearance Z", p.clearance_z)?,
+            Some(req("Top of Part Z", p.top_z)?),
+            Some(req("Bottom of Part Z", p.bottom_z)?),
+            None,
+            opt("Retract Z", p.retract_z)?,
         ),
     };
     Ok(ResolvedHeights { clearance, top, bottom, face_top, retract })

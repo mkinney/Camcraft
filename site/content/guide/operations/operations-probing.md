@@ -16,6 +16,12 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## Probe
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-probe" /> }} ![View of a probe approaching a surface, measuring and backing off.](../../../operation-paths.svg#Probe)
 
 **For:** measuring the part on the machine with a spindle touch probe and

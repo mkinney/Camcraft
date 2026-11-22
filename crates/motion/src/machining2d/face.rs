@@ -131,9 +131,12 @@ pub fn face_led(region: &Region, p: &FaceParams, lead: f64) -> Result<Toolpath, 
 }
 
 /// [`face_led`] told where material stands above the face: `solid` is
-/// that outline (M13.11), read only under [`FaceHoles::CutAir`] to tell
+/// that outline (M13.11), read under [`FaceHoles::CutAir`] to tell
 /// an air hole (cut straight across) from an island (lifted over);
-/// `None` lifts over every hole and says so in the notes. Each row is
+/// `None` lifts over every hole and says so in the notes. Under
+/// [`FaceHoles::Lift`] `solid` is the material standing at or above
+/// the face (#2437): a hole it does not touch is below the cut plane
+/// and is not bridged; `None` bridges every hole. Each row is
 /// clipped to keep the tool centre a radius out of every bridged hole
 /// (`face_holes`), the pieces are cut in row order, and the row crosses
 /// a bridged hole through the clearance plane - up, across, plunge -

@@ -45,6 +45,7 @@ fn contour(top_z: Height) -> OpParams {
         blend_turns: false,
         tilt: None,
         links: Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 

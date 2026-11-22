@@ -28,6 +28,8 @@
 
 pub(crate) mod api;
 mod call;
+// #1862: `cam.importDxf` and the profile view.
+pub(crate) mod dxf;
 pub use api::refusal_text;
 mod report;
 #[cfg(test)]
@@ -88,8 +90,9 @@ pub(crate) const VERBS: &[Verb] = &[
     Verb::new("load", 1, api::v_load, "load(path: string): DocumentInfo"),
     Verb::new("save", -1, api::v_save, "save(path?: string): { path: string }"),
     Verb::new("import", -1, api::v_import, "import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number; notes?: string[] }"),
-    Verb::new("exportTools", 1, api::v_export_tools, "exportTools(path: string): { path: string; tools: number }"),
-    Verb::new("importTools", -1, api::v_import_tools, "importTools(path: string, mode?: \"add\" | \"update\" | \"replace\", holders?: boolean): { path: string; mode: string; added: string[]; renamed: { from: string; to: string }[]; skipped: string[]; updated: string[]; replaced: string[]; removed: string[]; holders: number; holders_left_out: number; summary: string }"),
+    Verb::new("importDxf", -1, dxf::v_import_dxf, "importDxf(path: string, options?: { setup?: string; units?: \"mm\" | \"in\"; join_tol?: number; name?: string }): DxfProfile"),
+    Verb::new("exportTools", -1, api::v_export_tools, "exportTools(path: string, format?: \"auto\" | \"camtools\" | \"pathpilot\" | \"hurco\", units?: \"mm\" | \"inch\"): { path: string; tools: number; format: string }"),
+    Verb::new("importTools", -1, api::v_import_tools, "importTools(path: string, mode?: \"add\" | \"update\" | \"replace\", holders?: boolean, format?: \"auto\" | \"camtools\" | \"pathpilot\" | \"hurco\", units?: \"mm\" | \"inch\"): { path: string; format: string; mode: string; added: string[]; renamed: { from: string; to: string }[]; skipped: string[]; updated: string[]; replaced: string[]; removed: string[]; holders: number; holders_left_out: number; summary: string }"),
     Verb::new("operations", 0, api::v_operations, "operations(): OperationInfo[]"),
     Verb::new("generate", -1, api::v_generate, "generate(...names: string[]): OperationInfo[]"),
     Verb::new("verify", -1, api::v_verify, "verify(...names: string[]): VerifyReport"),
@@ -329,6 +332,28 @@ interface OperationInfo {
   warnings?: string[];
 }
 
+/** A DXF profile placed on the stock of a setup (not a model). */
+interface DxfProfile {
+  profile: string;
+  /** null for the implicit first setup. */
+  setup: string | null;
+  /** stated: the file's own unit (null: none stated); used: the unit the drawing was read in. */
+  units: { stated: string | null; used: string; from: "file" | "caller"; mm_per_unit: number };
+  layers: string[];
+  primitives: number;
+  join_tol: number;
+  chains: { closed: number; open: number; rejected: number };
+  /** Skipped DXF entities, counted by kind (TEXT, DIMENSION, ...). */
+  skipped: { [kind: string]: number };
+  skipped_total: number;
+  bounds: { min: number[]; max: number[] } | null;
+  /** On the top face of the setup's stock, from the stock origin: mm and degrees. */
+  placement: { x: number; y: number; angle: number };
+  origin: number[] | null;
+  rotation: number[] | null;
+  summary?: string;
+}
+
 interface DocumentInfo {
   path: string;
   operations: OperationInfo[];
@@ -349,7 +374,7 @@ interface PostOptions {
   /** The .nc (or .cnc) file to write. Required. */
   to: string;
   /** A built-in post name - "Fanuc", "Haas", "Siemens 840D",
-   *  "Heidenhain", "Mazak", "Tormach PathPilot", "grblHAL", "TinyG" - or the
+   *  "Heidenhain", "Mazak", "Tormach PathPilot", "grblHAL", "TinyG", "LinuxCNC" - or the
    *  path of a .cps file.
    *  Omitted means the document's own post. */
   cps?: string;

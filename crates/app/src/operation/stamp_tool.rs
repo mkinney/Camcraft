@@ -41,6 +41,11 @@ pub(super) fn write(world: &World, tool_name: &str, params: &OpParams, h: &mut s
         crate::tools::ToolKind::ThreadMillSingle => 15,
         crate::tools::ToolKind::Waterjet => 16,
         crate::tools::ToolKind::Wire => 17,
+        // #1444: the undercut cutters append.
+        crate::tools::ToolKind::TSlot => 18,
+        crate::tools::ToolKind::Keyseat => 19,
+        crate::tools::ToolKind::Dovetail => 20,
+        crate::tools::ToolKind::Lollipop => 21,
     });
     for v in [
         tool.diameter,

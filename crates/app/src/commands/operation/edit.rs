@@ -108,12 +108,15 @@ impl EditOperationParams {
                 prev.params.kind()
             )));
         }
+        // #2599: new angles on a legacy tilt take the current frame basis.
+        let params = params.with_stepped_tilt_basis(&prev.params);
         infeed_plan_gate(world, &params, &prev.tool)?;
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
         }
-        // #1445: a dwell that is not a time from 0 to the bound, by name.
-        if let Some(why) = params.dwell_refusal() {
+        // #1445: a dwell that is not a time from 0 to the bound, or a fine
+        // bore with no usable shift, by name.
+        if let Some(why) = params.dwell_refusal().or_else(|| params.fine_bore_refusal()) {
             return Err(CommandError::Invalid(why));
         }
         sinker_gate(world, prev.setup.as_deref(), &params)?;
@@ -128,13 +131,22 @@ impl EditOperationParams {
         super::gates::thread_gate(world, &params, &prev.tool)?;
         // #1489: the rest group's previous tool against the mounted one.
         super::gates::rest_gate(world, &params, &prev.tool)?;
-        if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
+        if let Some(msg) = crate::operation::side_sane(world, &params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
         // #532 / #2011: an edited wire cut still agrees with its wire tool
         // and states a condition with spark gap < wire radius.
         wire_gate(world, prev.setup.as_deref(), &prev.tool, &params)?;
         let area = area.unwrap_or_else(|| prev.area.clone());
+        if !area.do_not_touch.is_default() {
+            super::do_not_touch::validate_do_not_touch(
+                world,
+                params.kind(),
+                &area.do_not_touch,
+                Some(&prev.src),
+                &area,
+            )?;
+        }
         if !area.is_sane_for(&params) {
             return Err(CommandError::Invalid(match operation::area_unsupported(params.kind()) {
                 None => "the Boundary settings are not usable - distances must be finite, within 10 m, the extension not negative, and every boundary must name its picks".to_string(),
@@ -143,7 +155,7 @@ impl EditOperationParams {
         }
         let picks: Vec<_> = area.picks().cloned().collect();
         if !picks.is_empty() {
-            valid_src(world, prev.setup.as_deref(), &SrcRef::Selection(picks))?;
+            valid_src(world, prev.setup.as_deref(), &SrcRef::Selection(picks), &params)?;
         }
         // The Apply door for the boundary shapes (M11.5 UX): an include /
         // exclude spelling an open chain is refused here, by name, never
@@ -208,6 +220,8 @@ impl ChangeOperationKind {
             )));
         }
         family_gate(world, prev.setup.as_deref(), &params)?;
+        // #1862: the new kind on the source the operation keeps.
+        super::gates::sketch_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
         infeed_plan_gate(world, &params, &prev.tool)?;
         sinker_gate(world, prev.setup.as_deref(), &params)?;
         tool_door(world, &params, &prev.tool)?;
@@ -221,7 +235,7 @@ impl ChangeOperationKind {
             )));
         }
         heights_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
-        if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
+        if let Some(msg) = crate::operation::side_sane(world, &params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
         // The retype is a creation of the new kind against the op's
@@ -232,6 +246,11 @@ impl ChangeOperationKind {
         // The area controls ride the retype when the new kind has an
         // area (M11.5); a kind without one keeps the identity, never
         // controls it cannot honor.
+        if !prev.area.do_not_touch.is_default()
+            && let Some(why) = crate::operation::do_not_touch_unsupported(params.kind())
+        {
+            return Err(CommandError::Invalid(why));
+        }
         let area = if operation::area_applies(params.kind()) {
             prev.area.clone()
         } else {
@@ -288,9 +307,15 @@ impl EditOperationLinks {
             if tool != prev.tool {
                 tool_gate(world, &next.params, tool)?;
                 // #890: the new tool's row for the document material
-                // seeds the op's milling feed (same undo step).
+                // seeds the op's milling feed; #2598: a Drill or Thread
+                // op takes the new tool's stated feed (same undo step).
                 if let Some(t) = model::find_by_name(world, tool).and_then(|e| model::tool_of(world, &e))
-                    && let Some(p) = crate::cutting_rows::reseeded_params(&next.params, &t, crate::stock_material::in_force(world, prev.setup.as_deref()))
+                    && let Some(p) = crate::cutting_rows::retargeted_params(
+                        &next.params,
+                        &t,
+                        crate::stock_material::in_force(world, prev.setup.as_deref()),
+                        crate::cutting::material_of(world),
+                    )
                 {
                     next.params = p;
                 }
@@ -299,11 +324,11 @@ impl EditOperationLinks {
             wire_gate(world, prev.setup.as_deref(), tool, &next.params)?;
         }
         if let Some(src) = src {
-            valid_src(world, prev.setup.as_deref(), &src)?;
+            valid_src(world, prev.setup.as_deref(), &src, &next.params)?;
             // Retargeting onto a whole-model source under Inside would
             // arm the mirror law; refused here, and backstopped at
             // generate for commands that arrive via file load.
-            if let Some(msg) = crate::operation::side_sane(&next.params, &src) {
+            if let Some(msg) = crate::operation::side_sane(world, &next.params, &src) {
                 return Err(CommandError::Invalid(msg));
             }
             // From: Selection heights re-resolve against the NEW source
@@ -316,6 +341,16 @@ impl EditOperationLinks {
                 heights_gate(world, prev.setup.as_deref(), &src, &next.params)?;
             }
             area_gate(world, prev.setup.as_deref(), &src, &next.params)?;
+            if !next.area.do_not_touch.is_empty()
+                && let Some(why) = crate::operation::avoid_overlap_issue(
+                    world,
+                    &next.area.do_not_touch.picks,
+                    Some(&src),
+                    &next.area,
+                )
+            {
+                return Err(CommandError::Invalid(why));
+            }
             next.src = src;
         }
         Ok(EditOperationLinks { name: name.to_string(), prev, next })

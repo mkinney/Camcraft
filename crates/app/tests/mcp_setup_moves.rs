@@ -106,6 +106,28 @@ fn move_an_operation_delete_the_emptied_setup_and_undo_redo_both() {
     assert_eq!(c.shape().1[0].1, json!("Back"));
 }
 
+/// #3022: operations made with no setup and moved one by one into a new
+/// named setup keep the program order. Before the fix they re-sorted by
+/// name (a tap before its tap drill).
+#[test]
+fn moving_operations_into_a_named_setup_keeps_the_program_order() {
+    let mut c = Client::new();
+    c.ok("set_stock", json!({ "box": { "dx": 60.0, "dy": 60.0, "dz": 20.0 } }));
+    c.ok("add_tool", json!({ "catalog": "EM-0400-2FL" }));
+    let program = ["Zeta", "Alpha", "Mid"];
+    for name in program {
+        c.ok("add_operation", json!({ "kind": "Face", "tool": "EM-0400-2FL", "name": name }));
+    }
+    let order = |c: &mut Client| c.shape().1.into_iter().map(|(n, _)| n).collect::<Vec<_>>();
+    assert_eq!(order(&mut c), program);
+    c.ok("add_setup", json!({ "name": "PlateSetup" }));
+    for name in program {
+        c.ok("set_operation_setup", json!({ "operation": name, "setup": "PlateSetup" }));
+        assert_eq!(order(&mut c), program, "after the move of {name}");
+    }
+    assert!(c.shape().1.iter().all(|(_, s)| *s == json!("PlateSetup")));
+}
+
 #[test]
 fn refusals_name_their_cause_and_change_nothing() {
     let (mut c, op) = two_setups();

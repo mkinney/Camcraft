@@ -12,13 +12,16 @@
 //! capped before any bulk allocation, so a corrupt header cannot OOM us.
 
 pub mod feature;
+mod mesh_solids;
 mod primitives;
+pub mod shared_edge;
 pub mod repair;
 pub mod revision;
 pub mod slice;
 mod slice_bodies;
 mod slice_weld;
 pub mod stock;
+pub mod stock_axis;
 pub mod units;
 
 pub use primitives::{cube, cylinder};
@@ -267,6 +270,9 @@ impl Aabb {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Mesh {
     pub facets: std::sync::Arc<[Triangle]>,
+    /// One index range of `facets` per closed solid, in order, when the
+    /// importer knew them (#917, `mesh_solids`); empty means one soup.
+    pub solids: std::sync::Arc<[std::ops::Range<usize>]>,
 }
 
 impl Mesh {
@@ -277,13 +283,14 @@ impl Mesh {
     pub fn from_facets(facets: Vec<Triangle>) -> Self {
         Mesh {
             facets: facets.into(),
+            solids: std::sync::Arc::from([]),
         }
     }
 
     /// Share an existing immutable buffer - the streaming importers hand
     /// over their finished slice without a copy.
     pub fn from_shared(facets: std::sync::Arc<[Triangle]>) -> Self {
-        Mesh { facets }
+        Mesh { facets, solids: std::sync::Arc::from([]) }
     }
 
     pub fn is_empty(&self) -> bool {

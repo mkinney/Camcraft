@@ -22,11 +22,12 @@
 //!   then calls the very function it called before #326, so an untouched
 //!   setup is byte-identical (paths, stamps, posts and saved files).
 //! - **Refuse what is not verified.** Generation in an aligned setup is
-//!   wired for the 17 verified 2D/3D/hole mill kinds (`Face`, `Contour`,
+//!   wired for the 18 verified 2D/3D/hole mill kinds (`Face`, `Contour`,
 //!   `Pocket`, `Adaptive2D`, `Offset2D`, `Trace`, `Engrave`, `Chamfer2D`,
 //!   `Circular`, `Slot`, `TrochoidalSlot`, `Drill`, `Bore`, `Thread`,
-//!   `Deburr`, `Pocket3D`, `Finish3D` - area controls and `Detect holes`
-//!   included: #1743, #2210, #2276) on `Mill` and `MillTurn`, the 10
+//!   `Deburr`, `Pocket3D`, `Finish3D`, `Probe` - area controls and
+//!   `Detect holes` included: #1743, #2210, #2276; the probe's pick
+//!   reads the setup frame: #2285) on `Mill` and `MillTurn`, the 10
 //!   5-axis and rotary kinds (`Contour5D`, `Parallel5D`, `Swarf`,
 //!   `AdvancedSwarf`, `RotaryContour`, `RotaryParallel`, `RotaryOffset`,
 //!   `MultiAxisRough`, `Flow5D`, `MultiAxisContour`; `drive_chains` and
@@ -34,7 +35,7 @@
 //!   turning kinds on `MillTurn`, all 12 turning kinds and `Drill` on
 //!   `Lathe`, `PlasmaProfile` on `Plasma`, `WireContour` (including 4-axis
 //!   ruled picks) on `WireEdm`, and `SinkerBurn` (including
-//!   `electrode_from_faces`) on `SinkerEdm`. `Probe`, 5-axis/rotary on
+//!   `electrode_from_faces`) on `SinkerEdm`. 5-axis/rotary on
 //!   non-`Mill` machines, a tilted plane and `Waterjet` are refused by
 //!   name ([`generation_problem`]).
 
@@ -128,7 +129,7 @@ pub fn facets_in(world: &World, entity: &Entity, declared: Option<&str>) -> Opti
     )
 }
 
-fn bounds(points: impl Iterator<Item = Point3>) -> Option<Aabb> {
+pub(crate) fn bounds(points: impl Iterator<Item = Point3>) -> Option<Aabb> {
     let mut min = [f64::MAX; 3];
     let mut max = [f64::MIN; 3];
     let mut any = false;
@@ -379,7 +380,7 @@ fn verified_mill(params: &crate::operation::OpParams) -> bool {
             | OpParams::Offset2D { .. } | OpParams::Trace { .. } | OpParams::Engrave { .. }
             | OpParams::Chamfer2D { .. } | OpParams::Circular { .. } | OpParams::TrochoidalSlot { .. } | OpParams::Slot { .. }
             | OpParams::Drill { .. } | OpParams::Bore { .. } | OpParams::Thread { .. } | OpParams::Deburr { .. }
-            | OpParams::Pocket3D { .. } | OpParams::Finish3D { .. }
+            | OpParams::Pocket3D { .. } | OpParams::Finish3D { .. } | OpParams::Probe { .. }
     )
 }
 
@@ -438,7 +439,7 @@ pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Optio
         if kind == crate::machine::Kind::Mill {
             return Some(format!(
                 "{head} - {label} is not supported yet in an aligned setup (Face, 2D Contour, 2D Pocket, \
-                 2D Adaptive, 2D Offset, Trace, Engrave, 2D Chamfer, Circular, Slot, Trochoidal Slot, Drill, Bore, Thread, Deburr, 3D Pocket, 3D Finish, 5-Axis Contour, 5-Axis Parallel, Swarf, Advanced Swarf, Rotary Contour, Rotary Parallel, Rotary Offset, Multi-Axis Rough, 5-Axis Flow and Multi-Axis Contour are); set the setup's part alignment back to As modelled, or machine it in another setup"
+                 2D Adaptive, 2D Offset, Trace, Engrave, 2D Chamfer, Circular, Slot, Trochoidal Slot, Drill, Bore, Thread, Probe, Deburr, 3D Pocket, 3D Finish, 5-Axis Contour, 5-Axis Parallel, Swarf, Advanced Swarf, Rotary Contour, Rotary Parallel, Rotary Offset, Multi-Axis Rough, 5-Axis Flow and Multi-Axis Contour are); set the setup's part alignment back to As modelled, or machine it in another setup"
             ));
         }
         return Some(format!(

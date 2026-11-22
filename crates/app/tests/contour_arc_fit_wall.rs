@@ -52,6 +52,7 @@ fn skin(climb: bool) -> camcraft_app::schema::Toolpath {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     let op = CreateOperation::new(&world, "Skin1", "EM-0400-2FL", SrcRef::Stock, params);
     history.execute(&world, op.expect("operation"));

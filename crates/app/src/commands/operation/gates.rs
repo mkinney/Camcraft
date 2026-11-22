@@ -9,7 +9,25 @@ use crate::commands::CommandError;
 use crate::model;
 use crate::operation::{self, OpParams, SrcRef};
 
-pub(super) fn valid_src(world: &World, setup: Option<&str>, src: &SrcRef) -> Result<(), CommandError> {
+/// The source door: the source names something an operation can stand
+/// on, and (#1862) the profile law has nothing against this kind on it.
+pub(super) fn valid_src(world: &World, setup: Option<&str>, src: &SrcRef, params: &OpParams) -> Result<(), CommandError> {
+    src_exists(world, setup, src)?;
+    sketch_gate(world, setup, src, params)
+}
+
+/// The profile law (#1862, `crate::sketch_model`): a DXF profile is a
+/// source for the 2D cut kinds of its own setup only, and a 3D kind
+/// refuses a setup whose model is virtual. For the doors that change the
+/// kind or the setup without a new source.
+pub(in crate::commands) fn sketch_gate(world: &World, setup: Option<&str>, src: &SrcRef, params: &OpParams) -> Result<(), CommandError> {
+    match crate::sketch_model::source_problem(world, setup, src, params) {
+        Some(why) => Err(CommandError::Invalid(why)),
+        None => Ok(()),
+    }
+}
+
+fn src_exists(world: &World, setup: Option<&str>, src: &SrcRef) -> Result<(), CommandError> {
     match src {
         SrcRef::Stock => {
             let name = crate::setup::stock_entity_name(world, setup);
@@ -36,6 +54,9 @@ pub(super) fn valid_src(world: &World, setup: Option<&str>, src: &SrcRef) -> Res
                 Some(e) if model::is_fixture(world, &e) => Err(CommandError::Invalid(format!(
                     "'{name}' is a fixture - workholding is checked for collisions, not machined"
                 ))),
+                // #1862: a DXF profile is a source by the profile law
+                // (`sketch_gate`), not a model.
+                Some(e) if crate::sketch::is_sketch(world, &e) => Ok(()),
                 Some(e) if !model::is_model(world, &e) => Err(CommandError::Invalid(format!(
                     "'{name}' is not a model - an operation's source is the stock or a part"
                 ))),

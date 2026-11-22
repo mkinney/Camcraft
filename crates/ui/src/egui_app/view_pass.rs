@@ -29,6 +29,7 @@ pub(crate) fn sync_scene(
     let d = scene.digest();
     if d != *scene_digest {
         view.set_document(device, queue, &scene.parts);
+        view.set_shade(device, queue, &scene.shade);
         view.set_overlay(device, queue, &scene.overlay);
         *scene_digest = d;
     }
@@ -60,6 +61,36 @@ pub(crate) fn fit_target(view: &mut View3D, device: &wgpu::Device, want: (u32, u
     true
 }
 
+/// #2958: wear the viewer's line width and anti-aliasing. The width is a
+/// uniform (nothing re-uploads); a new sample count rebuilds the pass's
+/// pipelines and multisample targets once, the composite's with them. A
+/// kept count that this device does not offer falls back to the highest
+/// offered count below it, said once on the status line.
+pub(crate) fn apply_quality(
+    state: &mut State,
+    view: &mut View3D,
+    stock_eye: &mut Option<StockEye>,
+    device: &wgpu::Device,
+    scale: f64,
+) {
+    view.set_line_px(crate::viewport::line_px(state.line_width.points(), target_scale(scale)));
+    let want = state.antialias.samples();
+    let samples = crate::viewport::effective_samples(want, &state.samples_offered);
+    if samples != want {
+        state.say_once(&format!(
+            "anti-aliasing {} is not offered by this graphics device - {} samples per pixel are used",
+            state.antialias.word(),
+            samples
+        ));
+    }
+    if view.set_samples(device, samples) {
+        diag_info!("viewport: {samples} samples per pixel");
+    }
+    if let Some(se) = stock_eye.as_mut() {
+        se.set_samples(device, samples);
+    }
+}
+
 /// Pass 1 of a frame: the 3D offscreen target (its own bind group, mvp
 /// from the camera the panels' FrameAll and the orbit gestures just moved).
 pub(crate) fn encode(
@@ -69,7 +100,9 @@ pub(crate) fn encode(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
+    scale: f64,
 ) {
+    apply_quality(state, view, stock_eye, device, scale);
     let (ew, eh) = view.extent();
     let mvp = state.cam.mvp(f64::from(ew.max(1)) / f64::from(eh.max(1)));
     let eye = state.cam.eye_f32();
@@ -77,11 +110,11 @@ pub(crate) fn encode(
     // has a frame; the field view is walked once per Deviate arming.
     let mut traced = false;
     if let Some(se) = stock_eye.as_mut().filter(|_| !state.active_stock_hidden()) {
-        if state.display != crate::state::DisplayMode::Wireframe {
+        if !state.display.is_wireframe() {
             crate::actions::ensure_field_view(state);
         }
         let fv = match &state.field_view {
-            Some(Ok(fv)) if state.display != crate::state::DisplayMode::Wireframe => Some(fv),
+            Some(Ok(fv)) if !state.display.is_wireframe() => Some(fv),
             _ => None,
         };
         match se.prepare(device, queue, encoder, fv, &state.cam, &mvp, (ew, eh)) {
@@ -94,6 +127,7 @@ pub(crate) fn encode(
     // M13.4: both verdict painters wear the viewer's palette.
     let pal = super::colorvision::palette_of(&state.world);
     view.set_palette(pal);
+    view.set_effects(state.effects());
     if let Some(se) = stock_eye.as_mut() {
         se.set_palette(pal);
     }
@@ -136,6 +170,12 @@ pub(crate) fn state_redraw_delay(
     egui_delay: std::time::Duration,
     followup: bool,
 ) -> Option<std::time::Duration> {
+    // #2463: a linked model's file is checked about once a second.
+    let egui_delay = if crate::model_link_watch::wants_ticks(state) {
+        egui_delay.min(crate::model_link_watch::INTERVAL)
+    } else {
+        egui_delay
+    };
     redraw_delay(
         egui_delay,
         followup || !state.pending.is_empty() || state.layout_request.is_some(),

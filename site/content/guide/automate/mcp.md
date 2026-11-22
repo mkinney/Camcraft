@@ -66,19 +66,31 @@ time. The current, authoritative tool list is whatever the client's
 
 | Area | Tools |
 |---|---|
-| Document and history | `open_project`, `save_project`, `get_job`, `undo`, `redo` |
-| Models | `import_model`, `move_model`, `repair_model`, `set_part_axes`, `lay_part_on_points`, `lay_part_on_face`, `align_part_cylinder` |
-| Setups and work offsets | `add_setup`, `activate_setup`, `set_wcs`, `set_wcs_from_features`, `set_wcs_circle_centre`, `place_setup_origin`, `set_work_offset`, `load_machine`, `set_workholding_max_rpm`, `set_stock`, `fit_stock`, `set_raw_stock_only` |
-| Fixtures and workholding | `add_fixture`, `remove_fixture`, `move_fixture`, `locate_part`, `get_fixture_findings`, `add_builtin_vise`, `set_vise`, `add_mod_vise_pair`, `set_mod_jaw`, `refit_mod_vise`, `add_accessory`, `set_accessory`, `add_fixture_plate`, `set_fixture_plate`, `place_on_plate`, `detect_plate_grid`, `get_plate_grid` |
-| Tools and holders | `list_tool_catalog`, `add_tool`, `set_tool`, `import_tool_library`, `export_tool_library`, `list_holder_library`, `set_tool_holder`, `get_tool_cutter_profile`, `set_tool_cutter_profile`, `set_tool_cutter_params` |
+| Document and history | `open_project`, `save_project`, `get_job`, `get_selection`, `set_units`, `undo`, `redo` |
+| Models | `import_model`, `move_model`, `repair_model`, `set_part_axes`, `lay_part_on_points`, `lay_part_on_face`, `align_part_cylinder`, `delete_model`, `set_model_link`, `vouch_model_fidelity` |
+| DXF profiles | `import_dxf`, `move_dxf_profile` |
+| Engraving text | `insert_text` |
+| Setups and work offsets | `add_setup`, `activate_setup`, `set_wcs`, `set_wcs_from_features`, `set_wcs_circle_centre`, `place_setup_origin`, `set_work_offset`, `load_machine`, `set_workholding_max_rpm`, `set_sheet_job`, `set_stock`, `fit_stock`, `set_raw_stock_only`, `set_operation_setup`, `delete_setup`, `set_program`, `set_setup_post`, `set_wcs_flip`, `edit_machine`, `get_rotary_stack`, `set_setup_nose_to_axis` |
+| Fixtures and workholding | `add_fixture`, `remove_fixture`, `move_fixture`, `locate_part`, `get_fixture_findings`, `add_builtin_vise`, `set_vise`, `add_mod_vise_pair`, `set_mod_jaw`, `refit_mod_vise`, `add_accessory`, `set_accessory`, `add_fixture_plate`, `set_fixture_plate`, `place_on_plate`, `detect_plate_grid`, `get_plate_grid`, `turn_fixture`, `import_dxf_fixture`, `set_fixture_profile`, `derive_fixture_profile`, `get_fixture_profile`, `export_fixture_dxf` |
+| Tools and holders | `list_tool_catalog`, `add_tool`, `set_tool`, `import_tool_library`, `export_tool_library`, `list_holder_library`, `set_tool_holder`, `get_tool_cutter_profile`, `set_tool_cutter_profile`, `set_tool_cutter_params`, `edit_tool`, `delete_tool`, `import_tool_holder_dxf`, `export_tool_holder_dxf`, `convert_tool_step_to_profile` |
+| Materials and cutting data | `set_work_material`, `set_stock_material`, `suggest_cutting_data`, `apply_cutting_data` |
 | Tool bodies and numbers | `set_tool_number`, `get_tool_body`, `set_tool_body`, `set_lathe_tool_body`, `attach_tool_body_piece`, `remove_tool_body_piece`, `set_lathe_insert_zone`, `clear_tool_body` |
-| Operations | `list_operation_types`, `add_operation`, `edit_operation`, `delete_operation`, `rename_operation`, `reorder_operation` |
-| Picking geometry | `list_features`, `get_operation_geometry`, `set_operation_geometry`, `set_operation_area`, `detect_holes`, `detect_pockets` |
+| Operations | `list_operation_types`, `add_operation`, `edit_operation`, `delete_operation`, `rename_operation`, `reorder_operation`, `set_operation_coolant`, `get_thread_infeed`, `set_thread_infeed`, `mark_operation_reviewed`, `electrode_from_faces` |
+| Picking geometry | `list_features`, `get_operation_geometry`, `set_operation_geometry`, `set_operation_area`, `get_operation_do_not_touch`, `set_operation_do_not_touch`, `detect_holes`, `detect_pockets`, `pick_in_box` |
 | Generate, verify, post | `generate`, `verify`, `render_stock`, `get_post_options`, `set_post_options`, `post` |
 
 `list_operation_types` returns each operation kind's parameters, their
 types and defaults; `list_tool_catalog` and `list_holder_library` return the
 built-in tools and holders an agent can add.
+
+### Tool reference and local-model prompt
+
+`camcraft-cli mcp reference` prints a Markdown table of every tool, with its
+arguments and its full description. It reads the same table as `tools/list`,
+so it is never out of date. `camcraft-cli mcp prompt` prints a compact prompt
+for a local model (for example through Ollama, LM Studio or `llama-server`):
+the working rules, then one line per tool. The AI Chat panel's Local
+Prompt-JSON preset sends the same rules.
 
 ### Alignment and origins
 
@@ -110,6 +122,16 @@ option fields. The options include `skip_stops`, `per_op`, `threading`
 `detect_holes` reports holes it does not create in its `skipped` field.
 Read that field before assuming that every detected hole became an
 operation. A refused Bore is not silently replaced by Drill.
+
+### Tool libraries and machine tool tables
+
+`import_tool_library` and `export_tool_library` accept native
+`.camtools` files as well as Tormach PathPilot `.csv` tool tables and
+Hurco WinMax `.TCM` libraries. Pass optional `format` (`"auto"`,
+`"camtools"`, `"pathpilot"` or `"hurco"`) and `units` (`"mm"` or
+`"inch"`, defaulting to document units for controller tables). See
+[Tools and tool libraries](@/guide/set-up/tools.md#machine-tool-tables-tormach-pathpilot-and-hurco-winmax)
+for field mapping and refusals.
 
 ## Example session
 
@@ -161,12 +183,11 @@ What the pane offers:
 - **Undo Turn** reverts all the changes of one chat turn in one click. It
   is disabled, and refuses, once you have made a later edit by hand.
 
-Not yet usable: the pane has no network transport in this release. Sending
-to any preset ends with "no live transport endpoint is configured for
-'<preset>'", and an API key setting is not shipped. To use an AI model
-today, connect an outside agent over MCP as described above. These
-worked examples and provider setup will be added when the transport
-ships.
+The native desktop pane connects to the cloud providers and local Ollama.
+Keys come from environment variables or the OS keychain; there is no key
+entry form. All local panel presets use Ollama, and the panel has no
+endpoint field. See [Use AI with CamCraft](@/guide/automate/ai.md) for
+provider setup, external clients, current limits and four worked CAM tasks.
 
 ## Undo and redo
 

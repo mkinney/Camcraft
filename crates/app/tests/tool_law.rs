@@ -35,6 +35,10 @@ fn every_tool_kind() -> Vec<ToolKind> {
         ToolKind::ThreadMillSingle,
         ToolKind::Waterjet,
         ToolKind::Wire,
+        ToolKind::TSlot,
+        ToolKind::Keyseat,
+        ToolKind::Dovetail,
+        ToolKind::Lollipop,
     ];
     for k in &all {
         match k {
@@ -55,7 +59,11 @@ fn every_tool_kind() -> Vec<ToolKind> {
             | ToolKind::ThreadMill
             | ToolKind::ThreadMillSingle
             | ToolKind::Waterjet
-            | ToolKind::Wire => {}
+            | ToolKind::Wire
+            | ToolKind::TSlot
+            | ToolKind::Keyseat
+            | ToolKind::Dovetail
+            | ToolKind::Lollipop => {}
         }
     }
     all
@@ -145,4 +153,16 @@ fn family_edges_spot_checks() {
     assert_eq!(OpType::BoringTurning.info().tool_kinds, &[ToolKind::Bore]);
     assert_eq!(OpType::Facing.info().tool_kinds, &[ToolKind::Turning]);
     assert_eq!(OpType::WireContour.info().tool_kinds, tool_law::WIRE);
+}
+
+#[test]
+fn undercut_cutters_mount_only_the_slot_undercut() {
+    // #1444: a head wider than its neck cuts sideways only.
+    for k in [ToolKind::TSlot, ToolKind::Keyseat, ToolKind::Dovetail, ToolKind::Lollipop] {
+        for row in KindInfo::ALL {
+            assert_eq!(row.accepts(k), row.ty == OpType::SlotUndercut, "{:?} with a {k}", row.ty);
+        }
+    }
+    assert_eq!(OpType::SlotUndercut.info().tool_kinds, tool_law::UNDERCUT);
+    assert!(!OpType::SlotUndercut.info().accepts(ToolKind::EndMill));
 }

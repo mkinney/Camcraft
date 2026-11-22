@@ -20,6 +20,7 @@ mod curve;
 mod identity;
 mod intersect;
 mod nesting;
+mod sample;
 mod types;
 
 use crate::dxf::LayeredPrimitive;
@@ -28,6 +29,10 @@ use crossing::{Sealed, Search};
 use curve::{Key, Piece, Shape};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+pub use sample::{
+    SketchChainRef, chain_bounds, chain_length, dist_to_primitive, nearest_point_on_primitive,
+    parse_chain_id_hex, primitive_length, sample_segments,
+};
 pub use types::*;
 
 /// Pair tests one call may spend on joining, crossing search and nesting before it is refused.

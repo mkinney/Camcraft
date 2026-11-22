@@ -224,7 +224,8 @@ fn thread(cut: Cut) -> OpParams {
         top_z: Height::fixed(TOP),
         bottom_z: None,
         infeed: 0.1,
-        feed: 400.0,
+        // #2598: the thread mill's own 300 mm/min.
+        feed: 300.0,
         plunge_feed: 150.0,
         climb: true,
         holes: vec![cut.hole()],

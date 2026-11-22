@@ -159,6 +159,7 @@ fn tilted_on(via: Via) -> (World, History) {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     };
     h.execute(&world, CreateOperation::new(&world, "P", "EM-0600-4FL", SrcRef::Stock, params).expect("create"));
     h.execute(&world, GenerateOperation::new(&world, "P").expect("generate on the tilt-head"));

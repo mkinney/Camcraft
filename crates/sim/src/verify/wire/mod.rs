@@ -66,6 +66,8 @@ mod kerf;
 mod passes;
 mod slug;
 #[cfg(test)]
+mod depth_tests;
+#[cfg(test)]
 mod hold_tests;
 #[cfg(test)]
 mod taper_tests;

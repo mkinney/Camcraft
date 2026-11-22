@@ -26,6 +26,9 @@ egui_dock = { workspace = true }
 # Values directly - every refusal names the key it tripped on, which a
 # derived deserializer's error soup cannot promise.
 serde_json = { workspace = true }
+# #2339: the dock tab names the saved panel arrangement in its own JSON, so
+# egui_dock's serde form (behind its "serde" feature) has a Tab to read.
+serde = { workspace = true }
 # #163: native diagnostics are `tracing` events (the diag seam), printed by
 # the subscriber `camcraft_app::logging::init` installs in main.
 tracing = { workspace = true }

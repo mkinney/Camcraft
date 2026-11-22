@@ -16,7 +16,11 @@ const NOTE: Color32 = Color32::from_rgb(0x9E, 0xA8, 0xB8);
 /// the fields beside it are editing. Tip at the bottom (z = 0 upward),
 /// equal aspect both axes - "to scale" means to scale. A half-typed draft
 /// renders a stub and a word, never a NaN.
-pub(super) fn draw(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64, f64, f64)]>, wide: bool) {
+///
+/// #2007: `steel` replaces the cutter, neck and shank outline - the drawn
+/// cutter of the Profile tab, while it validates. It does not hold the
+/// holder, so it comes with the holder as `body` bands.
+pub(super) fn draw(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64, f64, f64)]>, steel: Option<&[(f64, f64)]>, wide: bool) {
     const SIDE: f32 = 260.0;
     const PAD: f32 = 18.0;
     let (resp, painter) = ui.allocate_painter(
@@ -27,7 +31,9 @@ pub(super) fn draw(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64, f
     let axis_x = rect.center().x;
     painter.rect_filled(rect, 4.0, Color32::from_rgb(24, 26, 31));
     // A body replaces the parameter holder, as in the collision band stack.
-    let outline = if body.is_some() {
+    let outline = if let Some(s) = steel {
+        s.to_vec()
+    } else if body.is_some() {
         tools::Tool { holder_len: 0.0, ..t.clone() }.profile()
     } else {
         t.profile()
@@ -148,7 +154,7 @@ pub(super) fn draw(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64, f
 /// The name main's preview tests (#2005) call: the full-width editor preview.
 #[cfg(test)]
 fn draw_tool_preview(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64, f64, f64)]>) {
-    draw(ui, t, u, body, true);
+    draw(ui, t, u, body, None, true);
 }
 
 #[cfg(test)]

@@ -129,7 +129,35 @@ use super::*;
 /// reasons naming turned-off un-carriable fields. Pre-v69 `Pocket` +
 /// `Adaptive` files open as `Adaptive2D` (Spiral); older builds must
 /// refuse v69 files rather than silently drop `needs_review` and post.
-pub const PROJECT_VERSION: u32 = 69;
+/// v70 (#2016): a tool may name its library holder (`holder` on the
+/// tool) in place of a drawn `body`. Absent is what every older file
+/// states: a `body` (a drawn copy of a library holder included) or the
+/// holder cylinder, read and judged as before, so a v69 file steps up
+/// unchanged. An old reader (including v0.22.0 at v62 and v69 builds)
+/// must refuse a v70 file rather than drop the reference and judge the
+/// smaller cylinder in its place.
+/// v71 (#1862): a DXF profile is an entity row of kind `sketch`, placed
+/// on the stock of a setup. A v70 file has none and steps up unchanged.
+/// An old reader must refuse a v71 file rather than open a setup without
+/// the profiles its operations cut.
+/// v72 (#2463): a model may record the file it was imported from and that
+/// file's SHA-256 (`source`): a linked model, imported again when the file
+/// changes. Absent is not linked - what every v71 model was - so a v71
+/// file steps up unchanged. An old reader must refuse a v72 file rather
+/// than save a linked model back unlinked without a word.
+/// v73 (#2055): an operation's `area` controls may state `"do_not_touch"`
+/// protected faces/edges and standoff clearance. An old reader (up to v72)
+/// must refuse the file rather than ignore the protection and cut across a
+/// protected feature. A v72 file steps up unchanged with empty protection.
+/// v74 (#1864): feature selections add `sketch_chain` and `sketch_layer`
+/// variants on DXF profiles, and `Contour` adds `chain_overrides`
+/// (absent is empty, so a v73 file steps up unchanged). An old reader
+/// must refuse a v74 file rather than drop per-chain side or direction
+/// overrides or reject sketch picks without explanation.
+/// v75 (#3181): a machine can record its controller model, exact NC software,
+/// installed options and tool-change procedure. A v74 file leaves them
+/// unstated. Older readers must refuse v75 to prevent losing these facts.
+pub const PROJECT_VERSION: u32 = 75;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -310,6 +338,8 @@ pub enum EntityKind {
     Setup,
     /// A Pause / Home entry of the operation list (#155).
     Entry,
+    /// A DXF profile placed on a setup's stock (#1862).
+    Sketch,
 }
 
 /// The file mirror of `StockShape`, kept separate so the domain enum can
@@ -417,6 +447,13 @@ pub struct ToolDto {
     /// holder cylinder, what every older tool judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<super::tool_body_wire::ToolBodyDto>,
+    /// #2016 (v70): the library holder the tool sits in, by reference
+    /// (`tool_body_wire::HolderRefDto`). Written in place of `body`,
+    /// never beside it; the body is drawn from the named entry on
+    /// load. An entry this build's library does not hold refuses the
+    /// file by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder: Option<super::tool_body_wire::HolderRefDto>,
     /// #93 slice 2, additive (no version step): the tool's drawn
     /// cutter outline, `[z, r, arc]` per point tip-up. Absent is the
     /// outline its numbers draw - every older file. A reader that
@@ -541,6 +578,14 @@ pub enum ToolKindDto {
     ThreadMillSingle,
     /// Wire EDM wire (#2011): additive in the same way.
     Wire,
+    /// The undercut cutters (#1444): additive words - no older file
+    /// names them. They read the shared keys: `diameter` the head,
+    /// `flute_len` its height, `shank_d` and `shank_len` the neck,
+    /// `tip_angle` the dovetail's flank angle.
+    TSlot,
+    Keyseat,
+    Dovetail,
+    Lollipop,
 }
 
 impl ToolDto {
@@ -565,6 +610,10 @@ impl ToolDto {
                 ToolKind::ThreadMill => ToolKindDto::ThreadMill,
                 ToolKind::ThreadMillSingle => ToolKindDto::ThreadMillSingle,
                 ToolKind::Wire => ToolKindDto::Wire,
+                ToolKind::TSlot => ToolKindDto::TSlot,
+                ToolKind::Keyseat => ToolKindDto::Keyseat,
+                ToolKind::Dovetail => ToolKindDto::Dovetail,
+                ToolKind::Lollipop => ToolKindDto::Lollipop,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -590,6 +639,7 @@ impl ToolDto {
             center_cutting: t.center_cutting,
             number: None,
             body: None,
+            holder: None,
             cutter: None,
             orientation: t.orientation,
             part_number: t.catalog.part_number.clone(),
@@ -633,6 +683,10 @@ impl ToolDto {
                 ToolKindDto::ThreadMill => ToolKind::ThreadMill,
                 ToolKindDto::ThreadMillSingle => ToolKind::ThreadMillSingle,
                 ToolKindDto::Wire => ToolKind::Wire,
+                ToolKindDto::TSlot => ToolKind::TSlot,
+                ToolKindDto::Keyseat => ToolKind::Keyseat,
+                ToolKindDto::Dovetail => ToolKind::Dovetail,
+                ToolKindDto::Lollipop => ToolKind::Lollipop,
             },
             diameter: self.diameter,
             corner_r: self.corner_r,
@@ -691,6 +745,25 @@ pub struct GeoSelDto {
     pub feature: FeatureSelDto,
 }
 
+/// #1864: 32-digit lowercase hex encoding of [`sketch_chains::ChainId`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChainIdDto(pub crate::geometry::sketch_chains::ChainId);
+
+impl Serialize for ChainIdDto {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ChainIdDto {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        crate::geometry::sketch_chains::parse_chain_id_hex(&s)
+            .map(ChainIdDto)
+            .ok_or_else(|| serde::de::Error::custom(format!("invalid sketch chain id '{s}' - expected 32 lowercase hex digits")))
+    }
+}
+
 /// The file mirror of `operation::FeatureSel`.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -701,4 +774,8 @@ pub enum FeatureSelDto {
     /// M13.4: additive - files written before it never carry the tag,
     /// so they load unchanged.
     Vertex { id: u64 },
+    /// #1864: canonical 32-digit hex `ChainId` on a DXF sketch entity.
+    SketchChain { id: ChainIdDto },
+    /// #1864: named layer on a DXF sketch entity.
+    SketchLayer { layer: String },
 }

@@ -14,7 +14,7 @@ use egui::{Rect, Sense, Ui, Vec2};
 use camcraft_app::{model, setup};
 
 use crate::actions;
-use crate::state::{CommandKind, DisplayMode, SetupPage, State, TreeMenuTarget, UiTarget};
+use crate::state::{CommandKind, SetupPage, State, TreeMenuTarget, UiTarget};
 use crate::viewport::ProjectionMode;
 
 use super::browser_tree::{Leaf, browser_rows};
@@ -95,6 +95,7 @@ pub fn browser(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&Icon
             }
             // #339 slice 4: the fixture verbs.
             Some(Leaf::Model(name)) => Some(TreeMenuTarget::Model { name: name.clone(), row: ix }),
+            Some(Leaf::Tool(name)) => Some(TreeMenuTarget::Tool { name: name.clone(), row: ix }),
             Some(Leaf::Page(setup, SetupPage::Fixtures)) => {
                 focus(state, setup);
                 Some(TreeMenuTarget::Fixtures(setup.clone()))
@@ -154,12 +155,7 @@ fn view_menu(ui: &mut Ui, state: &mut State) {
     ui.add_enabled(mounted, egui::Checkbox::new(&mut state.show_work_envelope, "Show work envelope"))
         .on_hover_text(tip)
         .on_disabled_hover_text("Mount a machine on the active setup to show its work envelope.");
-    // The display mode is view state (a direct field flip, never a command).
-    ui.horizontal(|ui| {
-        ui.label("Solids");
-        ui.radio_value(&mut state.display, DisplayMode::ShadedEdges, "Shaded");
-        ui.radio_value(&mut state.display, DisplayMode::Wireframe, "Wireframe");
-    });
+    // The display mode moved to the viewport's Display menu (#2818).
     // Projection is view state the same way (#434): orthographic keeps
     // a side view straight - parallel edges, no converging - which is
     // what CAM eyeballing wants most of the time.

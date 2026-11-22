@@ -72,7 +72,7 @@ pub(crate) fn v_import(env: &mut Env, args: Vec<Value>) -> Result<Value, String>
     let name = given_name.unwrap_or_else(|| imp.name.clone());
     let notes = imp.notes.clone();
     if model::find_by_name(&env.world, &name).is_some() {
-        let cmd = UpdateModel::new(&env.world, &name, imp.mesh).map_err(|e| e.to_string())?.with_fidelity(imp.coarse_mm).with_hole(imp.hole.clone()).with_budget(imp.facet_budget).with_step_source(imp.step_source);
+        let cmd = UpdateModel::new(&env.world, &name, imp.mesh).map_err(|e| e.to_string())?.with_fidelity(imp.coarse_mm).with_file_tolerance(imp.file_tolerance).with_hole(imp.hole.clone()).with_budget(imp.facet_budget).with_step_source(imp.step_source).with_source(imp.source);
         env.history.execute(&env.world, cmd);
     } else {
         env.history.execute(&env.world, imp.renamed(&name));
@@ -96,28 +96,57 @@ pub(crate) fn v_import(env: &mut Env, args: Vec<Value>) -> Result<Value, String>
     Ok(out)
 }
 
-/// `cam.exportTools(path)` - write the document's tools as a tool
-/// library file, the very text the Tool library page's Export writes
-/// (`tool_library::export_tool_library`, #300). A document with no
-/// tools refuses, and so does a path that cannot be written.
+/// `cam.exportTools(path, format?, units?)` - write the document's tools
+/// as a CamCraft `.camtools` library, a Tormach PathPilot `.csv` tool
+/// table, or a Hurco WinMax `.TCM` tool library (#300, #2566).
 pub(crate) fn v_export_tools(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
+    if args.is_empty() || args.len() > 3 {
+        return Err(format!("exportTools takes 1 to 3 arguments, got {}", args.len()));
+    }
     let path = PathBuf::from(arg_str(&args, 0, "a tool library path")?);
-    let text = crate::tool_library::export_tool_library(&env.world)?;
-    let count = model::named_entities(&env.world).iter().filter(|(_, e)| model::tool_of(&env.world, e).is_some()).count();
-    std::fs::write(&path, text).map_err(|e| format!("tool library not written to {}: {e}", path.display()))?;
-    Ok(json!({ "path": path.display().to_string(), "tools": count }))
+    let explicit_format = match arg_opt(&args, 1, "format")? {
+        None => None,
+        Some(f) => crate::tool_table::ToolTableFormat::parse_opt(&f)?,
+    };
+    let explicit_unit = match arg_opt(&args, 2, "units")? {
+        None => None,
+        Some(u) => Some(crate::tool_table::parse_unit(&u)?),
+    };
+    export_tools(env, &path, explicit_format, explicit_unit)
 }
 
-/// `cam.importTools(path, mode?)` - read a tool library file into the
-/// document through `ImportTools`, the GUI's own command: the whole
-/// file is checked first (a malformed or insane file refuses by name),
-/// an identical tool is skipped, a clashing name arrives as "Name (2)",
-/// and the import is one undo step. #899: `mode` is `add` (default),
-/// `update` (same-named tools take the file's definition in place) or
-/// `replace` (update, and tools the file lacks are removed unless an
-/// operation uses them).
-/// #889: `holders` (default true) takes the file's tool bodies.
+/// Shared export helper behind `cam.exportTools` and MCP `export_tool_library`.
+pub(crate) fn export_tools(
+    env: &Env,
+    path: &Path,
+    explicit_format: Option<crate::tool_table::ToolTableFormat>,
+    explicit_unit: Option<crate::units::Unit>,
+) -> Result<Value, String> {
+    use crate::tool_table::ToolTableFormat;
+    let format = explicit_format
+        .or_else(|| crate::tool_table::detect_format(path, None))
+        .unwrap_or(ToolTableFormat::CamTools);
+    let unit = explicit_unit.unwrap_or_else(|| match format {
+        ToolTableFormat::CamTools => crate::units::Unit::Millimeters,
+        ToolTableFormat::PathPilot | ToolTableFormat::Hurco => crate::units::of(&env.world),
+    });
+    let text = crate::tool_table::export(&env.world, format, unit)?;
+    let count = model::named_entities(&env.world)
+        .iter()
+        .filter(|(_, e)| model::tool_of(&env.world, e).is_some())
+        .count();
+    std::fs::write(path, text)
+        .map_err(|e| format!("tool library not written to {}: {e}", path.display()))?;
+    Ok(json!({ "path": path.display().to_string(), "tools": count, "format": format.label() }))
+}
+
+/// `cam.importTools(path, mode?, holders?, format?, units?)` - read a
+/// tool library or machine tool table into the document through
+/// `ImportTools`, one undo step (#300, #889, #899, #2566).
 pub(crate) fn v_import_tools(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
+    if args.is_empty() || args.len() > 5 {
+        return Err(format!("importTools takes 1 to 5 arguments, got {}", args.len()));
+    }
     let path = PathBuf::from(arg_str(&args, 0, "a tool library path")?);
     let mode = match args.get(1) {
         None | Some(Value::Null) => ImportMode::Add,
@@ -128,20 +157,48 @@ pub(crate) fn v_import_tools(env: &mut Env, args: Vec<Value>) -> Result<Value, S
         Some(Value::Bool(b)) => *b,
         Some(other) => return Err(format!("holders must be true or false, got {other}")),
     };
-    import_tools(env, &path, mode, holders)
+    let explicit_format = match arg_opt(&args, 3, "format")? {
+        None => None,
+        Some(f) => crate::tool_table::ToolTableFormat::parse_opt(&f)?,
+    };
+    let explicit_unit = match arg_opt(&args, 4, "units")? {
+        None => None,
+        Some(u) => Some(crate::tool_table::parse_unit(&u)?),
+    };
+    import_tools(env, &path, mode, holders, explicit_format, explicit_unit)
 }
 
-/// The import behind `cam.importTools` and MCP's `import_tool_library`
-/// (#889: `holders` takes the file's tool bodies, or leaves them out).
-pub(crate) fn import_tools(env: &mut Env, path: &Path, mode: ImportMode, holders: bool) -> Result<Value, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let library = crate::tool_library::parse_tool_library(&text)?;
-    let cmd = ImportTools::with_options(&env.world, library, mode, holders).map_err(|e| e.to_string())?;
+/// The import behind `cam.importTools` and MCP's `import_tool_library`.
+pub(crate) fn import_tools(
+    env: &mut Env,
+    path: &Path,
+    mode: ImportMode,
+    holders: bool,
+    explicit_format: Option<crate::tool_table::ToolTableFormat>,
+    explicit_unit: Option<crate::units::Unit>,
+) -> Result<Value, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let unit = explicit_unit.unwrap_or_else(|| crate::units::of(&env.world));
+    let (format, library) = crate::tool_table::parse_import(
+        &text,
+        explicit_format,
+        path,
+        unit,
+        explicit_unit.is_some(),
+    )?;
+    let cmd = ImportTools::with_options(&env.world, library, mode, holders)
+        .map_err(|e| e.to_string())?;
     let report = cmd.report().clone();
     env.history.execute(&env.world, cmd);
-    let renamed: Vec<Value> = report.renamed.iter().map(|(from, to)| json!({ "from": from, "to": to })).collect();
+    let renamed: Vec<Value> = report
+        .renamed
+        .iter()
+        .map(|(from, to)| json!({ "from": from, "to": to }))
+        .collect();
     Ok(json!({
         "path": path.display().to_string(),
+        "format": format.label(),
         "added": report.added,
         "renamed": renamed,
         "skipped": report.skipped,

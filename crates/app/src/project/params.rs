@@ -39,6 +39,17 @@ impl From<TiltDto> for Tilt {
     }
 }
 
+/// #1864: per-chain side and direction override row inside `ParamsDto::Contour`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ChainOverrideDto {
+    pub entity: String,
+    pub chain: ChainIdDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<ChainSideDto>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub reverse: bool,
+}
+
 /// Which point of a twist drill `break_through` is measured from (#2441).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -46,6 +57,71 @@ pub enum BreakThroughFromDto {
     #[default]
     FullDiameter,
     Tip,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CornerReliefKindDto {
+    #[default]
+    None,
+    Dogbone,
+    #[serde(rename = "t_bone", alias = "tbone", alias = "t-bone", alias = "T-bone")]
+    TBone,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TBoneDirectionDto {
+    #[default]
+    LongEdge,
+    ShortEdge,
+    Horizontal,
+    Vertical,
+}
+
+impl TBoneDirectionDto {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CornerReliefChoiceDto {
+    None,
+    Dogbone,
+    #[serde(rename = "t_bone_first", alias = "tbone_first")]
+    TBoneFirst,
+    #[serde(rename = "t_bone_second", alias = "tbone_second")]
+    TBoneSecond,
+    #[serde(rename = "t_bone_x", alias = "tbone_x")]
+    TBoneX,
+    #[serde(rename = "t_bone_y", alias = "tbone_y")]
+    TBoneY,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct CornerReliefOverrideDto {
+    pub at: [f64; 2],
+    pub choice: CornerReliefChoiceDto,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct CornerReliefDto {
+    #[serde(default)]
+    pub kind: CornerReliefKindDto,
+    #[serde(default, skip_serializing_if = "TBoneDirectionDto::is_default")]
+    pub tbone_direction: TBoneDirectionDto,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides: Vec<CornerReliefOverrideDto>,
+}
+
+impl CornerReliefDto {
+    pub(super) fn is_default(&self) -> bool {
+        self.kind == CornerReliefKindDto::None
+            && self.tbone_direction == TBoneDirectionDto::default()
+            && self.overrides.is_empty()
+    }
 }
 
 /// The file mirror of `operation::OpParams`, tool-free by the same rule as
@@ -130,6 +206,10 @@ pub enum ParamsDto {
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #1864: optional per-chain side and direction overrides for DXF
+        /// sketch contours; absent on every pre-v74 file.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        chain_overrides: Vec<ChainOverrideDto>,
     },
     Pocket {
         /// M11.2 level transitions and links: absent is the kind's earlier shape.
@@ -186,6 +266,9 @@ pub enum ParamsDto {
         /// no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rest: Option<RestDto>,
+        /// #2400 corner relief: absent is off on every earlier file - no version step.
+        #[serde(default, skip_serializing_if = "CornerReliefDto::is_default")]
+        corner_relief: CornerReliefDto,
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
@@ -248,6 +331,9 @@ pub enum ParamsDto {
         /// earlier file - no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend_radius: Option<f64>,
+        /// #2400 corner relief: absent is off on every earlier file.
+        #[serde(default, skip_serializing_if = "CornerReliefDto::is_default")]
+        corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -280,6 +366,9 @@ pub enum ParamsDto {
         /// earlier file - no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend_radius: Option<f64>,
+        /// #2400 corner relief: absent is off on every earlier file.
+        #[serde(default, skip_serializing_if = "CornerReliefDto::is_default")]
+        corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -478,6 +567,12 @@ pub enum ParamsDto {
         /// the plain level ladder is exactly what they generated.
         #[serde(default)]
         rest_rough: bool,
+        /// #1591: how an Adaptive level is cleared. Absent on every
+        /// older file, which reads as `spiral` - the path those files
+        /// always cut. Written as a word, like 2D Adaptive's (#1509), so
+        /// an MCP patch can name either value.
+        #[serde(default)]
+        method: AdaptiveMethodDto,
         /// (v13: read only when `strategy` is `Adaptive`; v12 files can
         /// carry no Adaptive ring family to feed it.)
         /// The pre-M11.4 word: the contact angle in degrees. Still READ
@@ -571,6 +666,12 @@ pub enum ParamsDto {
         /// Absent spells None exactly like `stepover`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fill_openings: Option<f64>,
+        /// Absent means `jump` - the retract/clearance hop every
+        /// pre-gap-link file ran. Written always, like `ramp`;
+        /// `jump` and `straight` are new words in an existing
+        /// grammar, so no version step-up.
+        #[serde(default)]
+        gap_link: GapLinkDto,
     },
     /// Declared at v48 with the deburr ride (M2.5 E B). `Deburr`'s
     /// automatic snake_case tag IS the clean word - no rename needed -
@@ -587,6 +688,24 @@ pub enum ParamsDto {
         bottom_z: HeightDto,
         feed: f64,
         plunge_feed: f64,
+        /// #1888, additive: each key is absent at its rest value, so a
+        /// file from before the keys reads as the ride it stored (no
+        /// exclusion, every crease, every hole) and saves unchanged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        exclude_edges: Vec<GeoSelDto>,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        min_edge_angle_deg: f64,
+        #[serde(default, skip_serializing_if = "is_false")]
+        exclude_holes: bool,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        hole_min_diameter: f64,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        hole_max_diameter: f64,
+        /// #1889: absent in each earlier file, which reads as the
+        /// default (`skip_with_note`). Always written, so that an MCP
+        /// patch and `list_operation_types` see the field.
+        #[serde(default)]
+        unreachable: UnreachableDto,
     },
     /// Declared at v24 with the simultaneous-axis kinds (M5.1 stage
     /// C). The renames state the tags for the familiar reason - the
@@ -1121,6 +1240,8 @@ pub enum ParamsDto {
     SinkerBurn(SinkerDto),
     /// The sinker side burn (#545): appended the same way.
     SinkerSideBurn(SinkerSideDto),
+    /// The slot undercut (#1444): appended the same way.
+    SlotUndercut(SlotUndercutDto),
 }
 
 /// The angle an absent `ramp_angle` means: 45°, the ground the
@@ -1223,6 +1344,36 @@ impl From<crate::finishing3d::FinishPattern> for FinishPatternDto {
             crate::finishing3d::FinishPattern::Blend => FinishPatternDto::Blend,
             crate::finishing3d::FinishPattern::Morph => FinishPatternDto::Morph,
             crate::finishing3d::FinishPattern::Flow => FinishPatternDto::Flow,
+        }
+    }
+}
+
+/// The file mirror of `finishing3d::GapLink`; `default` is `jump`,
+/// the hop every pre-gap-link file ran. `straight` is a new word in
+/// an existing grammar - older files never carried it and still read
+/// unchanged, so no version step-up.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GapLinkDto {
+    #[default]
+    Jump,
+    Straight,
+}
+
+impl From<GapLinkDto> for crate::finishing3d::GapLink {
+    fn from(v: GapLinkDto) -> Self {
+        match v {
+            GapLinkDto::Jump => crate::finishing3d::GapLink::Jump,
+            GapLinkDto::Straight => crate::finishing3d::GapLink::Straight,
+        }
+    }
+}
+
+impl From<crate::finishing3d::GapLink> for GapLinkDto {
+    fn from(v: crate::finishing3d::GapLink) -> Self {
+        match v {
+            crate::finishing3d::GapLink::Jump => GapLinkDto::Jump,
+            crate::finishing3d::GapLink::Straight => GapLinkDto::Straight,
         }
     }
 }
@@ -1434,7 +1585,7 @@ impl CrossHoleDto {
 /// `drilling::CycleChoice`. `Auto` resolves at generate time (tool kind
 /// first, then the depth-vs-diameter law), so the file stores only the
 /// user's ask, like `StrategyDto::Auto` and `SideDto::Auto`.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CycleChoiceDto {
     #[default]
@@ -1449,6 +1600,10 @@ pub enum CycleChoiceDto {
     FloatingTap,
     /// #1445: feed in, feed out (G85). Older files never carry it.
     Ream,
+    /// #1445: fine boring (G76) with its required shift, mm along X and Y
+    /// of the hole list: `{"fine_bore": {"shift_x": 0.3, "shift_y": 0.0}}`.
+    /// There is no default shift. Older files never carry it.
+    FineBore { shift_x: f64, shift_y: f64 },
 }
 
 /// The reference part of a stored height. Serialized as a plain string;

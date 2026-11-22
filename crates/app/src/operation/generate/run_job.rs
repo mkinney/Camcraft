@@ -14,6 +14,8 @@ pub fn run_job(mut job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // is not held for features the op honestly leaves standing.
     let note = job.spindle_note.take();
     let carried = job.carried_overhang.take();
+    // #3100: a user's own post taken at its declared order says so.
+    let declared = job.post_order.custom.then(|| crate::operation::first_traverse_posed::DECLARED_NOTE.to_owned());
     let tool_r = job.tool.diameter * 0.5;
     let kind = job.params.kind();
     // #261 part 2: a refusal's spot is in the frame the generators ran
@@ -53,7 +55,7 @@ pub fn run_job(mut job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         "generated"
     );
     let carried = carried.map(|o| o.note(&path, tool_r));
-    for n in note.into_iter().chain(carried) {
+    for n in note.into_iter().chain(carried).chain(declared) {
         if !path.notes.contains(&n) {
             path.notes.push(n);
         }

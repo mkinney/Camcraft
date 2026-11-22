@@ -243,6 +243,29 @@ fn the_shipped_catalog_asset_reads_the_same_through_the_library_reader() {
     }
 }
 
+/// #3069: the router starter set imports through the normal command.
+#[test]
+fn router_starter_library_imports_without_refusals_and_undoes_as_one_unit() {
+    let text = include_str!("../../../assets/tools/catalog.json");
+    let lib = parse_tool_library(text).expect("the starter library parses");
+    let router: Vec<_> = lib.iter().filter(|t| t.name.starts_with("Router ")).collect();
+    assert_eq!(router.len(), 22, "the router set is bundled");
+    let (w, mut h) = world_with(&[]);
+    let report = import(&w, &mut h, text).expect("all starter tools import");
+    assert_eq!(report.added.len(), lib.len());
+    assert!(report.skipped.is_empty() && report.renamed.is_empty());
+    for t in &lib {
+        assert_eq!(tool_named(&w, &t.name).as_ref(), Some(&t.tool), "{}", t.name);
+    }
+    assert!(h.undo(&w));
+    assert!(tool_names(&w).is_empty());
+    assert!(!h.can_undo(), "one import is one undo unit");
+    assert!(h.redo(&w));
+    for t in router {
+        assert_eq!(tool_named(&w, &t.name).as_ref(), Some(&t.tool), "{}", t.name);
+    }
+}
+
 /// #1152: a body electrode's outline rides the library file both ways,
 /// and the shipped-catalog reader of the tools crate reads the same row.
 #[test]

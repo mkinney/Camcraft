@@ -6,11 +6,11 @@
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
 use crate::entry::Entry3D;
 use crate::geo2d::{Loop, Point2, Region};
-use crate::geometry::{Point3, Triangle};
+use crate::geometry::Point3;
 use crate::links::{Link, LinkTally};
 
 use super::arcs::push_segs;
-use super::contour_depth::{Ladder, ladder, picked_law};
+use super::contour_depth::Ladder;
 use super::contour_entry::{Engage, crosses, flatten, say, seam_leads, wall_arc, wall_arc_top};
 use super::contour_comp::{self, SpanCtx};
 use super::contour_link::{plan_links, push_stay, ring_link};
@@ -25,84 +25,8 @@ use super::contour_start;
 use super::lead_ext::{extend_leads, push_lead_down, retrace};
 
 pub use super::contour_params::{ContourParams, Lead, Side};
+pub use super::contour_region::{contour, contour_on_bodies, contour_on_part, contour_on_picked};
 
-
-/// Offset-contour `region` (a material cross-section): every level walks
-/// the cutter-center loops of the region grown by `r + leave`, so the
-/// tool edge grazes the boundary with `leave = 0` and stops a finishing
-/// allowance short of it otherwise. The plan phrases this as
-/// `- (r - leave)`; that is the same curve written from the void side -
-/// here the region is material, so both outer walls and island/hole
-/// walls come out of one positive offset. [`Side::Inside`] negates that
-/// one term - the region erodes and each loop traverses the other way, so
-/// the cutter rides the boundary from the void side with the material on
-/// the same side of travel (Auto is this Outside law inside the
-/// generator). Climb keeps the material on the right (M3, #1555): outside
-/// rings run clockwise, inside rings counter-clockwise. Loop order is
-/// deterministic (largest absolute area first, canonically oriented, and
-/// traversed per the climb/side rule).
-///
-/// Between subpaths (tab hops) and between loops of one level the tool
-/// retracts to the hop plane - `retract_z`, clamped to `clearance_z` so
-/// a legacy retract parked above clearance cannot make the hop climb
-/// higher than the clearance move it replaced, with the clamp echoed in
-/// the panel - rapids across in air, and plunges again. A level change
-/// still lifts to full `clearance_z`: the new level engages material the
-/// previous one never touched, and crosses into it by the `entry`
-/// family (M8.2 A) - every arm certified against the one center this
-/// ladder shares, on the bore side where that center is bounded air.
-/// Rapids inside the footprint below the
-/// safe plane are the verifier's business (step 7), flagged, never
-/// hidden.
-pub fn contour(region: &Region, p: &ContourParams) -> Result<Toolpath, GenError> {
-    contour_impl(region, p, None)
-}
-
-/// [`contour`] of a region sectioned off a finished part: each ring is
-/// walked only at the levels where the part's wall it trims still
-/// exists (`contour_depth`) - a blind feature's ring ends at its floor
-/// plus the stock to leave, and the dropped levels are named in the
-/// notes. Through features and outer walls keep every level, so a part
-/// whose rings all run the full depth posts exactly [`contour`]'s path.
-pub fn contour_on_part(
-    region: &Region,
-    part: &[Triangle],
-    p: &ContourParams,
-) -> Result<Toolpath, GenError> {
-    contour_impl(region, p, Some((part, &[], false)))
-}
-
-/// [`contour_on_part`] of a part that is the union of touching bodies
-/// (M13.11): `bodies` are the per-solid index ranges of `part`, and the
-/// depth ladder reads each plane as the 2D union of the bodies' own
-/// sections - two models butted face to face cut every level the one
-/// block they stand for cuts. Fewer than two ranges is
-/// [`contour_on_part`], byte for byte.
-pub fn contour_on_bodies(
-    region: &Region,
-    part: &[Triangle],
-    bodies: &[std::ops::Range<usize>],
-    p: &ContourParams,
-) -> Result<Toolpath, GenError> {
-    contour_impl(region, p, Some((part, bodies, false)))
-}
-
-/// [`contour_on_bodies`] of rings the user PICKED (#1927): a ring that
-/// meets its wall at no level below the part's top - the chosen side
-/// stands in the part all the way down - is refused by name, never a
-/// silent top-plane pass in air (`contour_depth::picked_law`).
-pub fn contour_on_picked(
-    region: &Region,
-    part: &[Triangle],
-    bodies: &[std::ops::Range<usize>],
-    p: &ContourParams,
-) -> Result<Toolpath, GenError> {
-    contour_impl(region, p, Some((part, bodies, true)))
-}
-
-/// The part a contour reads: its facets, its body ranges, and whether the
-/// rings were picked (the #1927 law applies).
-type PartRef<'a> = (&'a [Triangle], &'a [std::ops::Range<usize>], bool);
 
 /// Offset loops, programmed region and walking polylines prepared for one
 /// contour band; shared with `contour_whole`.
@@ -111,6 +35,9 @@ pub(super) struct PreparedBand {
     pub prog: Option<Region>,
     pub loops: Vec<Loop>,
     pub plan: Vec<Vec<Point2>>,
+    /// The lead room's region when it is not `center`: `center` with the
+    /// rings that another band cuts on a shared level fenced off (#2677).
+    pub room: Option<Region>,
 }
 
 pub(super) fn prepare_band(region: &Region, p: &ContourParams) -> Result<PreparedBand, GenError> {
@@ -151,49 +78,7 @@ pub(super) fn prepare_band(region: &Region, p: &ContourParams) -> Result<Prepare
             v
         })
         .collect();
-    Ok(PreparedBand { center, prog, loops, plan })
-}
-
-fn contour_impl(region: &Region, p: &ContourParams, part: Option<PartRef<'_>>) -> Result<Toolpath, GenError> {
-    p.validate()?;
-    // Control-side compensation (M13.11): its parameter door first.
-    contour_comp::door(p)?;
-    let band = prepare_band(region, p)?;
-    let refs: Vec<&Loop> = band.loops.iter().collect();
-    // #1448: the user's start point re-sequences its ring instead.
-    let pick = contour_start::pick_ring(&refs, p)?;
-    let exit = contour_start::pick_exit(&refs, p)?; // #1473
-    let flat = p.levels()?;
-    let r = p.tool_diameter * 0.5;
-    let d = r + p.stock_to_leave;
-    // Lead shrinks, refusals and reseated starts, each said once.
-    let mut lead_notes: Vec<String> = Vec::new();
-    // Which ring is cut at which level: all of them at every level for
-    // a flat region; against a part, each ring down to its own floor.
-    let lad = match part {
-        None => Ladder::uniform(&flat, band.loops.len()),
-        Some((f, bodies, _)) => ladder(&band.plan, f, bodies, &flat, p.top_z, r, p.stock_to_leave, &mut lead_notes),
-    };
-    // A picked ring on the wrong side is refused by its own name first
-    // (#1927), also when it was the only ring (#2004: with no air level
-    // at Top Z, such a ring walks no level at all).
-    if let Some((f, _, true)) = part {
-        picked_law(&band.plan, f, &flat, &lad, d, p.side)?;
-    }
-    if lad.zs.is_empty() {
-        // Every ring stands in the part at its first level: nothing is
-        // legal to cut, and an empty path would read as a clean one.
-        return Err(GenError::Invalid(format!(
-            "every contour ring cuts into the part at its first level - nothing to machine \
-             without a gouge ({})",
-            lead_notes.join("; ")
-        )));
-    }
-    let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
-    let mut said = Said::default();
-    let mut tally = FilletTally::default();
-    emit_band(&mut b, &band, p, &lad, pick, exit, &mut said, &mut lead_notes, &mut tally)?;
-    finish_contour(b, lead_notes, &tally, p)
+    Ok(PreparedBand { center, prog, loops, plan, room: None })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -221,7 +106,7 @@ pub(super) fn emit_band(
     // Climb travel keeps the part on the RIGHT on both sides (#1555, see
     // the per-loop flip below), so the air - the only side a fillet may
     // stand on - is left for climb, right for conventional.
-    let legal = Legal { region: &band.center, inside, air_left: Some(p.climb) };
+    let legal = Legal { region: band.room.as_ref().unwrap_or(&band.center), inside, air_left: Some(p.climb) };
     let eng = Engage { p, center: &band.center, cert: &cert, plan: &band.plan, m: &m, legal: &legal };
     let prog = &band.prog;
     let hop = p.retract_z.min(p.clearance_z);
@@ -234,8 +119,12 @@ pub(super) fn emit_band(
     // and the next ring's, cut paths too (#1555: climb's leads cross it).
     let mut last_leads: Vec<Vec<Point2>> = Vec::new();
     let is_tabbed = |z: f64| p.tab_count > 0 && z < p.bottom_z + p.tab_height;
-    // #2480: each ring's tab windows, fitted once (tab_bridge).
-    let mut fits = std::collections::HashMap::new();
+    // #2480 / #2561: each ring's tab windows, fitted once (tab_bridge) and
+    // held against every other cut of the tabbed levels (tab_clear).
+    // Only a level that a ring is cut at holds its tabs against it.
+    let tab_levels: Vec<Vec<u64>> =
+        (0..band.loops.len()).map(|li| lad.ring(li).iter().filter(|&&z| is_tabbed(z)).map(|z| z.to_bits()).collect()).collect();
+    let mut fits = super::tab_clear::fit_loops(&band.loops, &tab_levels, pick, p, &legal);
     // The cut order, and where the stay-down link joins it (contour_link).
     let (sched, stay) = plan_links(p, lad, &band.plan, lead_notes);
     for (si, &(z, li)) in sched.iter().enumerate() {
@@ -367,7 +256,10 @@ pub(super) fn emit_band(
                 b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
             }
             let mut arced = false;
-            if wall_arc_on && !tabbed {
+            // #3132: a None lead-in adds no XY travel at the seam - the
+            // wall arc runs back along the seam's tangent like a lead.
+            let no_lead_in = p.lead == Lead::None;
+            if wall_arc_on && !tabbed && !no_lead_in {
                 let z_top = wall_arc_top(p, rz, rzi, hop_z);
                 let first = lead.first().or(walk.first());
                 match wall_arc(b, &eng, e2, z, z_top, hop_z, first) {
@@ -381,6 +273,8 @@ pub(super) fn emit_band(
                         ),
                     ),
                 }
+            } else if wall_arc_on && !tabbed {
+                say(lead_notes, "entry: the arc stands down with no lead-in - its descent would run along the seam like a lead; grazing dive at the ring's start".into());
             } else if wall_arc_on {
                 say(
                     lead_notes,

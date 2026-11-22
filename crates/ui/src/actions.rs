@@ -14,7 +14,7 @@
 use camcraft_app::operation::SrcRef;
 
 use crate::operations::quick_params;
-use crate::state::{CommandKind, State, UiTarget};
+use crate::state::{CommandKind, LayoutRequest, Panel, State, UiTarget};
 use crate::viewport::ProjectionMode;
 
 /// File menu: ask for a mesh to import (the dialog itself runs in
@@ -325,36 +325,41 @@ pub(crate) fn toggle_projection(state: &mut State) {
 /// frame. Surfaces that also change what the world highlights (tree nodes,
 /// viewport picks) push a `Select` alongside; a bare retarget never does.
 pub(crate) fn target(state: &mut State, t: UiTarget) {
-    use crate::state::{LayoutRequest, Panel};
+    // A retarget ends the blank new-tool form (#2397).
+    state.new_tool_form = false;
     if let UiTarget::Tool(name) = &t {
         if name.is_empty() {
             state.layout_request = Some(LayoutRequest::ToolLibrary);
             return;
         }
-        if state.tool_editor.is_some() {
-            state.close_tool_editor_window();
+        if state.tool_shape_editor.is_some() {
+            state.close_tool_shape_editor();
         }
         state.layout_request = Some(LayoutRequest::Show(Panel::Properties));
     }
     state.ui_target = t;
 }
 
-/// Open the tool editor window (M1.4) on `name` - the named tool through
-/// the same sync law the panes use, so the fields (and the live preview)
-/// start at the world's numbers; the empty name opens a numbered blank
-/// draft as the creation form. View state like `target`: opening itself
-/// queues nothing; closing is the window's ✕ or the ghost law in
-/// `State::drain_actions`, and only the form's buttons ever push
-/// Add/Change/Delete.
-pub(crate) fn open_tool_editor(state: &mut State, name: &str) {
-    if name.is_empty() {
-        let draft = state.new_tool_draft();
-        state.tool_ui = draft;
-    } else {
-        state.tool_ui.name = name.to_owned();
-        state.sync_tool_ui();
-    }
-    state.tool_editor = Some(name.to_owned());
+/// #2397: start a blank numbered tool in Properties. The empty Tool target
+/// is the destination; `new_tool_form` says which face of it shows.
+pub(crate) fn begin_new_tool(state: &mut State) {
+    let draft = state.new_tool_draft();
+    state.tool_ui = draft;
+    state.close_tool_shape_editor();
+    state.new_tool_form = true;
+    state.layout_request = Some(LayoutRequest::Show(Panel::Properties));
+    state.ui_target = UiTarget::Tool(String::new());
+}
+
+/// #2397: open the tool shape editor window on `name` - the body, the
+/// profile and the holder, the settings left in Properties. View state
+/// like `target`: opening queues nothing; closing is the window's ✕ or the
+/// ghost law, and only the shape buttons push a command.
+pub(crate) fn open_tool_shape_editor(state: &mut State, name: &str) {
+    state.tool_ui.name = name.to_owned();
+    state.sync_tool_ui();
+    state.tool_shape_editor = Some(name.to_owned());
+    state.new_tool_form = false;
     // #371: a fresh body draft per opening; it mirrors the tool's body.
     state.tool_body_ui = crate::state::ToolBodyUi::default();
     state.tool_profile_ui = crate::state::ToolProfileUi::default();

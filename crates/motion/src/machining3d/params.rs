@@ -86,7 +86,7 @@ impl Pocket3DParams {
         if self.tool_diameter <= 0.0 || self.stepdown <= 0.0 {
             return Err(GenError::Invalid("diameter and stepdown must be positive".into()));
         }
-        if self.stepover <= 0.0 {
+        if !self.strategy.steps_by_load() && self.stepover <= 0.0 {
             return Err(GenError::Invalid("stepover must be positive".into()));
         }
         // The diameter bound is the reach law of the strategies that

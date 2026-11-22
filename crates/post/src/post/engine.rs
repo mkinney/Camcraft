@@ -6,7 +6,7 @@
 //! it reads. The control dialect lives in the script, never here.
 
 use super::cnc::{self, Record};
-use super::js::{is_false, ProgramId, Script};
+use super::js::{is_false, is_true, ProgramId, Script};
 use super::machine;
 use super::PostError;
 use crate::cl::MoveKind;
@@ -108,8 +108,17 @@ pub fn run_program_with(
     options: &Value,
     id: &ProgramId,
 ) -> Result<PostOutput, PostError> {
+    // The transforms and callbacks must see the same checked machine as the CLI.
+    let input = super::machine_installation::checked_input(mch).map_err(PostError::Refused)?;
+    let mch = input.as_ref();
     let records = super::normalize_program_order(cnc::parse(stream)?);
-    let mut s = Script::load(cps)?;
+    let operation = records.iter().find_map(|record| match record {
+        Record::Param { name, value } if name == "OperationName" => value.as_str(),
+        _ => None,
+    }).unwrap_or("unnamed operation");
+    let mut s = Script::load_for_program(cps, records.len(), operation)?;
+    let fail_on_warning = is_true(&s.eval_src("typeof failOnWarning !== 'undefined' && failOnWarning === true")?);
+    let mut tool_macros = super::tool_change::Macros::read(&mut s)?;
     // #902: an inch document on a script that cannot write inch.
     if let Some(why) = super::units::refusal(&mut s, options)? {
         return Err(PostError::Refused(why));
@@ -122,11 +131,8 @@ pub fn run_program_with(
     // #1386: Explain G-code on a script that states no comment form is
     // refused by name here, before any hook runs.
     let explain_form = super::explain::form(&mut s, options)?;
-    // #1649: a flipped WCS axis mirrors its own sections about the work
-    // origin - the per-setup statement of the #374 mirror below, so the
-    // two compose (a flipped X on an inverted X posts the standard signs).
-    // First, so a flipped and rotated section is refused by that name: the
-    // two passes never change the same section.
+    // #1649 / #2476: mirror each flipped WCS section and express its yaw
+    // in that frame. The rotation below then gives R(-yaw') F = F R(-yaw).
     let records = super::wcs_flip::apply(records, &s)?;
     // #760: a Z-rotated work offset transforms coordinates into WCS XY
     // (before machine axis inversion so Bake mirrors in WCS slides), and
@@ -135,7 +141,7 @@ pub fn run_program_with(
     // #374: an inverted machine axis - the one place the stream is
     // mirrored into the controller's frame, or refused by name.
     let records = super::invert::apply(records, mch, &s)?;
-    s.set_machine(&machine::script_props(mch))?;
+    s.set_machine(&machine::flatten(mch))?;
     // #542: whether the manifest's `serves` (#1266) names a sinker EDM -
     // the one script that may voice a sinker section (below).
     let serves_sinker = s
@@ -151,6 +157,11 @@ pub fn run_program_with(
         s.arm_explain(f)?;
     }
     s.call("onOpen", "")?;
+    // #2996: the header notes (a model checked at reduced accuracy) are
+    // part of the header, in the script's own comment form.
+    for note in &id.notes {
+        s.call("onComment", &json!(note).to_string())?;
+    }
     let head = s.out_len()?;
 
     let mut warnings = Vec::new();
@@ -308,7 +319,7 @@ pub fn run_program_with(
                 base.insert("ToolNumber".into(), json!(*number));
                 base.insert("ToolName".into(), json!(name));
                 s.set_properties(&merged(&base, &BTreeMap::new(), pos))?;
-                s.call("onToolChange", &format!("{}, {}", json!(number), json!(name)))?;
+                tool_macros.call(&mut s, *number, name)?;
             }
             Record::Section { begin } => {
                 s.call(if *begin { "onSection" } else { "onSectionEnd" }, "")?;
@@ -370,6 +381,12 @@ pub fn run_program_with(
                         _ => None,
                     }).collect();
                 let mut props = c.props();
+                if c.kind == crate::cl::CycleKind::FineBore {
+                    // #1445: refused for a script without `fineBoring`;
+                    // the shift is read from the chain itself.
+                    let op = base.get("OperationName").and_then(Value::as_str).unwrap_or("");
+                    super::fine_bore::voice(s.voices_fine_boring(), c, &records[i + 1..], op, &mut props, &mut warnings);
+                }
                 props.insert("ChainFeedRate".into(), json!(chain.first().and_then(|m| m.feed)));
                 props.insert("ChainBottomZ".into(), json!(chain.iter().map(|m| m.z).reduce(f64::min)));
                 s.set_properties(&merged(&base, &props, pos))?;
@@ -576,6 +593,9 @@ pub fn run_program_with(
 
     let (out, msgs) = s.drain()?;
     warnings.extend(msgs);
+    if fail_on_warning && !warnings.is_empty() {
+        return Err(PostError::Refused(warnings.join("; ")));
+    }
     let mut program = String::new();
     for l in &out {
         program.push_str(l);

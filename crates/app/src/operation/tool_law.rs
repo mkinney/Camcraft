@@ -139,6 +139,11 @@ pub fn cutting_radius(tool: &crate::tools::Tool) -> Result<f64, String> {
 /// else, and no cutting kind mounts an electrode.
 pub const ELECTRODE: &[ToolKind] = &[ToolKind::Electrode];
 
+/// The undercut cutters (#1444): a head wider than its neck cuts
+/// sideways only, so only the Slot Undercut kind mounts them, and it
+/// mounts nothing else - an end mill has no overhang to cut a roof with.
+pub const UNDERCUT: &[ToolKind] = &[ToolKind::TSlot, ToolKind::Keyseat, ToolKind::Dovetail, ToolKind::Lollipop];
+
 /// The wire EDM wire (#2011): the wire operations mount nothing else,
 /// and no cutting kind mounts a wire.
 pub const WIRE: &[ToolKind] = &[ToolKind::Wire];

@@ -212,7 +212,8 @@ model page before importing, or pass it from a script,
 
 Pick the built-in machine and post closest to your machine in **Setup**; see
 [Setups](@/guide/set-up/setups.md) and [Posting](@/guide/check-and-post/posting.md). CamCraft ships
-machine files (`.mch`) for generic mills, a lathe and a mill-turn, and for
+machine files (`.mch`) for generic mills, a lathe and a mill-turn (a lathe with
+live tooling), and for
 several Tormach and other machines, and posts (`.cps` scripts) for Fanuc, Haas,
 Siemens 840D, Heidenhain, Mazak, Tormach PathPilot, Makera Carvera and Fanuc
 Lathe. For a machine that has none, the contributor guide

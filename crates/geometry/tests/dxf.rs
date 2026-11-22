@@ -407,3 +407,15 @@ fn dxf_zero_length_entities_do_not_create_primitives() {
         }
     }
 }
+
+#[test]
+fn all_drawing_units_keep_both_persistence_code_apis() {
+    for code in 1..=24 {
+        let Units::Known(unit) = Units::from_code(code) else {
+            panic!("known DXF unit {code}");
+        };
+        assert_eq!(unit.code(), code, "profile persistence");
+        assert_eq!(unit.insunits_code(), code, "main's DXF writer");
+        assert_eq!(Units::Known(unit).code(), code, "drawing provenance");
+    }
+}

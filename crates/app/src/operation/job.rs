@@ -57,9 +57,15 @@ pub struct GenJob {
     pub(super) picked_region: Option<Result<Region, GenError>>,
     pub(super) contour_sel:
         Option<Result<super::selection::SelectionGeometry, GenError>>,
+    /// #1864: resolved DXF sketch chains for `2D Contour` (takes precedence over
+    /// `contour_sel` / `picked_region` when `src` selects sketch entities).
+    pub(super) sketch_contour:
+        Option<Result<super::contour_sketch::SketchContourPlan, GenError>>,
     pub(super) drive_chains: Option<Result<Vec<Vec<Point3>>, GenError>>,
     /// #1504: a picked Slot's room, read here; the Slot arm confines to it.
     pub(super) slot_bound: Option<Result<crate::machining2d::SlotBound, GenError>>,
+    /// #2848: a rotary op's picked faces, read here; the rotary arms keep to them or refuse by name.
+    pub(super) rotary_picks: Option<Result<super::rotary_picks::Picked, GenError>>,
     pub(super) prior: Option<Result<Arc<crate::rest::PriorState>, GenError>>,
     /// The program ahead of this op in its setup, uncut (issue #96
     /// review): verify's vertical-dive convictions are re-read against
@@ -88,6 +94,9 @@ pub struct GenJob {
     pub(super) unread_steel: Vec<String>,
     /// The highest world Z the tip reaches (WCS origin + stated Z top).
     pub(super) z_ceiling: Option<f64>,
+    /// The mounted machine's Z stroke, mm (#2987): the tool-change height
+    /// over the table top for the 3+2 first-traverse law.
+    pub(super) z_stroke: Option<f64>,
     /// `fixtures` split by whether the steel turns with the part
     /// (M13.8 (2)): `.0` rides the rotary, `.1` stands still (the
     /// declared-fixed models, then the machine table) - the post gate's
@@ -120,6 +129,8 @@ pub struct GenJob {
     /// The area controls resolved against the world (M11.5); `None` for
     /// the identity - an untouched operation carries nothing new.
     pub(super) area: Option<Result<AreaCtx, GenError>>,
+    /// Protected "Do not touch" items resolved into job coordinates (#2055), plus requested clearance (mm).
+    pub(super) avoid: Option<Result<(Vec<verify::AvoidItem>, f64), GenError>>,
     /// The work offset's world origin (`posting::wcs_context`), the
     /// spindle a lathe or mill-turn post programs about: world Z
     /// through it. The cross drill measures its standoffs from this
@@ -129,6 +140,9 @@ pub struct GenJob {
     /// share of the turned surface the axis fit set aside, which the
     /// op does not turn. Carried onto the path's notes by `run_job`.
     pub(super) spindle_note: Option<String>,
+    /// #3100: what the setup's post declares about its first traverse
+    /// (`first_traverse_posed::post_order`), read with the world here.
+    pub(super) post_order: super::first_traverse_posed::PostOrder,
     /// #319: carried material outside the declared stock, said by name on
     /// the path once it exists (`carried_stock::Overhang::note`) - the post
     /// gate refuses when a feed move reaches it.
@@ -136,6 +150,7 @@ pub struct GenJob {
     /// #532: the machine condition a wire EDM kind cuts with (its wire
     /// and gap); `None` for every kind that mounts a library tool.
     pub(super) wire: Option<(super::wire_op::WireCondition, Option<super::wire_op::WireCondition>)>,
+    pub(super) wire_sketch: Option<super::wire_sketch::SelectedWireChain>,
     /// #537: a 4-axis wire cut's two picked profiles.
     pub(super) wire_ruled: Option<Result<super::wire_ruled::RuledPicks, GenError>>,
 
@@ -183,6 +198,12 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // #1510: a milling WCS whose Z is tilted off the machine's would
     // cut the part as it lies, not as the WCS shows - refused by name.
     if let Some(why) = crate::setup_wcs_tilt::generation_problem(world, op) {
+        return Err(GenError::Invalid(why));
+    }
+    // #1862: an operation on a DXF profile, or a 3D kind in a setup
+    // whose model is virtual, is refused by name - never cut for want
+    // of a solid to check against.
+    if let Some(why) = crate::sketch_model::generation_problem(world, op) {
         return Err(GenError::Invalid(why));
     }
     // #763: the one machining-frame seam. Built before the first read;
@@ -236,32 +257,46 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // that decide which arm runs them; each result surfaces at its
     // arm's own statement in `run_job`.
     let section_z = section_z_of(world, setup, Some(&op.src), &op.params, frame.as_ref());
-    let picked_region = match (&op.params, &op.src) {
-        // Contour's Selection pair is resolved as raw geometry below
-        // (its arm never asks for a region first); every other kind
-        // whose picks author the region takes selection_region's
-        // answer.
-        (params, SrcRef::Selection(items))
-            if selection_drives_region(params)
-                && !matches!(params, OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_)) =>
-        {
-            Some(selection_region(world, setup, items, params, &op.area))
+    let sketch_slot = super::slot_sketch::is_sketch_slot(world, &op.src, &op.params);
+    let picked_region = if super::contour_sketch::is_sketch_contour(world, &op.src, &op.params) {
+        None
+    } else if sketch_slot {
+        // #1868: sketch picks bound the slot (`slot_bound`); the region
+        // is the authored stadium, as for a typed slot on the stock.
+        matches!(op.params, OpParams::TrochoidalSlot { .. }).then(|| region_core(&material, &op.params, frame.as_ref(), Ok(0.0)))
+    } else {
+        match (&op.params, &op.src) {
+            // Contour's Selection pair is resolved as raw geometry below
+            // (its arm never asks for a region first); every other kind
+            // whose picks author the region takes selection_region's
+            // answer.
+            (params, SrcRef::Selection(items))
+                if selection_drives_region(params)
+                    && !matches!(params, OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_)) =>
+            {
+                Some(selection_region(world, setup, items, params, &op.area))
+            }
+            // A whole PART under the pocket family clears the stock around
+            // it, never the part's own section (issue #12).
+            // #1554: the STOCK as the source clears the stock around the
+            // setup's parts the same way, never the parts' own sections.
+            (params, src @ SrcRef::Stock) => super::area::stock_pocket(world, setup, src, params, frame.as_ref()),
+            (params, src) => whole_model_pocket(world, setup, src, params, frame.as_ref()),
         }
-        // A whole PART under the pocket family clears the stock around
-        // it, never the part's own section (issue #12).
-        // #1554: the STOCK as the source clears the stock around the
-        // setup's parts the same way, never the parts' own sections.
-        (params, src @ SrcRef::Stock) => super::area::stock_pocket(world, setup, src, params, frame.as_ref()),
-        (params, src) => whole_model_pocket(world, setup, src, params, frame.as_ref()),
     };
     // #1603: the keep law speaks exactly where that reading does.
     let around_part = super::keep_law::is_keep_kind(&op.params) && matches!(op.src, SrcRef::Entity(_)) && picked_region.is_some();
+    let wire_sketch = super::wire_sketch::selected(&op.src, &op.params)
+        .then(|| super::wire_sketch::resolve(world, op, op_name, &hs))
+        .transpose().map_err(GenError::Invalid)?;
     let wire_ruled = super::wire_ruled::picks_of(world, op);
+    let sketch_contour = super::contour_sketch::is_sketch_contour(world, &op.src, &op.params)
+        .then(|| super::contour_sketch::resolve_plan(world, &op.src, &op.params));
     let contour_sel = match (&op.params, &op.src) {
         // The plasma cut reads its picks the contour's way (#670):
         // closed rings AND open runs, each cut as picked.
         (OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_), SrcRef::Selection(items))
-            if wire_ruled.is_none() =>
+            if wire_ruled.is_none() && sketch_contour.is_none() && wire_sketch.is_none() =>
         {
             Some(selection_geometry_impl(world, setup, items, &op.params, None))
         }
@@ -269,10 +304,14 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     };
     let slot_bound = match (&op.params, &op.src) {
         (OpParams::Slot { .. }, SrcRef::Selection(items)) if !items.is_empty() => Some(super::slot_pick::slot_bound_of(world, setup, items)),
+        (OpParams::TrochoidalSlot { .. }, SrcRef::Selection(items)) if sketch_slot => Some(super::slot_pick::slot_bound_of(world, setup, items)),
         _ => None,
     };
     let drive_chains = match &op.params {
         OpParams::MultiAxisContour { .. } => Some(drive_chains_of(world, op)),
+        // #1888: the deburr's picked chains ride the same slot - the
+        // WCS yaw turns them with the facets they lie on.
+        OpParams::Deburr { exclude_edges, .. } => Some(super::deburr_picks::chains_of(world, op, exclude_edges)),
         _ => None,
     };
     // #318: an op in a setup whose incoming stock must be carried across
@@ -331,6 +370,23 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         if turned || predrilled { crate::rest::drills_ahead(world, op_name, setup) } else { Vec::new() };
     let turned_ahead = if turned { crate::rest::turned_ahead(world, op_name, setup) } else { Vec::new() };
     let area = area_ctx(world, op, tool.diameter * 0.5, &material, part_solid);
+    let avoid = if op.area.do_not_touch.is_default() {
+        None
+    } else if let Some(why) = do_not_touch_unsupported(op.params.kind()) {
+        Some(Err(GenError::Invalid(why)))
+    } else if let Some(why) = super::avoid::overlap_issue(
+        world,
+        &op.area.do_not_touch.picks,
+        Some(&op.src),
+        &op.area,
+    ) {
+        Some(Err(GenError::Invalid(why)))
+    } else {
+        Some(
+            super::avoid::collect_items(world, setup, &op.area.do_not_touch, frame.as_ref())
+                .map(|items| (items, op.area.do_not_touch.clearance)),
+        )
+    };
     // #388: the op's own setup's machine, active or not.
     let machine_kind = crate::machine::kind_of_setup(world, setup);
     // The lathe spindle law (issue #62): every kind that turns about the
@@ -363,6 +419,12 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         .and_then(|m| m.axis(2))
         .and_then(crate::machine::AxisLimits::program_travel)
         .map(|(lo, hi)| wcs_origin[2] + lo.max(hi));
+    let z_stroke = mounted
+        .as_ref()
+        .and_then(|m| m.axis(2))
+        .and_then(crate::machine::AxisLimits::program_travel)
+        .map(|(lo, hi)| (hi - lo).abs())
+        .filter(|s| s.is_finite());
     let sinker_gap = match &op.params {
         OpParams::SinkerBurn(p) => Some(super::sinker_op::burn_gap(world, setup, p)),
         // #545: the side burn's gap, once its allowance holds under it.
@@ -402,8 +464,10 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         section_z,
         picked_region,
         contour_sel,
+        sketch_contour,
         drive_chains,
         slot_bound,
+        rotary_picks: super::rotary_picks::picks_of(world, op),
         prior,
         verify_prior,
         drills_ahead,
@@ -416,6 +480,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         fixture_names,
         unread_steel,
         z_ceiling,
+        z_stroke,
         workholding,
         fixture_meshes,
         rotary_axis,
@@ -424,11 +489,14 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         keep_parts: super::keep_law::parts_in_stock(world, setup, &op.params, part_solid),
         neighbour_parts: super::keep_law::neighbour_parts(world, setup, &op.params, &op.src, part_solid),
         area,
+        avoid,
         wcs_origin,
         spindle_note,
+        post_order: super::first_traverse_posed::post_order(world, setup, &op.params),
         carried_overhang,
         wire,
         wire_ruled,
+        wire_sketch,
         sinker_gap,
         sinker_pass,
         sinker_wear,

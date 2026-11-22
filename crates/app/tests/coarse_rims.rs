@@ -237,6 +237,6 @@ fn a_matched_drill_past_the_bound_is_refused_by_name_not_convicted() {
     let lines: Vec<String> = posting::verification_gate(&world).into_iter().filter(|l| l.contains("was imported")).collect();
     assert_eq!(
         lines,
-        vec!["OP: model 'part' was imported too coarsely to verify; re-import with a larger STEP facet budget (surfaces are approximated to within 0.030 mm)".to_string()]
+        vec!["OP: model 'part' was imported too coarsely to verify; re-import with a larger STEP facet budget, or export the file again with a tighter tolerance (surfaces are approximated to within 0.030 mm)".to_string()]
     );
 }

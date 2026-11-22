@@ -84,11 +84,13 @@ impl<'c, 'a> Rest<'c, 'a> {
         chord_tol: f64,
         bodies: &'c [std::ops::Range<usize>],
     ) -> Self {
+        // #1444: an undercut head cuts under a roof - no column is cleared.
+        let clears = cx.mode != super::types::Mode::Undercut;
         let mut cut: Vec<Cut> = path
             .moves
             .iter()
             .enumerate()
-            .filter(|(_, m)| m.kind != MoveKind::Rapid)
+            .filter(|(_, m)| clears && m.kind != MoveKind::Rapid)
             .flat_map(|(i, m)| {
                 m.chords(chord_tol)
                     .into_iter()

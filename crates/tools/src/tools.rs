@@ -117,6 +117,24 @@ pub enum ToolKind {
     /// (`[0.02, 1.0]`), `material_group` the wire material (e.g. `"brass"`).
     /// Turns no spindle (`rpm` must be 0) and has no corner radius.
     Wire,
+    /// T-slot cutter (#1444, [`crate::undercut`]): a flat disc head on a
+    /// narrower neck. `diameter` is the head's, `flute_len` the head's
+    /// height, `shank_d` the neck's diameter (under the head's) and
+    /// `shank_len` the neck's length. It cuts sideways only: only the
+    /// Slot Undercut operation mounts it.
+    TSlot,
+    /// Keyseat (Woodruff) cutter (#1444): the same disc-on-a-neck solid
+    /// as the T-slot cutter, thinner, read the same way.
+    Keyseat,
+    /// Dovetail cutter (#1444): a head widest at the tip that narrows
+    /// upward. `tip_angle` is the angle between the bottom face and the
+    /// flank in degrees (60 for a 60 degree dovetail), `diameter` the
+    /// head's at the tip, `flute_len` the head's height.
+    Dovetail,
+    /// Lollipop (undercut ball) cutter (#1444): a ball of `diameter` on
+    /// a narrower neck. `flute_len` is the height above the tip where
+    /// the neck leaves the ball (from the ball's centre up).
+    Lollipop,
 }
 
 impl core::fmt::Display for ToolKind {
@@ -140,6 +158,10 @@ impl core::fmt::Display for ToolKind {
             ToolKind::ThreadMill => "thread mill",
             ToolKind::ThreadMillSingle => "single-form thread mill",
             ToolKind::Wire => "wire",
+            ToolKind::TSlot => "T-slot cutter",
+            ToolKind::Keyseat => "keyseat cutter",
+            ToolKind::Dovetail => "dovetail cutter",
+            ToolKind::Lollipop => "lollipop cutter",
         };
         f.write_str(s)
     }
@@ -401,7 +423,13 @@ impl Tool {
             | ToolKind::Electrode | ToolKind::Waterjet | ToolKind::Wire
             // A thread mill draws as the cylinder its tooth crests
             // sweep (#894) - the envelope the reach laws read.
-            | ToolKind::ThreadMill | ToolKind::ThreadMillSingle => add_pt(&mut p, 0.0, r),
+            | ToolKind::ThreadMill | ToolKind::ThreadMillSingle
+            // A T-slot or keyseat head is a flat disc (#1444); the
+            // narrower neck above it is the shared shank step.
+            | ToolKind::TSlot | ToolKind::Keyseat => add_pt(&mut p, 0.0, r),
+            // A dovetail narrows upward and a lollipop is a ball
+            // (#1444): the head draws its own flute top.
+            ToolKind::Dovetail | ToolKind::Lollipop => crate::undercut::head_outline(self, &mut p),
             // The chamfer mill's cone is the same picture read the
             // other way in purpose - apex at the tip center opening
             // upward to the full radius - so it shares the drill's
@@ -419,7 +447,9 @@ impl Tool {
                 }
             }
         }
-        add_pt(&mut p, zc, r);
+        if !matches!(self.kind, ToolKind::Dovetail | ToolKind::Lollipop) {
+            add_pt(&mut p, zc, r);
+        }
         let sr = self.shank_d.max(0.0) * 0.5;
         if zs > zc {
             add_pt(&mut p, zc, sr);
@@ -437,7 +467,7 @@ impl Tool {
 
 /// Append unless it equals the previous point: the band steps share a z
 /// with the wall's top, and duplicates only thicken the polyline.
-fn add_pt(p: &mut Vec<(f64, f64)>, z: f64, r: f64) {
+pub(crate) fn add_pt(p: &mut Vec<(f64, f64)>, z: f64, r: f64) {
     if p.last().copied() != Some((z, r)) {
         p.push((z, r));
     }
@@ -447,7 +477,7 @@ fn add_pt(p: &mut Vec<(f64, f64)>, z: f64, r: f64) {
 /// radius at height z. The `max(0.0)` before the sqrt is the clamped
 /// half-typed-draft guard (rounding at the pole cannot go negative;
 /// nonsense z can, and the Prime Directive says it renders short, not NaN).
-fn dome_radius(rad: f64, z: f64) -> f64 {
+pub(crate) fn dome_radius(rad: f64, z: f64) -> f64 {
     (2.0 * rad * z - z * z).max(0.0).sqrt()
 }
 

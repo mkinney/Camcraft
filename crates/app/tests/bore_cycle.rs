@@ -82,7 +82,7 @@ fn dwell_of(world: &World) -> (CycleChoice, f64) {
 
 #[test]
 fn refused_expanded_bores_write_no_nc_file() {
-    for stem in ["heidenhain", "tinyg", "carvera"] {
+    for stem in ["heidenhain", "tinyg", "grbl", "carvera"] {
         let script = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../assets/posts/{stem}.cps")),
         )

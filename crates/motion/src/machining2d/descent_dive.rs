@@ -103,17 +103,30 @@ pub(super) fn axial_why(d: &Descent, l: &Lvl) -> Option<&'static str> {
 /// would plunge into solid (M11.3, the between-pass law): entered like a
 /// level - the helix onto it, else the ramp along the pass - from `from`,
 /// or refused by name. Never a plunge.
-pub(super) fn restart(l: &Lvl, leg: Point2, z: f64, from: f64, m: &Motion) -> Descent {
+pub(super) fn restart(b: &PathBuilder, l: &Lvl, leg: Point2, z: f64, from: f64, plane: f64, m: &Motion) -> Descent {
+    // A closing ring may restart through the same depth interval as the
+    // rows' entry ramp. Room inside the region alone does not prove that
+    // its helix misses those prior descents. Test the posted entry too.
+    let clear = |d: &Descent| {
+        let mut trial = b.clone();
+        super::descent::push(&mut trial, d, l, z, plane, m);
+        trial.moves().get(b.moves_len()..).is_some_and(|moves|
+            !super::arc_cross::moves_cross_prior(moves, b.moves()))
+    };
     let e = l.pass.first().copied().unwrap_or(leg);
     let site = format!("the pass start ({:.3}, {:.3})", e.x, e.y);
-    if let h @ Descent::Helix(..) = plan_arm(Entry3D::Helix, false, l, leg, z, from, m) {
+    if let h @ Descent::Helix(..) = plan_arm(Entry3D::Helix, false, l, leg, z, from, m)
+        && clear(&h)
+    {
         return Descent::Named(Box::new(h), format!("{NOT_CENTER_CUTTING} at a pass start inside a level - helix entry instead"));
     }
-    if let Some(r) = ramp_fallback(l, z, from, m) {
+    if let Some(r) = ramp_fallback(l, z, from, m)
+        && clear(&r)
+    {
         return Descent::Named(Box::new(r), format!("{NOT_CENTER_CUTTING} at a pass start inside a level - ramp along the pass instead"));
     }
     Descent::Refused(format!(
-        "{CENTER_CUT_REFUSAL} - {site} would be a plunge into solid at Z {z:.3}, and no helix or ramp fits onto it"
+        "{CENTER_CUT_REFUSAL} - {site} would be a plunge into solid at Z {z:.3}, and no helix or ramp fits without crossing prior cuts"
     ))
 }
 

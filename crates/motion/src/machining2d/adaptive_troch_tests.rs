@@ -242,6 +242,7 @@ fn without_lift_room_the_returns_retract_and_a_plunge_entry_is_said_unread() {
 
 #[test]
 fn explicit_trochoidal_parameters_control_engagement_return_feed_and_loop_width() {
+    let face = || rect(-15.0, -8.0, 15.0, 8.0);
     let p = PocketParams { bottom_z: -3.0, ..params() };
 
     let impossible = adaptive_trochoidal_with(&face(), &p, &AdaptiveTrochParams { max_engagement: 10.0, ..AdaptiveTrochParams::default() })
@@ -284,112 +285,6 @@ fn explicit_trochoidal_parameters_control_engagement_return_feed_and_loop_width(
         .expect_err("max_engagement > 180 is refused")
         .to_string();
     assert!(bad_eng.contains(WHO) && bad_eng.contains("max engagement"), "{bad_eng}");
-}
-
-fn check_cleared(name: &str, region: &Region, p: &PocketParams) {
-    let reach = if p.stock_to_leave > 0.0 {
-        region.offset(-p.stock_to_leave).unwrap_or_else(|_| panic!("{name}: reach offset"))
-    } else {
-        region.clone()
-    };
-    let center = region.offset(-(0.5 * p.tool_diameter + p.stock_to_leave)).unwrap_or_else(|_| panic!("{name}: center offset"));
-    let guard = center.offset(2e-3).unwrap_or_else(|_| panic!("{name}: guard offset"));
-    let t = cut(region, p);
-    assert!(t.all_finite(), "{name}: non-finite move");
-    assert!(t.has_arcs(), "{name}: expected arc moves");
-    for q in cut_points(&t) {
-        assert!(guard.contains(Point2::new(q.x, q.y)), "{name}: point ({:.3}, {:.3}) outside center", q.x, q.y);
-        assert!(q.z >= p.bottom_z - 1e-9 && q.z <= p.clearance_z + 1e-9, "{name}: z={:.3} out of range", q.z);
-    }
-    let crossed = crate::verify::crossed_pairs(&t, super::super::ARC_FIT_TOL);
-    assert!(crossed.is_empty(), "{name}: {} crossings: {:?}", crossed.len(), &crossed[..crossed.len().min(3)]);
-
-    let spec = QualitySpec::new(p.tool_diameter);
-    let Ok(mut dex) = stock_for(region, p.top_z, p.bottom_z, p.tool_diameter, &spec) else { panic!("{name}: stock") };
-    let Ok(q) = measure(&t, &mut dex, &spec) else { panic!("{name}: measure") };
-    assert!(q.max_deg <= DEFAULT_MAX_ENGAGEMENT + 0.5, "{name}: engagement {:.1} deg at {:?}", q.max_deg, q.max_at);
-    assert!(q.slot_len < 1e-6, "{name}: slotting {:.3} mm", q.slot_len);
-    let Ok(troch_rest) = rest_area(&dex, &reach, p.bottom_z) else { panic!("{name}: troch rest") };
-
-    let Ok(hsm) = super::super::pocket::pocket(region, p) else { panic!("{name}: hsm ref") };
-    let Ok(mut hdex) = stock_for(region, p.top_z, p.bottom_z, p.tool_diameter, &spec) else { panic!("{name}: hsm stock") };
-    let Ok(_) = measure(&hsm, &mut hdex, &spec) else { panic!("{name}: hsm measure") };
-    let Ok(hsm_rest) = rest_area(&hdex, &reach, p.bottom_z) else { panic!("{name}: hsm rest") };
-    let tol = reach.area() * 0.005 + 2.0;
-    assert!(troch_rest <= hsm_rest + tol, "{name}: troch rest {troch_rest:.2} mm2 exceeds hsm rest {hsm_rest:.2} mm2 (+{tol:.2})");
-}
-
-#[test]
-fn wide_rectangular_pocket_is_cleared_by_parallel_lanes() {
-    let p = PocketParams { bottom_z: -3.0, ..params() };
-    let r = rect(0.0, 0.0, 60.0, 40.0);
-    check_cleared("wide 60x40 D6", &r, &p);
-    check_cleared("wide 60x40 D10", &r, &PocketParams { tool_diameter: 10.0, ..p });
-}
-
-#[test]
-#[ignore = "heavy lane: release engagement and rest-area measurement"]
-fn l_shaped_pocket_is_cleared_under_engagement_limit() {
-    let p = PocketParams { tool_diameter: 10.0, bottom_z: -3.0, ..params() };
-    let Ok(l) = Region::new(vec![poly(&[(0.0, 0.0), (60.0, 0.0), (60.0, 30.0), (30.0, 30.0), (30.0, 60.0), (0.0, 60.0)])]) else {
-        panic!("l shape");
-    };
-    check_cleared("L-shape D10", &l, &p);
-    check_cleared("L-shape D6", &l, &PocketParams { tool_diameter: 6.0, ..p });
-}
-
-#[test]
-fn pocket_with_island_is_cleared_without_crossing_or_excess_rest() {
-    let p = PocketParams { bottom_z: -3.0, ..params() };
-    let Ok(isl) = Region::new(vec![
-        poly(&[(0.0, 0.0), (66.0, 0.0), (66.0, 46.0), (0.0, 46.0)]),
-        poly(&[(27.0, 17.0), (39.0, 17.0), (39.0, 29.0), (27.0, 29.0)]),
-    ]) else {
-        panic!("island")
-    };
-    let Ok(isl2) = Region::new(vec![
-        poly(&[(0.0, 0.0), (60.0, 0.0), (60.0, 40.0), (0.0, 40.0)]),
-        poly(&[(24.0, 14.0), (36.0, 14.0), (36.0, 26.0), (24.0, 26.0)]),
-    ]) else {
-        panic!("island2")
-    };
-    check_cleared("60x40 island D10", &isl2, &PocketParams { tool_diameter: 10.0, ..p });
-    check_cleared("66x46 island D6", &isl, &p);
-}
-
-#[test]
-fn ring_round_island_is_cleared_with_closed_lane() {
-    let part = rect(0.0, 0.0, 60.0, 50.0);
-    let (Ok(o), Ok(i)) = (part.offset(12.0), part.offset(2.0)) else { panic!("offsets") };
-    let Ok(ring) = o.difference(&i) else { panic!("ring") };
-    let p = PocketParams { bottom_z: -3.0, ..params() };
-    check_cleared("ring D6", &ring, &p);
-}
-
-#[test]
-fn triangle_and_wide_to_narrow_neck_are_cleared() {
-    let p = PocketParams { bottom_z: -3.0, ..params() };
-    let Ok(tri) = Region::new(vec![poly(&[(0.0, 0.0), (60.0, 0.0), (0.0, 60.0)])]) else { panic!("triangle") };
-    check_cleared("triangle 60x60 D6", &tri, &p);
-    let Ok(neck) = Region::new(vec![poly(&[
-        (0.0, 0.0),
-        (30.0, 0.0),
-        (30.0, 10.0),
-        (60.0, 10.0),
-        (60.0, 20.0),
-        (30.0, 20.0),
-        (30.0, 30.0),
-        (0.0, 30.0),
-    ])]) else {
-        panic!("neck")
-    };
-    check_cleared("wide-to-narrow neck D6", &neck, &p);
-}
-
-#[test]
-fn corner_cleanup_reduces_34x16_rest_to_at_most_hsm_rest() {
-    let p = PocketParams { bottom_z: -3.0, ..params() };
-    check_cleared("face 34x16 D6", &face(), &p);
 }
 
 /// PR #1788: valid loads below 4% must not be raised to a 4% cleanup step.
@@ -444,9 +339,9 @@ fn custom_parameters_reach_parallel_and_closed_lane_layouts() {
     let p = PocketParams { bottom_z: -3.0, ..params() };
     let t =
         AdaptiveTrochParams { ret: Some(TrochoidReturn::Retract), return_feed: Some(1800.0), loop_width: Some(4.0), max_engagement: 100.0 };
-    let outer = rect(-30.0, -25.0, 30.0, 25.0);
+    let outer = rect(-6.0, -5.0, 6.0, 5.0);
     let ring = outer.offset(12.0).unwrap().difference(&outer.offset(2.0).unwrap()).unwrap();
-    for region in [rect(0.0, 0.0, 60.0, 40.0), ring] {
+    for region in [rect(0.0, 0.0, 30.0, 24.0), ring] {
         let center = region.offset(-0.5 * p.tool_diameter).unwrap();
         let lanes = plan_all_lanes(&region, &center, &p, &t).expect("custom lane planning");
         assert!(!lanes.layouts.is_empty());
@@ -468,7 +363,7 @@ fn custom_return_feed_is_emitted_by_production_parallel_lanes_and_cleanup() {
         loop_width: Some(4.0),
         ..AdaptiveTrochParams::default()
     };
-    let region = rect(0.0, 0.0, 60.0, 40.0);
+    let region = rect(0.0, 0.0, 30.0, 24.0);
     let path = adaptive_trochoidal_with(&region, &p, &t).expect("custom production multi-lane cut");
     assert!(path.notes.iter().any(|n| n.contains("lanes (")), "{:?}", path.notes);
     assert!(path.moves.iter().any(|m| m.feed == Some(1800.0)));

@@ -128,7 +128,7 @@ fn contour() -> Operation {
         src: SrcRef::Entity("bar".into()),
         params: OpParams::RotaryContour {
             tolerance: 0.05,
-            clearance_z: Height::fixed(25.0),
+            clearance_z: Height::fixed(40.0),
             retract_z: None,
             top_z: Height::fixed(6.0),
             bottom_z: Height::fixed(-8.0),

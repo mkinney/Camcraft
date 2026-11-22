@@ -2,6 +2,7 @@
 //! Provenance: our own tests over our own shell and egui_kittest; no external SDKs or vendor material.
 
 mod basic;
+mod budget;
 mod regressions;
 mod safety;
 

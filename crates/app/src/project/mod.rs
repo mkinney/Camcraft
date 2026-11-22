@@ -1,4 +1,4 @@
-//! Project save/load: `.camproj`, JSON, version 69 (see `PROJECT_VERSION`).
+//! Project save/load for the `.camproj` JSON format. See [`PROJECT_VERSION`].
 //!
 //! Serialization goes through plain DTO structs (deliberately not flecs
 //! reflection): the file format is our public persistence contract and must
@@ -112,6 +112,12 @@ pub use file::*;
 mod params;
 pub use params::*;
 mod entity;
+// #2463: a linked model's source file and its digest.
+mod source_dto;
+pub use source_dto::SourceDto;
+// #1339: who vouched for a mesh of unknown fidelity.
+mod vouch_dto;
+pub use vouch_dto::VouchDto;
 mod vise_dto;
 mod fixture_keys;
 mod plate_dto;
@@ -119,6 +125,8 @@ mod modvise_dto;
 pub use vise_dto::ViseDto;
 mod thread_dto;
 mod break_dto;
+mod unreachable_dto;
+use unreachable_dto::UnreachableDto;
 pub use break_dto::EdgeBreakDto;
 // #416: the threading infeed plan's file mirror.
 mod thread_infeed_dto;
@@ -143,6 +151,12 @@ mod sinker_dto;
 pub use sinker_dto::*;
 mod trochoid_dto;
 pub use trochoid_dto::*;
+// #1444: the Slot Undercut's file mirror.
+mod undercut_dto;
+pub use undercut_dto::*;
+// #1862: a DXF profile's row.
+mod sketch_dto;
+pub use sketch_dto::{PrimitiveDto, SketchDto};
 mod rest_dto;
 pub use rest_dto::*;
 mod approach;
@@ -179,7 +193,7 @@ pub use setup_options_dto::SetupPostOptionsDto;
 mod setup_links;
 // #368: a tool's modelled body on file (v57).
 mod tool_body_wire;
-pub use tool_body_wire::ToolBodyDto;
+pub use tool_body_wire::{body_to_dto, stated_body, HolderRefDto, ToolBodyDto};
 // #155: Pause / Home entries of the operation list.
 mod program_entry_dto;
 pub use program_entry_dto::ProgramEntryDto;

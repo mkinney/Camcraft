@@ -22,7 +22,8 @@ with a tool.
 
 Every kind checks its tool. Face, Contour, Pocket, Adaptive, Offset, Slot,
 Trochoidal slot, Circular and Bore cut with a flat end mill or bull-nose;
-Trace and Engrave take any mill or a taper tool. A wrong tool is refused by
+Trace and Engrave take any mill or a taper tool; Slot Undercut takes a
+T-slot, keyseat, dovetail or lollipop cutter only. A wrong tool is refused by
 name ("'<tool>' is a <kind>; a <operation> operation cuts with a ..."),
 and a document with no suitable tool is told to add one to the tool
 library.
@@ -37,7 +38,22 @@ boundary chain. Include and Exclude boundaries must remain closed.
 
 Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
 
+## DXF profiles
+
+A DXF profile belongs to a setup's stock; it is not a solid model. See
+[Place a DXF profile](@/guide/set-up/setups.md#place-a-dxf-profile).
+A 2D operation can name the profile as its source, but **generation from
+its chains is not available yet**. Generate refuses by name and leaves no
+toolpath. Import a solid model for a job you need to machine now. A
+profile has no model top or bottom: use stock or fixed height references.
+
 ## Face
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/first-part](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/first-part)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-face" /> }} ![Top view of parallel facing passes across the stock top.](../../../operation-paths.svg#Face)
 
@@ -60,6 +76,12 @@ bound it to a smaller area.
 first cut level".
 
 ## 2D Contour
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/contour-tabs](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/contour-tabs)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-contour" /> }} ![Top view of one offset profile followed around a wall.](../../../operation-paths.svg#Contour)
 
@@ -130,6 +152,14 @@ an open chain".
 
 ## 2D Pocket
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/adaptive-pocket](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/adaptive-pocket)
+- [2d/first-part](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/first-part)
+- [multiaxis/indexed](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/multiaxis/indexed)
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-pocket" /> }} ![Top view of passes clearing the inside of a pocket.](../../../operation-paths.svg#Pocket)
 
 **For:** clearing the inside of a closed area down to a floor, with islands
@@ -197,6 +227,12 @@ already supply the arc motion.
 
 ## 2D Adaptive
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/adaptive-pocket](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/adaptive-pocket)
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-adaptive2d" /> }} ![Top view of looping pocket passes with small radial engagement.](../../../operation-paths.svg#Adaptive2D)
 
 **For:** roughing a pocket with a constant side load on the tool, so it can
@@ -235,6 +271,12 @@ apply to Spiral.
 
 ## 2D Offset
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-offset2d" /> }} ![Top view of concentric offset passes inside a pocket.](../../../operation-paths.svg#Offset2D)
 
 **For:** roughing a pocket in concentric rings from the boundary inward at a
@@ -242,9 +284,32 @@ fixed stepover. Choose it over Adaptive when an even offset pattern is
 wanted rather than a constant load.
 
 **Picks:** as Pocket. **Settings:** Stepover 3, Stepdown 5, Stock to leave
-0, Entry Helix radius 1. **Common refusals:** as Pocket.
+0, Entry Helix radius 1.
+
+**Do not touch** (Geometry tab, **Boundaries**): pick faces or edge chains
+to protect from every cut, plunge, ramp, helix, keep-down and rapid link
+across the full tool assembly (flutes, shank and holder). **Clearance**
+sets extra 3D standoff in addition to **Stock to leave**. Protected
+faces and edges stay highlighted in the viewport while the operation is
+selected.
+
+**Breaking file change:** protected operations require project format
+version 73. An older build that supports only version 72 or earlier
+refuses the newer file. It cannot open it and ignore the protection.
+Older projects load with no protected picks. Keep an older copy if you
+must return to an older build.
+
+**Common refusals:** as Pocket; picking an item already in the
+operation's machining selection or Include boundary; or leaving no safe
+cutting room around a protected item.
 
 ## Slot
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/slots](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/slots)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-slot" /> }} ![Top view of straight passes between the slot endpoints.](../../../operation-paths.svg#Slot)
 
@@ -278,6 +343,12 @@ material blocks posting.
 
 ## Trochoidal slot
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/slots](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/slots)
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-trochoidal-slot" /> }} ![Top view of overlapping loops progressing along a slot.](../../../operation-paths.svg#TrochoidalSlot)
 
 **For:** a slot wider than the tool, cleared with small looping passes that
@@ -303,7 +374,78 @@ in - cut it as a plain Slot"; "a loop width of ... leaves the channel";
 "a ... mm microlift would feed the return above the clearance plane ...
 use the Retract return to hop higher".
 
+## Slot Undercut
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
+{{ <icon name="op-slot-undercut" /> }}
+
+**For:** the part of a slot that is wider below than at its mouth: a
+T-slot, a keyseat, a dovetail, a round undercut groove. The cutter's head
+is wider than its neck, so it cannot go down into the slot from above. It
+goes down outside the wall, feeds sideways into the slot at depth, cuts
+every pass there, feeds back out the same way and only then lifts.
+
+**Tool:** a T-slot, keyseat, dovetail or lollipop cutter. In the tool
+library the diameter is the head's, the flute length is the head's height,
+and the shank diameter and length are the neck's. A dovetail's tip angle
+is the angle between its bottom face and its flank (60 for a 60 degree
+dovetail). A lollipop's flute length is where the neck leaves the ball.
+
+**Geometry:** typed in. A and B are the ends of the slot's centre line.
+Bulge 0 is a straight slot; any other value makes the centre line an arc
+from A to B (the tangent of a quarter of its angle, positive
+counter-clockwise).
+
+| Tab | Setting | Default |
+|---|---|---|
+| Geometry | A / B | (-20, 0) / (20, 0) |
+| Geometry | Bulge | 0 (straight) |
+| Geometry | Undercut width | 20 |
+| Geometry | Entry run-in | 15 |
+| Geometry | Neck slot width | 0 (nothing above the neck) |
+| Heights | Bottom Z | the undercut's floor (the cutter's tip) |
+| Passes | Stepover | 3 |
+
+The undercut width is measured at the cutter's widest point: the rim of a
+T-slot or keyseat cutter, the tip corner of a dovetail, the equator of a
+lollipop. The first pass runs on the centre line. Each pair of passes
+after it widens the undercut by the stepover.
+
+The entry run-in is the distance from A, back along the slot's line, to
+the point where the cutter goes down and comes up. Put that point outside
+the stock, or in a pocket that an earlier operation cut.
+
+Cut the slot for the neck first, with a Slot operation, and give its width
+as the neck slot width. A dovetail or a keyseat that is open above needs
+no neck slot.
+
+**Checks that hold the post:** a Z move while material stands in or over
+the cutter's head ("moves the undercut cutter in Z with material in or
+over its head"); the neck or the holder in material above the head ("shank/
+holder ... collides with the uncut stock"), which is what a missing or too
+narrow neck slot gives; the head or the neck inside the part.
+
+**Common refusals:** "entry slot ... mm is too narrow for the ... mm cutter
+neck"; "undercut width ... mm is narrower than the ... mm cutter head";
+"Slot Undercut cuts with a T-slot, keyseat, dovetail or lollipop cutter".
+
+**Simulation:** the stock view removes the true head and neck shape, so
+the undercut shows under its roof. The program check that runs before a
+post reads the stock from above and leaves an undercut's stock as it
+stood; the checks above judge the undercut instead.
+
 ## Trace
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/edge-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/edge-work)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-trace" /> }} ![Top view of a centreline path following a picked chain.](../../../operation-paths.svg#Trace)
 
@@ -317,6 +459,12 @@ region" when nothing usable is picked.
 
 ## Engrave
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/edge-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/edge-work)
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-engrave" /> }} ![Top view of an engraving path following the marking centreline.](../../../operation-paths.svg#Engrave)
 
 **For:** the same centreline ride as Trace, named for engraving text and
@@ -326,6 +474,12 @@ it is a functional groove; the path is the same.
 **Picks and settings:** as Trace.
 
 ## 2D Chamfer
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/edge-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/edge-work)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-chamfer2d" /> }} ![Section view of the chamfer tool cone lying along the chamfer face.](../../../operation-paths.svg#Chamfer2D)
 
@@ -353,6 +507,12 @@ this face stands at".
 
 ## Circular
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/hole-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/hole-work)
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-circular" /> }} ![Top view of concentric passes clearing a circular pocket.](../../../operation-paths.svg#Circular)
 
 **For:** a round pocket of a given centre and radius, cut in rings, with a
@@ -372,6 +532,12 @@ when the circle is a dimension, not a model face.
 within the cutter radius - the last ring could leave an uncut core".
 
 ## Thread
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/hole-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/hole-work)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-thread" /> }} ![View of the helical tool travel around an internal thread.](../../../operation-paths.svg#Thread)
 
@@ -393,6 +559,13 @@ needs a positive pitch to time its helix against"; "infeed must sit between
 0 and the ... mm thread depth this pitch stands at".
 
 ## Drill
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/first-part](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/first-part)
+- [2d/hole-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/hole-work)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-drill" /> }} ![Side view of an axial drilling stroke and retract.](../../../operation-paths.svg#Drill)
 
@@ -428,6 +601,12 @@ mouth, short of the ... mm asked - ... match the depth and size to the
 model"; "tap leaves no thread core".
 
 ## Bore
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/hole-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/hole-work)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-bore" /> }} ![View of circular interpolation inside a hole.](../../../operation-paths.svg#Bore)
 

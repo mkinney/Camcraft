@@ -112,6 +112,7 @@ fn pocket(strategy: PocketStrategy, bottom: f64, stepdown: f64) -> OpParams {
         optimal_load: 0.4,
         blend_turns: false,
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 

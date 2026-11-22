@@ -104,7 +104,9 @@ fn bought_size(t: &Tool) -> f64 {
 /// M13.4, the tool law's catalog hint: the starter-catalog entry the
 /// refusal suggests - of the family's first kind the catalog stocks
 /// (the family lists its primary kind first), the one nearest the
-/// everyday size, a tie to the smaller. `None` when the catalog holds
+/// everyday size, a tie to the smaller, a full tie to the lower name
+/// (#3170: a deterministic rule, so the hint never depends on the
+/// catalog's file order). `None` when the catalog holds
 /// no tool of any fitting kind: then the refusal says nothing extra
 /// rather than suggest a tool that cannot cut the op. Non-finite sizes
 /// never win (total ordering on the distance, NaN last).
@@ -114,12 +116,13 @@ pub fn catalog_suggestion(catalog: &[(&str, Tool)], kinds: &[ToolKind]) -> Optio
         catalog
             .iter()
             .filter(|(_, t)| t.kind == *kind && bought_size(t).is_finite())
-            .min_by(|(_, a), (_, b)| {
+            .min_by(|(na, a), (nb, b)| {
                 let (sa, sb) = (bought_size(a), bought_size(b));
                 (sa - SUGGEST_SIZE_MM)
                     .abs()
                     .total_cmp(&(sb - SUGGEST_SIZE_MM).abs())
                     .then(sa.total_cmp(&sb))
+                    .then_with(|| na.cmp(nb))
             })
     })?;
     Some(format!(

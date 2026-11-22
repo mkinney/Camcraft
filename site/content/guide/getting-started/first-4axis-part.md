@@ -33,6 +33,7 @@ and is not walked through here. `tormach.cps` posts it (issue #796). Four
 hand-written motion tests in the PathPilot simulator confirm the control
 behavior. The posted continuous program still needs a simulator run and a
 hardware check. See
+[Your first continuous 4-axis program](@/guide/getting-started/first-continuous-4axis-part.md),
 [Continuous 4-axis](@/guide/multi-axis/continuous-4-axis.md) and
 [What the post refuses](#what-the-post-refuses) below.
 

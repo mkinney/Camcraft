@@ -1,5 +1,7 @@
 //! Provenance: Autodesk DXF SECTION, HEADER, TABLES and ENTITIES structure.
 use super::Units;
+use super::blocks::Blocks;
+use super::dictionaries;
 use super::entities::{layer_name, simple};
 use super::pairs::{Pairs, Record, integer};
 use super::polyline::{legacy, lightweight};
@@ -25,6 +27,7 @@ pub fn parse_with_limits(bytes: &[u8], limits: Limits) -> Result<Document, DxfEr
         doc: Document::default(),
         limits,
     };
+    let mut blocks = Blocks::default();
     let mut sections = BTreeSet::new();
     loop {
         let record = input
@@ -36,6 +39,7 @@ pub fn parse_with_limits(bytes: &[u8], limits: Limits) -> Result<Document, DxfEr
                 if input.next()?.is_some() {
                     return Err(error("EOF", "data after EOF"));
                 }
+                blocks.check_owners()?;
                 return Ok(state.doc);
             }
             "SECTION" => {
@@ -59,8 +63,9 @@ pub fn parse_with_limits(bytes: &[u8], limits: Limits) -> Result<Document, DxfEr
                     }
                     match name {
                         "ENTITIES" => entities(&mut input, &mut state)?,
-                        "TABLES" => tables(&mut input, &mut state)?,
-                        "BLOCKS" => end_section(&mut input, "BLOCK")?,
+                        "TABLES" => tables(&mut input, &mut state, &mut blocks)?,
+                        "BLOCKS" => blocks.read(&mut input, limits.max_entities)?,
+                        "OBJECTS" => dictionaries::read(&mut input, limits.max_entities)?,
                         _ => return Err(error(name, "unsupported SECTION")),
                     }
                 }
@@ -161,7 +166,7 @@ fn entities(input: &mut Pairs<'_>, state: &mut State) -> Result<(), DxfError> {
     }
 }
 
-fn tables(input: &mut Pairs<'_>, state: &mut State) -> Result<(), DxfError> {
+fn tables(input: &mut Pairs<'_>, state: &mut State, blocks: &mut Blocks) -> Result<(), DxfError> {
     let mut table = None;
     let mut names = BTreeSet::new();
     loop {
@@ -191,6 +196,9 @@ fn tables(input: &mut Pairs<'_>, state: &mut State) -> Result<(), DxfError> {
             kind => {
                 if table != Some(kind) {
                     return Err(error(kind, "entry does not match TABLE"));
+                }
+                if kind == "BLOCK_RECORD" {
+                    blocks.table_record(record, state.limits.max_entities)?;
                 }
                 if kind == "LAYER" {
                     if state.doc.layers.len() >= state.limits.max_entities {

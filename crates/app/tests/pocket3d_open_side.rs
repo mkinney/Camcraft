@@ -126,6 +126,7 @@ fn pocket3d() -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         feed_opt: false,
         shell: true,
+        method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
     }
 }
 

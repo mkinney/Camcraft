@@ -50,6 +50,7 @@ fn contour_op(pick: Option<Point2>) -> OpParams {
         blend_turns: false,
         tilt: None,
         links: Links { approach: Approach { start_point: pick, ..Approach::DEFAULT }, ..Links::PLANAR },
+        chain_overrides: Vec::new(),
     }
 }
 

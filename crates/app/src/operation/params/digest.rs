@@ -4,6 +4,42 @@
 
 use super::*;
 
+/// Corner relief (#2400): written only when non-default, so every
+/// operation without relief keeps its digest.
+pub(super) fn write_corner_relief(
+    cr: &crate::machining2d::CornerRelief,
+    h: &mut std::hash::DefaultHasher,
+) {
+    if cr.is_off() {
+        return;
+    }
+    h.write_u8(0xC7);
+    h.write_u8(match cr.kind {
+        crate::machining2d::CornerReliefKind::None => 0,
+        crate::machining2d::CornerReliefKind::Dogbone => 1,
+        crate::machining2d::CornerReliefKind::TBone => 2,
+    });
+    h.write_u8(match cr.tbone_direction {
+        crate::machining2d::TBoneDirection::LongEdge => 0,
+        crate::machining2d::TBoneDirection::ShortEdge => 1,
+        crate::machining2d::TBoneDirection::Horizontal => 2,
+        crate::machining2d::TBoneDirection::Vertical => 3,
+    });
+    h.write_usize(cr.overrides.len());
+    for ov in &cr.overrides {
+        w(h, ov.at.x);
+        w(h, ov.at.y);
+        h.write_u8(match ov.choice {
+            crate::machining2d::CornerReliefChoice::None => 0,
+            crate::machining2d::CornerReliefChoice::Dogbone => 1,
+            crate::machining2d::CornerReliefChoice::TBoneFirst => 2,
+            crate::machining2d::CornerReliefChoice::TBoneSecond => 3,
+            crate::machining2d::CornerReliefChoice::TBoneX => 4,
+            crate::machining2d::CornerReliefChoice::TBoneY => 5,
+        });
+    }
+}
+
 /// One scalar, as its bit pattern.
 pub(super) fn w(h: &mut std::hash::DefaultHasher, v: f64) {
     h.write(&v.to_bits().to_le_bytes());
@@ -174,6 +210,12 @@ impl OpParams {
                     h.write_u8(0xC8);
                     w(h, q.x);
                     w(h, q.y);
+                }
+                // #2012: the equal-steps ladder moves every level - a
+                // byte only when on, so every earlier approach keeps
+                // its digest.
+                if a.equal_steps {
+                    h.write_u8(0xC9);
                 }
                 match a.lead_out {
                     None => h.write_u8(0xFF),

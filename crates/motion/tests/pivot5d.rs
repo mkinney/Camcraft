@@ -36,6 +36,7 @@ fn p3(x: f64, y: f64, z: f64) -> Point3 {
 
 fn finish(pattern: FinishPattern, top_z: f64, bottom_z: f64) -> Finish3DParams {
     Finish3DParams {
+        gap_link: camcraft_motion::finishing3d::GapLink::Jump,
         pattern,
         stepover: Some(2.0),
         tool_diameter: 2.0 * R,

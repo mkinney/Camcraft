@@ -206,6 +206,11 @@ fn m88_posts_on_the_shipped_mill_turn_machine() {
     let m = camcraft_app::machine::parse_mch(&text).expect("the shipped mill-turn parses");
     let (world, mut history) = two_faces(CoolantMode::ThroughTool, CoolantMode::Flood);
     history.execute(&world, LoadMachine::new(&world, "millturn.mch".into(), Some(m)).expect("sane"));
+    // #3083: a mill-turn judges a face's first traverse, so the faces
+    // cut before the mount read Stale once and regenerate.
+    for name in ["Face1", "Face2"] {
+        history.execute(&world, GenerateOperation::new(&world, name).expect("regenerate"));
+    }
     let out = post_with(&world, script("Fanuc"));
     // The face fixture's 12000 rpm tops the mill-turn's 10000 (its own
     // refusal); the coolant words are what this pins.

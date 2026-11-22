@@ -46,6 +46,7 @@ pub(super) fn settle(entities: &mut [EntityDto], from: u32) -> Vec<String> {
             blend_turns,
             blend_radius,
             rest,
+            corner_relief,
             tilt,
         } = op.params.clone()
         else {
@@ -102,6 +103,7 @@ pub(super) fn settle(entities: &mut [EntityDto], from: u32) -> Vec<String> {
             loop_width: None,
             blend_turns,
             blend_radius,
+            corner_relief,
             tilt,
         };
         // Adaptive2D uses its own kind tag in the generation stamp digest.

@@ -30,6 +30,12 @@ pub(super) fn height_fields(params: &OpParams) -> [(&'static str, &'static str, 
             ("TOP", "Work Top Z", Some(p.top_z)),
             ("BOT", "Cavity Floor Z", Some(p.floor_z)),
         ],
+        OpParams::SlotUndercut(p) => [
+            ("CLR", "Clearance Z", Some(p.clearance_z)),
+            ("RET", "Retract Z", p.retract_z),
+            ("TOP", "Top of Part Z", Some(p.top_z)),
+            ("BOT", "Bottom of Part Z", Some(p.bottom_z)),
+        ],
         OpParams::Probe { clearance_z, .. } => [
             ("CLR", "Clearance Z", Some(*clearance_z)),
             ("RET", "Retract Z", None),

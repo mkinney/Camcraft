@@ -36,6 +36,7 @@ impl State {
         let (stored, note) = prefs::load(&path);
         self.prefs_store = Some(path);
         self.import_tool_holders = !stored.skip_tool_holders;
+        self.ai_chat.offline_only = stored.ai_offline_only;
         theme_set(&self.world, &stored.theme);
         let tokens = theme_files::resolve(&mut self.theme_cache, &stored.theme)
             .map_or_else(|_| theme::current(), |(t, _)| t);
@@ -61,6 +62,10 @@ impl State {
             theme: theme_of(&self.world),
             color_vision: color_vision_of(&self.world),
             skip_tool_holders: !self.import_tool_holders,
+            ai_offline_only: self.ai_chat.offline_only,
+            // #1873: no control sets this path yet (#1876), so a save keeps
+            // the path that the file states.
+            cadmpeg_path: prefs::load(path).0.cadmpeg_path,
         };
         // The refusal is logged where it happens (app::prefs::save); the
         // choice in force stays right for this session either way.

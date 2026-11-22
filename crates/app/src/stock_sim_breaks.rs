@@ -77,6 +77,13 @@ pub fn stock_part_of(world: &flecs_ecs::prelude::World, setup: Option<&str>) -> 
     same.then_some(source)
 }
 
+/// #2596: whether `op` is a 2D Chamfer with no picks - its source the
+/// whole model, so the generator chose its edges, not the user.
+#[must_use]
+pub fn auto_edges(op: &crate::schema::Operation) -> bool {
+    matches!(op.params, OpParams::Chamfer2D { .. }) && matches!(op.src, crate::operation::SrcRef::Entity(_))
+}
+
 /// The records of op `name` the sim may credit: sane, on a declaring
 /// kind, and no wider than the op's stated width (a micron of slack for
 /// the lattice the file stores the edge on).
@@ -127,6 +134,19 @@ pub(crate) fn program_breaks(
     for p in planned.iter().filter(|p| !spanned || crate::setup::effective(world, p.setup.as_deref()) == *frame) {
         if !p.walled {
             out.extend(p.breaks.iter().cloned());
+            continue;
+        }
+        // #2596: a no-pick chamfer on a model that carries a modelled
+        // bevel has its edges drawn by the model. Its ride must cut
+        // nothing of the model, so none of its records is credited: a
+        // sharp edge it cut (a pocket rim the model leaves sharp), or a
+        // bevel cut wider than the modelled one, is a gouge.
+        if p.auto_edges && camcraft_sim::stock_sim::models_a_bevel(facets, tol, &p.breaks) {
+            tracing::warn!(
+                op = %p.name,
+                dropped = p.breaks.len(),
+                "2D Chamfer with no picks on a model with modelled chamfers - credit dropped, the ride is judged against the model (#2596)"
+            );
             continue;
         }
         let kept = camcraft_sim::stock_sim::on_walls(facets, tol, p.breaks.clone());

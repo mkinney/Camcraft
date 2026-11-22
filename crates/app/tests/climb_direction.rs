@@ -135,6 +135,7 @@ fn pocket(strategy: PocketStrategy, climb: bool) -> OpParams {
         optimal_load: 0.4,
         blend_turns: false,
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 
@@ -160,6 +161,7 @@ fn contour(side: Side, climb: bool, lead: Lead, bottom: f64) -> OpParams {
         blend_turns: false,
         tilt: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -224,6 +226,7 @@ fn adaptive2d(climb: bool) -> OpParams {
         troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         blend_turns: false,
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 

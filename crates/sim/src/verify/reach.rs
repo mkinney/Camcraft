@@ -50,6 +50,10 @@ pub(super) fn band_reach(
     let groups: [&[(f64, f64, f64)]; 2] = [&shank, &holder];
     let bands: Vec<(f64, f64, f64)> = groups.concat();
 
+    // #1444: an undercut path's bands answer to the undercut law.
+    if cx.mode == Mode::Undercut {
+        return;
+    }
     if !matches!(cx.mode, Mode::Engrave | Mode::Radial | Mode::Rotary) {
         // Both boundaries matter: the region's loops carry the part
         // islands (holes in the region), the stock's carry its outer

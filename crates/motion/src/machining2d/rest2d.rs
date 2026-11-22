@@ -33,8 +33,9 @@ use crate::cl::{PathBuilder, Toolpath};
 use crate::geo2d::Region;
 use crate::geometry::Point3;
 
+use super::corner_relief::{CornerRelief, ResolvedRelief, plan_corner_reliefs};
 use super::face::GenError;
-use super::pocket::{PocketParams, PocketStrategy, pocket_over};
+use super::pocket::{PocketParams, PocketStrategy, non_sliver_center, pocket_over_with_relief};
 use super::pocket_emit::{PocketWalks, emit_pocket_passes};
 use super::rest_anchor::anchor_first_pass;
 use super::rest_rings::rest_passes;
@@ -56,6 +57,12 @@ pub const REST_FILM: f64 = 0.02;
 /// long the pocket's boundary decides there. Only adds tool positions,
 /// all of them inside the pocket's own center area.
 pub const REST_REACH: f64 = 0.05;
+
+/// A corner relief's start may lie this far (mm) outside the rest center
+/// area and still be cut (#3146): the start is a vertex of the pocket's
+/// center area, on the rest center's boundary, and the offsets move that
+/// boundary by up to two arc tolerances (5 um each), as [`REST_MARGIN`].
+const RELIEF_START_TOL: f64 = 0.01;
 
 /// The previous tool, as the user entered it. The generator trusts it:
 /// it cannot see what really cut the pocket.
@@ -200,7 +207,14 @@ pub fn rest_plan(
 /// plan assume a full pocket; not built for rest areas yet); nothing
 /// left to cut; rest material this tool cannot reach either.
 pub fn rest_pocket(region: &Region, p: &PocketParams, rest: &RestParams) -> Result<Toolpath, GenError> {
+    rest_pocket_with_relief(region, p, rest, &CornerRelief::default())
+}
+
+/// [`rest_pocket`] with optional inside-corner reliefs (#2400) when cutting
+/// unreached corners left by a larger previous cutter.
+pub fn rest_pocket_with_relief(region: &Region, p: &PocketParams, rest: &RestParams, relief: &CornerRelief) -> Result<Toolpath, GenError> {
     p.validate()?;
+    relief.validate()?;
     let p = &PocketParams { strategy: rest_strategy(p.strategy)?, ..*p };
     let plan = rest_plan(region, p.tool_diameter, p.stock_to_leave, rest)?;
     if plan.rest.is_empty() {
@@ -222,10 +236,30 @@ pub fn rest_pocket(region: &Region, p: &PocketParams, rest: &RestParams) -> Resu
         plan.rest.area().abs(),
         region.area().abs(),
     )];
+    let off = p.tool_diameter * 0.5 + p.stock_to_leave;
     if !plan.previous_fits {
         notes.push("the previous tool fits nowhere in this pocket: the whole pocket is cut".into());
-        return pocket_over(region, &plan.center, p, notes, true, &[]);
+        let cr = plan_corner_reliefs(region, &plan.center, off, relief)?;
+        return pocket_over_with_relief(region, &plan.center, p, notes, true, &[], &cr.reliefs);
     }
+    let corner_reliefs: Vec<ResolvedRelief> = if relief.is_off() {
+        Vec::new()
+    } else {
+        let full_center = non_sliver_center(region, off)?;
+        let full_plan = plan_corner_reliefs(region, &full_center, off, relief)?;
+        // #3146: a relief starts at a vertex of the center area, which is
+        // on the rest center's boundary where the rest area touches the
+        // corner; a bare point-in-region test drops it by rounding.
+        let reach = plan.center.offset(RELIEF_START_TOL)?;
+        let (kept, dropped): (Vec<_>, Vec<_>) = full_plan.reliefs.into_iter().partition(|r| reach.contains(r.start));
+        for r in &dropped {
+            notes.push(format!(
+                "corner relief at ({:.3}, {:.3}) is not cut: the rest area does not reach that corner",
+                r.corner.x, r.corner.y
+            ));
+        }
+        kept
+    };
     let (mut passes, cut_center) = rest_passes(&plan, p.tool_diameter, p.tiling_step(), p.climb)?;
     if p.strategy == PocketStrategy::Zigzag {
         passes = super::pocket_zigzag::rest_passes(&plan.center, p.tiling_step(), p.climb)?;
@@ -245,6 +279,7 @@ pub fn rest_pocket(region: &Region, p: &PocketParams, rest: &RestParams) -> Resu
             joins: Vec::new(),
             hold_crossings: true,
             holes: &[],
+            corner_reliefs: &corner_reliefs,
         },
     )
 }

@@ -121,6 +121,11 @@ pub struct Approach {
     /// [`Approach::material_top`], #1559, set only where the entry carries
     /// stock).
     pub stock_top: Option<f64>,
+    /// The depth ladder's mode (#2012): `true` cuts the same number of
+    /// levels in equal steps (`machining2d::equal_stepdown`); `false` -
+    /// the default, every earlier file - steps by the full stepdown and
+    /// keeps the remainder in the last step.
+    pub equal_steps: bool,
     // --- D: feeds and engagement at entry ---
     /// Feed of ramp, helix and arc descents (mm/min); `0` is the cutting
     /// feed.
@@ -233,6 +238,7 @@ impl Approach {
         predrilled: false,
         plunge_height: DEFAULT_PLUNGE_HEIGHT,
         stock_top: None,
+        equal_steps: false,
         ramp_feed: 0.0,
         plunge_feed: 0.0,
         lead_feed_pct: 100.0,

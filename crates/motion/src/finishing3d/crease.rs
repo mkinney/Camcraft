@@ -8,7 +8,8 @@
 use crate::geometry::{Point3, Triangle};
 
 use super::params::Finish3DParams;
-use super::support::{Sup, dist2_pt_tri};
+use super::grid::SupSet;
+use super::support::{dist2_pt_tri};
 
 /// The model's float skin: welded vertices agree to this. The weld
 /// scale every chain in this module family keys on - lifted from the
@@ -81,7 +82,7 @@ pub(super) fn near(p: Point3, q: Point3) -> bool {
 /// Is this center a READING of the corner, inside the programmed
 /// window? Clear of every facet, resting on the solid at exactly r,
 /// and both contact feet standing on real facets.
-pub(super) fn rests(c: Point3, na: Point3, nb: Point3, p: &Finish3DParams, r: f64, sups: &[Sup]) -> bool {
+pub(super) fn rests(c: Point3, na: Point3, nb: Point3, p: &Finish3DParams, r: f64, sups: &SupSet) -> bool {
     if !c.is_finite() {
         return false;
     }
@@ -111,7 +112,7 @@ pub(super) fn rests(c: Point3, na: Point3, nb: Point3, p: &Finish3DParams, r: f6
     on_solid(sub3(c, scale3(na, r)), skin, sups) && on_solid(sub3(c, scale3(nb, r)), skin, sups)
 }
 
-fn on_solid(q: Point3, skin: f64, sups: &[Sup]) -> bool {
+fn on_solid(q: Point3, skin: f64, sups: &SupSet) -> bool {
     for s in sups {
         if q.x < s.xmin || q.x > s.xmax || q.y < s.ymin || q.y > s.ymax {
             continue;
@@ -135,7 +136,7 @@ pub(super) fn shrink(
     nb: Point3,
     p: &Finish3DParams,
     r: f64,
-    sups: &[Sup],
+    sups: &SupSet,
 ) -> Option<(Point3, Point3)> {
     let d = sub3(p1, p0);
     let span = d.dot(d).sqrt();

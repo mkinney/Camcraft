@@ -30,6 +30,7 @@ fn pocket(rest: Option<RestParams>) -> OpParams {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     }
 }
 

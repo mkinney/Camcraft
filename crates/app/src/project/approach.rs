@@ -79,6 +79,10 @@ pub struct ApproachDto {
     /// set; absent leaves at the seam, every earlier file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_point: Option<[f64; 2]>,
+    /// The equal-steps depth ladder (#2012): written only when on;
+    /// absent is the remainder ladder, every earlier file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub equal_steps: Option<bool>,
 }
 
 fn lead_dto(l: Lead) -> LeadDto {
@@ -135,6 +139,7 @@ pub fn approach_to_dto(a: &Approach) -> Option<ApproachDto> {
         wear_comp: (a.compensation == Compensation::Wear).then_some(true),
         start_point: a.start_point.map(|q| [q.x, q.y]),
         exit_point: a.exit_point.map(|q| [q.x, q.y]),
+        equal_steps: flag(a.equal_steps, d.equal_steps),
     };
     (dto != ApproachDto::default()).then_some(dto)
 }
@@ -180,6 +185,7 @@ pub fn approach_from_dto(d: Option<&ApproachDto>) -> Approach {
         },
         start_point: d.start_point.map(|[x, y]| crate::geo2d::Point2::new(x, y)),
         exit_point: d.exit_point.map(|[x, y]| crate::geo2d::Point2::new(x, y)),
+        equal_steps: d.equal_steps.unwrap_or(a.equal_steps),
         center_cutting: true,
         // #2004: runtime only - the generation lays the stock top over it.
         stock_top: None,

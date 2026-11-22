@@ -12,10 +12,12 @@ fn editor(name: &str) -> Harness<'static, State> {
     let tool = catalog().into_iter().find(|(n, _)| *n == name).unwrap().1;
     state.pending.push_back(CommandKind::AddTool { name: name.into(), tool });
     state.drain_actions();
-    crate::actions::open_tool_editor(&mut state, name);
+    // #2397: the tool settings are Properties; the shape editor has its
+    // own window and does not carry these fields.
+    state.ui_target = crate::state::UiTarget::Tool(name.into());
     let mut harness = Harness::builder()
         .with_size(Vec2::new(1280.0, 1200.0))
-        .build_ui_state(|ui, state: &mut State| super::tool_editor_window(ui.ctx(), state), state);
+        .build_ui_state(|ui, state: &mut State| super::properties(ui, state, &super::super::theme::current()), state);
     harness.run();
     harness
 }

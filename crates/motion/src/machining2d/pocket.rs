@@ -9,6 +9,7 @@ use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 use crate::links::Links;
 
+use super::corner_relief::{CornerRelief, ResolvedRelief, plan_corner_reliefs};
 use super::face::GenError;
 use super::arcs::ARC_FIT_TOL;
 use super::fillet_tally::corner_arc_radius;
@@ -82,7 +83,7 @@ pub struct PocketParams {
 }
 
 impl PocketParams {
-    pub(super) fn validate(&self) -> Result<(), GenError> {
+    pub fn validate(&self) -> Result<(), GenError> {
         let mut finite = [
             self.tool_diameter,
             self.stock_to_leave,
@@ -210,16 +211,30 @@ pub fn pocket(region: &Region, p: &PocketParams) -> Result<Toolpath, GenError> {
 /// [`pocket`] with the holes the caller proved open (#1449): read only
 /// when `p.links.approach.predrilled` asks (`predrilled.rs`).
 pub fn pocket_entered(region: &Region, p: &PocketParams, holes: &[PreHole]) -> Result<Toolpath, GenError> {
+    pocket_entered_with_relief(region, p, holes, &CornerRelief::default())
+}
+
+/// [`pocket_entered`] with optional inside-corner reliefs (#2400) for closed
+/// 2D pocket and square-ended slot boundaries.
+pub fn pocket_entered_with_relief(
+    region: &Region,
+    p: &PocketParams,
+    holes: &[PreHole],
+    relief: &CornerRelief,
+) -> Result<Toolpath, GenError> {
     p.validate()?;
+    relief.validate()?;
     if region.is_empty() {
         return Err(GenError::Empty("empty pocket region".into()));
     }
-    let center = non_sliver_center(region, p.tool_diameter * 0.5 + p.stock_to_leave)?;
+    let off = p.tool_diameter * 0.5 + p.stock_to_leave;
+    let center = non_sliver_center(region, off)?;
     if center.is_empty() {
         // Material exists that no legal tool position can reach.
         return Err(GenError::Invalid("pocket is narrower than the tool".into()));
     }
-    pocket_over(region, &center, p, Vec::new(), false, holes)
+    let plan = plan_corner_reliefs(region, &center, off, relief)?;
+    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs)
 }
 
 /// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
@@ -262,13 +277,14 @@ pub(super) fn non_sliver_center(region: &Region, erode: f64) -> Result<Region, G
 /// posted path (`arc_cross`): rest areas have thin horns where two
 /// fitted arcs can cross within tolerance. `holes` are the proved
 /// pre-drilled entries (#1449; rest machining passes none).
-pub(super) fn pocket_over(
+pub(super) fn pocket_over_with_relief(
     region: &Region,
     center: &Region,
     p: &PocketParams,
     notes: Vec<String>,
     hold_crossings: bool,
     holes: &[PreHole],
+    corner_reliefs: &[ResolvedRelief],
 ) -> Result<Toolpath, GenError> {
     // Auto commits to a shape here, from the region's own outline - the
     // outermost loop (largest area; holes and islands never decide the
@@ -297,9 +313,15 @@ pub(super) fn pocket_over(
         }
         s => (plan_passes(center, p.tiling_step(), p.climb, s)?, s, None, Vec::new()),
     };
-    if hold_crossings && strategy == PocketStrategy::Zigzag {
+    // #3021: rows alone leave a cusp between row ends on every wall and
+    // island; each Zigzag pocket closes with the area's boundary rings.
+    // A blended row turn can cross a ring, so the blends obey the
+    // crossing law as the rest pocket's do.
+    let zigzag = strategy == PocketStrategy::Zigzag;
+    if zigzag {
         passes = rest_passes(center, p.tiling_step(), p.climb)?;
     }
+    let hold_crossings = hold_crossings || zigzag;
     emit_pocket_passes(
         b,
         p,
@@ -312,6 +334,7 @@ pub(super) fn pocket_over(
             joins,
             hold_crossings,
             holes,
+            corner_reliefs,
         },
     )
 }

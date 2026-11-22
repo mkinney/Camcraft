@@ -62,7 +62,14 @@ impl OpParams {
                     CycleChoice::Bore => 5,
                     CycleChoice::BackBore => 6,
                     CycleChoice::Ream => 8,
+                    CycleChoice::FineBore { .. } => 9,
                 });
+                // #1445: the fine-bore shift is params data; only a fine
+                // bore writes it, so every other op keeps its digest.
+                if let CycleChoice::FineBore { shift_x_um, shift_y_um } = cycle {
+                    h.write_i32(*shift_x_um);
+                    h.write_i32(*shift_y_um);
+                }
                 // The hole list is params data, so it digests: recognition
                 // output, a typed edit, or a moved model (whose re-
                 // detect changes the numbers) all mark the op Stale

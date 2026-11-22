@@ -139,11 +139,20 @@ pub(crate) fn window(ctx: &egui::Context, state: &mut State) {
                 ui.selectable_value(&mut dlg.tab, PostDialogTab::Settings, "Settings");
                 ui.selectable_value(&mut dlg.tab, PostDialogTab::Operations, "Operations");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // #2292: show the shipped post script's name in the scope
+                    // line, with its full path on hover. The header row must
+                    // stay narrow so long install paths do not push the tab
+                    // buttons off-screen (the path varies per checkout).
+                    let post_label = posting::post_ref_label(&dlg.post);
+                    let hover_path = posting::post_path(&dlg.post);
                     let scope = match &dlg.setup_target {
-                        Some(s) => format!("Setup: {s} ({})", posting::post_ref_label(&dlg.post)),
-                        None => posting::post_ref_label(&dlg.post),
+                        Some(s) => format!("Setup: {s} ({post_label})"),
+                        None => post_label.to_string(),
                     };
-                    ui.label(RichText::new(scope).weak().small());
+                    let response = ui.label(RichText::new(scope).weak().small());
+                    if let Some(path) = hover_path {
+                        response.on_hover_text(path);
+                    }
                 });
             });
             ui.separator();

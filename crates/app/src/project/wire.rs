@@ -53,14 +53,19 @@ pub fn collect(world: &World) -> ProjectFile {
                 Some(EntityKind::Setup)
             } else if crate::program_entry::is_entry(world, &entity) {
                 Some(EntityKind::Entry)
+            } else if crate::sketch::is_sketch(world, &entity) {
+                Some(EntityKind::Sketch)
             } else {
                 None
             };
             let stock = model::stock_def_of(world, &entity).map(|s| StockDto::from_shape(&s));
+            // #2016: a library holder is written as its reference.
+            let (holder, body) = crate::tool_body::body_of(world, &entity)
+                .map_or((None, None), |b| super::tool_body_wire::body_to_dto(&b));
             let tool = model::tool_of(world, &entity).map(|t| ToolDto {
                 number: model::tool_number_of(world, &entity),
-                body: crate::tool_body::body_of(world, &entity)
-                    .map(|b| super::tool_body_wire::ToolBodyDto::from_body(&b)),
+                body,
+                holder,
                 cutter: crate::tool_cutter::cutter_of(world, &entity)
                     .map(|c| super::tool_body_wire::spun_to_dto(&c)),
                 ..ToolDto::from_tool(&t)
@@ -84,6 +89,7 @@ pub fn collect(world: &World) -> ProjectFile {
                         post_properties: d.post_properties.as_ref().map(|p| p.by_post.clone()),
                         nose_to_axis: d.nose_to_axis.filter(|v| v.is_finite()),
                         workholding_max_rpm: d.workholding_max_rpm,
+                        sheet_job: d.sheet_job,
                     })
             } else {
                 None
@@ -113,18 +119,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     SrcRef::Stock => SrcDto::Stock,
                     SrcRef::Entity(name) => SrcDto::Entity { name: name.clone() },
                     SrcRef::Selection(items) => SrcDto::Selection {
-                        items: items
-                            .iter()
-                            .map(|g| GeoSelDto {
-                                entity: g.entity.clone(),
-                                feature: match g.feature {
-                                    FeatureSel::Face(id) => FeatureSelDto::Face { id },
-                                    FeatureSel::Chain(id) => FeatureSelDto::Chain { id },
-                                    FeatureSel::Patch(id) => FeatureSelDto::Patch { id },
-                                    FeatureSel::Vertex(id) => FeatureSelDto::Vertex { id },
-                                },
-                            })
-                            .collect(),
+                        items: items.iter().map(geo_sel_dto).collect(),
                     },
                 },
                 params: ParamsDto::from_params(&op.params),
@@ -144,6 +139,7 @@ pub fn collect(world: &World) -> ProjectFile {
                 | Some(EntityKind::Tool)
                 | Some(EntityKind::Operation)
                 | Some(EntityKind::Setup)
+                | Some(EntityKind::Sketch)
                 | Some(EntityKind::Entry) => None,
                 Some(EntityKind::Stock)
                     if matches!(
@@ -174,9 +170,17 @@ pub fn collect(world: &World) -> ProjectFile {
                     .filter(|c| !crate::model_fidelity::is_unknown(*c)),
                 fidelity_unknown: crate::model_fidelity::chord_of(world, &entity)
                     .is_some_and(crate::model_fidelity::is_unknown),
+                file_tolerance: crate::model_fidelity::file_tolerance_of(world, &entity),
                 mesh_open: crate::mesh_open::hole_of(world, &entity),
+                solids: kind.is_none().then(|| crate::mesh_solids::to_wire(&crate::mesh_solids::of(world, &entity))).flatten(),
+                fidelity_vouched: kind.is_none().then(|| super::VouchDto::of(world, &entity)).flatten(),
                 facet_budget: crate::model_fidelity::budget_of(world, &entity),
                 step_source: kind.is_none().then(|| crate::step_source::of(world, &entity)).flatten(),
+                source: kind
+                    .is_none()
+                    .then(|| crate::model_source::of(world, &entity))
+                    .flatten()
+                    .map(|s| super::SourceDto::of(&s)),
                 kind,
                 raw_stock_only: mark.is_some(),
                 raw_stock_print: mark.as_ref().map(crate::stock_print::to_text),
@@ -190,6 +194,7 @@ pub fn collect(world: &World) -> ProjectFile {
                 setup,
                 fixture,
                 entry: super::program_entry_dto::collect(world, &entity),
+                sketch: super::sketch_dto::collect(world, &entity),
                 flip: matches!(kind, Some(EntityKind::Wcs))
                     .then(|| crate::setup_wcs_flip::of_entity(world, &entity))
                     .filter(|f| f.iter().any(|v| *v))

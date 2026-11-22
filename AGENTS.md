@@ -182,7 +182,8 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
     session reads it, and it needs no agent review.
   - Then the session comments on the pinned issue #681: `PROCESS_VERSION
     <n>` · PR #M (each process PR of the batch) · what changed · what a fork
-    must do.
+    must do · reload: each running session reloads `AGENTS.md`,
+    `.claude/agents/` and `.claude/skills/`, and a fork runs `fork-sync`.
   - At a cut, the release notes list the versions since the previous tag in
     a "Process changes" section.
 - **Overlapping issues stack.** An issue that changes code of an open PR
@@ -192,6 +193,19 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   gated again and merges. Never merge the parent first: `--delete-branch`
   deletes the child's base branch and GitHub closes the child PR. An overlap
   that cannot stack waits for the parent to merge.
+- **Own blocked PRs first.** Before an agent claims or starts a new issue,
+  it lists the open PRs of the current account that have `conflicts` or
+  `needs-rework`: `gh pr list --state open --author @me --label conflicts`
+  and `gh pr list --state open --author @me --label needs-rework`. It fixes
+  each one, or sends a worker to fix it, before it picks a new issue. A PR whose issue has `claimed` is
+  already in work and is skipped.
+  - `conflicts`: merge `origin/main` into the branch (never rebase, never
+    force-push), run the targeted gate and push (`resolve-conflicts`
+    skill).
+  - `needs-rework`: fix each review finding on the same branch with a plain
+    push ("Pull Request Law").
+  - The existing orders stay first: a `P1` or `P2` PR comes before other
+    PRs, and the standing order for outside PRs holds.
 - **Claim before any code.** Run `gh issue edit N --add-label claimed
   --add-assignee @me`, then comment `claimed: <session or agent name> · <UTC
   time> · worktree/branch <name> · plan: <one line>`. Do not work an issue
@@ -355,10 +369,14 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
     re-read each `conflicts` PR and send each clean one to the review that it
     needs.
 - **Refresh only at merge time.** A conflicting PR has the `conflicts` label
-  and is not touched by its author's agents, by maintenance or by reviewers.
-  It takes `git merge origin/main` only when it is the next PR in a merge
-  batch, or when its author pushes a review fix and chooses to. The merging
-  session runs `cargo xtask merge-plan <PR>...` (or `--label merge-ready`).
+  and is not touched by maintenance or by reviewers. It takes `git merge
+  origin/main` only in one of three cases:
+  - its author's agents fix it under **Own blocked PRs first**;
+  - it is the next PR in a merge batch;
+  - its author pushes a review fix and chooses to.
+
+  The merging session runs `cargo xtask merge-plan <PR>...` (or `--label
+  merge-ready`).
   The planner simulates the merges with `git merge-tree` and gives the order.
   Wave 1 merges as one batch, with no refresh and no delta review. Wave 2 is
   refreshed one PR at a time against the main of that moment, and each PR

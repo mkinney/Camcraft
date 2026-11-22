@@ -128,6 +128,7 @@ fn pocket(strategy: PocketStrategy, eng: f64) -> OpParams {
         optimal_load: camcraft_app::load::load_of_degrees(eng),
         tilt: None,
         blend_turns: false,
+        corner_relief: Default::default(),
     }
 }
 
@@ -151,6 +152,7 @@ fn adaptive(eng: f64) -> OpParams {
         method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
         troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 
@@ -171,6 +173,7 @@ fn offset() -> OpParams {
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 

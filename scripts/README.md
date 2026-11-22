@@ -82,7 +82,7 @@ preflight, the release gate tier (in process), version bump, commits
 release PR merges, AGENTS.md "A cut goes PR review"), release build of the
 product packages, signing (Windows, if configured), the portable zip (the
 section below, `cargo xtask package`) and, on request, the installer
-(Windows). On Linux, macOS and FreeBSD the packaging phase runs that OS's
+(Windows). On Linux and macOS the packaging phase runs that OS's
 `package-*.sh` instead, and `--installer` is refused by name.
 `release.ps1` is a thin wrapper forwarding its old switches.
 
@@ -115,7 +115,7 @@ this, so the local cut and the published release cannot drift apart.
 - Under GitHub Actions it appends `version=`, `stage=` and `zip=` to
   `$GITHUB_OUTPUT` and `CAMCRAFT_VERSION=` to `$GITHUB_ENV` (the installer
   and publish steps read them).
-- The zip is the Windows package: a real run on macOS / Linux / FreeBSD is
+- The zip is the Windows package: a real run on macOS / Linux is
   refused by name (their packages come from `package-*.sh`); `--dry-run`
   prints the file list on any host.
 

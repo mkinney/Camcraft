@@ -56,12 +56,17 @@ pub struct PlayIndex {
     rest: Vec<String>,
 }
 
+fn planned_moves(p: &Planned) -> &[crate::cl::Move] {
+    p.undercut.as_ref().map_or(p.moves.as_slice(), |u| u.moves.as_slice())
+}
+
 impl PlayIndex {
     fn of(planned: &[Planned]) -> Self {
         let mut ix = PlayIndex::default();
         for p in planned {
-            ix.ops.push((p.name.clone(), ix.total, p.moves.len()));
-            ix.total = ix.total.saturating_add(p.moves.len());
+            let n = planned_moves(p).len();
+            ix.ops.push((p.name.clone(), ix.total, n));
+            ix.total = ix.total.saturating_add(n);
         }
         ix
     }
@@ -137,6 +142,8 @@ struct PlayOp {
     rotary: Option<crate::verify::RotaryAxis>,
     /// A turning op's nose and spindle (#19, `stock_sim::lathe`).
     lathe: Option<crate::stock_sim::LathePlan>,
+    /// An undercut op's head/neck cutter and neck length (#1444).
+    undercut: Option<(crate::undercut::Undercut, f64)>,
 }
 
 /// The playback field: the uncut stock, the plan, the stock cut to
@@ -197,8 +204,24 @@ impl FieldPlay {
         let mut ops = Vec::with_capacity(planned.len());
         let mut total = 0usize;
         for p in planned {
-            let n = p.moves.len();
-            ops.push(PlayOp { name: p.name, moves: p.moves, radius: p.radius, ball: p.ball, cone: p.cone, corner: p.corner, drill: p.drill, start: total, rotary: p.rotary, lathe: p.lathe });
+            let (moves, undercut) = match p.undercut {
+                Some(u) => (u.moves, Some((u.cutter, u.neck_len))),
+                None => (p.moves, None),
+            };
+            let n = moves.len();
+            ops.push(PlayOp {
+                name: p.name,
+                moves,
+                radius: p.radius,
+                ball: p.ball,
+                cone: p.cone,
+                corner: p.corner,
+                drill: p.drill,
+                start: total,
+                rotary: p.rotary,
+                lathe: p.lathe,
+                undercut,
+            });
             total = total.saturating_add(n);
         }
         let (target, target_note) = if let (Some(_), Err(why)) = (&part, &tol) {
@@ -382,13 +405,14 @@ impl FieldPlay {
             let sim = SimOp { moves, radius: op.radius, ball: op.ball, cone: op.cone, corner: op.corner };
             // A rotary slice is chorded about the fitted axis, turning
             // from the pose the program held before it (M13.1).
-            let cut = match (&op.rotary, &op.lathe) {
-                (_, Some(l)) => self.cur.simulate_lathe_profile(moves, &l.profile, &l.axis),
-                (Some(ax), None) => {
+            let cut = match (&op.rotary, &op.lathe, &op.undercut) {
+                (_, _, Some((cutter, neck_len))) => self.cur.simulate_undercut(moves, cutter, *neck_len),
+                (_, Some(l), None) => self.cur.simulate_lathe_profile(moves, &l.profile, &l.axis),
+                (Some(ax), None, None) => {
                     let tol = crate::stock_sim::rotary_pose_tol(self.cur.cell());
                     crate::stock_sim::simulate_rotary_slice(&mut self.cur, &sim, &op.moves, a - op.start, ax, tol).map(|_| ())
                 }
-                (None, None) => if op.drill {
+                (None, None, None) => if op.drill {
                     self.cur.simulate_drill_display(std::slice::from_ref(&sim))
                 } else {
                     self.cur.simulate_display(std::slice::from_ref(&sim))

@@ -3,9 +3,12 @@
 //! refused by name on its own. Never a model with a wall missing.
 //!
 //! Fixture: `testdata/models/fillet_corner.step` with its corner blend's
-//! weights bent (`1E300, 1E-300`), which truck cannot place a boundary on:
-//! it returns no polygon for the blend and the rest of the shell imported
-//! open, with no refusal, before this law.
+//! weights bent (`1E300, 1E-300`), which truck could not place a boundary
+//! on: it returned no polygon for the blend and the rest of the shell
+//! imported open, with no refusal, before this law. Since #917 the
+//! solidcore reader refuses the weight itself, by face and value, before
+//! any mesh: the pins below say that refusal (the left-out face path is
+//! pinned at the kernel, `machining_mesh_open`).
 //!
 //! `box.step` with one face's `same_sense` flipped is a face wound against
 //! its neighbours: closed geometry, fixed at import, never called open
@@ -20,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use camcraft_app::geometry::import::{self, step, Format, ImportError};
+use camcraft_app::geometry::import::{self, Format, ImportError};
 use camcraft_app::mcp::Server;
 use serde_json::{json, Value};
 
@@ -50,19 +53,21 @@ fn bent() -> String {
 
 fn import(text: String) -> Result<camcraft_app::geometry::Mesh, ImportError> {
     within(Duration::from_secs(90), move || {
-        step::with_face_eval_cap(200_000, || import::parse_model(text.as_bytes(), Format::Step))
+        import::parse_model(text.as_bytes(), Format::Step)
     })
 }
 
 #[test]
 fn a_closed_shell_that_meshes_open_is_refused_by_name() {
     let err = import(bent()).expect_err("a closed shell with a face missing must not import");
-    let msg = err.to_string();
-    assert!(msg.contains("closed shell #1288 (10 faces) meshes open"), "{msg}");
-    assert!(msg.contains("boundary edges lie more than"), "{msg}");
-    assert!(msg.contains("mm from any other face, most on face #"), "{msg}");
-    assert!(msg.contains(" mm; the first from ("), "{msg}");
-    assert!(msg.contains("got no mesh from the kernel"), "the dropped face is named: {msg}");
+    bent_weight_refused(&err.to_string());
+}
+
+/// The reader's refusal of the bent blend (#917): the item, the face and
+/// the weight by name, at read, before any mesh.
+fn bent_weight_refused(msg: &str) {
+    assert!(msg.contains("first #1289 at read: face #1228: weight: 1"), "{msg}");
+    assert!(msg.contains("out of range"), "{msg}");
 }
 
 #[test]
@@ -74,9 +79,7 @@ fn a_face_the_kernel_cannot_mesh_is_refused_in_an_open_shell_too() {
         .replace("#1288=CLOSED_SHELL(", "#1288=OPEN_SHELL(")
         .replace("#1289=MANIFOLD_SOLID_BREP('',#1288);", "#1289=SHELL_BASED_SURFACE_MODEL('',(#1288));");
     let err = import(text).expect_err("a dropped face must not import silently");
-    let msg = err.to_string();
-    assert!(msg.contains("in shell #1288 could not be tessellated"), "{msg}");
-    assert!(msg.contains("returned no mesh for it"), "{msg}");
+    bent_weight_refused(&err.to_string());
 }
 
 #[test]
@@ -86,7 +89,7 @@ fn the_outer_shell_of_a_solid_is_closed_whatever_its_keyword() {
     let text = bent().replace("#1288=CLOSED_SHELL(", "#1288=OPEN_SHELL(");
     assert!(text.contains("#1289=MANIFOLD_SOLID_BREP('',#1288);"), "fixture layout changed");
     let msg = import(text).expect_err("a solid with a face missing must not import").to_string();
-    assert!(msg.contains("closed shell #1288 (10 faces) meshes open"), "{msg}");
+    bent_weight_refused(&msg);
 }
 
 /// Signed volume of a mesh (divergence theorem), as tetrahedra to a point

@@ -1,3 +1,241 @@
+# CamCraft 0.25.0 (clean-room implementation)
+
+Released 2026-11-22.
+
+## Breaking
+This release has breaking changes. **The project file format goes from
+version 69 to 75.** 0.25.0 opens the files of 0.24.0 and older: a file of
+an older version steps up and keeps its content. 0.24.0 and older builds
+refuse a file that 0.25.0 saves.
+- **Sketch selections need format 74** (#1864, PR #2716; #1868, PR #2920).
+  2D Contour, Slot and Trochoidal Slot can read picked DXF sketch chains and
+  layers, with a side and a direction for each chain. A project with such
+  picks is saved as format 74 or later. A v73 file steps up unchanged.
+- **Machine installation facts need format 75** (#3181, PR #3204). A machine
+  can record its installed control, the exact NC software, the installed
+  options and the tool-change procedure. Older readers refuse such a file,
+  so that a save in an older build cannot lose these facts. A v74 file steps
+  up with these facts not stated.
+- The other format steps of this release:
+  - v70: a tool's library holder is a reference to the holder library
+    entry, not a drawn copy (#2016, PR #2092). Tool library files
+    (`.camtools`) go to version 4.
+  - v71: a DXF profile can be placed on the stock of a setup (#1862,
+    PR #2134).
+  - v72: a model can be linked to its source file and is imported again
+    when the file changes (#2463, PR #2563).
+  - v73: "Do not touch" face and edge protection on clearing operations
+    (#2055, PR #2149, merged through PR #2704).
+- A stock copy of an incomplete model keeps the name of its source model's
+  hole after the source is deleted (#1700, PR #2024). Such a project file
+  does not open in 0.21.0 to 0.24.0.
+
+A minor release headlined by **DXF sketches as operation geometry** (2D
+Contour, Slot, Trochoidal Slot, Wire Contour, typed engraving text),
+**first-traverse checks for every operation kind and machine layout**,
+**STEP import through the solidcore kernel only**, **new posts** (Heidenhain
+iTNC 530 Klartext, Grbl 1.1, LinuxCNC 3-axis), **a Slot Undercut
+operation**, **fine boring (G76)**, **dogbone and T-bone corner relief**,
+**AI chat with provider clients and context budgets**, and **a Home page**.
+259 pull requests merged since 0.24.0 (50 features, 162 fixes, 3
+performance changes, 1 refactor, docs, tests and process).
+
+## Upgrade notes
+- Save a project in 0.25.0 only when each person who opens it also has
+  0.25.0. Older builds refuse format 75 (see "Breaking").
+- STEP files are now read only through the solidcore kernel. The truck STEP
+  crates are removed (#917, PR #2904; PR #2939). Faulty STEP files are
+  refused by name, and touching solids import as separate bodies. A model
+  can import with different facets than in 0.24.0. Generate and verify old
+  jobs again before you post them.
+- More programs are refused before the post (see "Changes to posted
+  G-code"). A first rapid that can hit the stock, a fixture or the table now
+  holds the post by name. Raise the clearance height as the message says.
+- Drill and thread operations take the lower of the tool feed and the
+  material feed. A feed above the tool feed holds the post (#2598, #2724).
+- A project that an older build saved after a tilt angle edit on a pre-v65
+  operation can keep the old plane basis (#2739, PR #2751). Change Tool axis
+  A or B, set it back, and check the preview before you post.
+- FreeBSD is no longer a supported platform (#2570).
+
+## Changes to posted G-code
+These change the program that an existing project posts, or stop a post that
+went through before.
+- **New posts:** Heidenhain iTNC 530 Klartext for the Fehlmann Picomax 55
+  (#3182), Grbl 1.1 for 3-axis mills (#2481), a generic LinuxCNC 3-axis
+  mill post (#2303), and a zero-step Agie punch setup encoder (#2984).
+- **The first traverse after a tool change is judged** for 3+2 planes, cross
+  drills, rotary, multi-axis and mill kinds, on mills, lathes and mill-turns,
+  through every pose of the work-turning rotaries (#2965, #2987, #2991,
+  #3077, #3081, #3083, #3084, #3096, #3100, #3127). The opening rapid starts
+  over the entry point of the operation, not over the WCS origin (#2901).
+- **Drilling:** a fine boring cycle (G76 on Haas; other posts refuse it by
+  name) (#1445). Back bore (G89) carries its dwell and feeds out at the
+  plunge feed (#1480). LinuxCNC, Tormach and grblHAL refuse a G73 or G85
+  dwell by name (#2609). Heidenhain G205 writes Q208 as a number (#3102).
+  Posts can write pre- and post-tool-change macros (#2407).
+- **Turning:** Fanuc and Tormach lathe G76 refuse a start point above
+  material (#2878, #2952). Tormach inch G76 states a J that cuts the
+  verified passes (#1619). Threading refuses a helical modelled thread by
+  name (#3023). Turning rides drop duplicate samples and keep to the nose
+  offset (#2881, #2882).
+- **Flipped WCS:** each mill post posts a flipped X or Y as a mirrored
+  program (#2475), also with a Z rotation (#2476). A flipped Z refusal names
+  the reason (#2474).
+- **Wire and sinker EDM:** the generic ISO wire post writes each dimension
+  word with a decimal point (#3206), and refuses by name a wire number (U,
+  V, taper angle, taper, plane) that is not finite (#3236, PR #3263).
+  Sodick skims post on their own LN condition words and state their
+  flushing (#2649, #2686), and Sodick comments drop unsupported characters
+  (#3213). Work outside the stated
+  guide heights is refused (#2923). Sinker Side Burn posts explicit lateral
+  feeds (#3001).
+- **Probing:** LinuxCNC and Tormach probe programs stop when a work offset
+  has an XY rotation (#2683).
+- **Toolpath changes that show in the posted program:**
+  - 2D Contour: leads stay on the air side at the seam (#3019). A None
+    lead-in stands the arc entry down (#3132). Each tab is checked against
+    every cut of its level (#2561), and is as tall as Tab height (#2579).
+    Whole-model contours cut their lower bands or name the uncut range
+    (#2538, #2597, #2677).
+  - 2D pockets: dogbone and T-bone corner relief (#2400), kept by rest
+    passes (#3146). Zigzag levels close with a ring (#3129). Equal depth
+    steps are an option (#2012).
+  - Circular: the helix entries of several rings stay apart (#3109). Ramp
+    transitions stay at depth (#1807).
+  - 3D: Adaptive has a Trochoidal method (#1591). Shallow blind floors are
+    cut (#2088). A straight gap link (#1708).
+  - Face does not lift over holes below the cut plane (#2437). 2D Chamfer
+    with no picks refuses partly bevelled edges by name (#2887, #2944).
+  - Rotary Parallel keeps a held bar end (#2343) and the picked faces.
+    Rotary Contour and Rotary Offset refuse a face selection (#2848).
+    Rotary Contour makes rings about X (#3000).
+  - A 3+2 operation from an older project with new angles posts its plane
+    as a new operation does (#2599).
+- **Machine checks:** the travel check reads only the points that an arc
+  sweeps (#2710). The post output budget scales with the input (#3002).
+
+## Highlights
+### Operations
+- Slot Undercut for T-slot, keyseat, dovetail and lollipop cutters (#1444).
+- 2D Contour on DXF sketches with layer and chain picks (#1864). Slot and
+  Trochoidal Slot read DXF chains (#1868). Wire Contour on one straight DXF
+  chain on stock (#3180). DXF profiles on the stock of a setup (#1862).
+- Typed text as single-line engraving strokes (#2679).
+- A guided sheet job on a milling setup (#3070).
+- 3D Deburr: picked and excluded edges, a minimum edge angle and a policy
+  for edges out of reach (#1888, #1889).
+- "Do not touch" protection on 2D Offset and 3D Pocket (#2055).
+
+### Machines and tools
+- A machine file can name its post (#2374) and record its installed control
+  (#3181). New templates: AGIECUT Classic 2S (#2946) and the Fehlmann
+  Picomax 55 with iTNC 530 (#3181).
+- Tool tables import and export as Tormach PathPilot (.csv) and Hurco
+  WinMax (.TCM) (#2566). Generic starter router cutters (#3069). Plasma
+  torch cut-data recipes (#1521).
+- Thread infeed plans over MCP (#1847).
+
+### Import and models
+- STEP through solidcore (#917), with measured tolerances and named
+  refusals. Many STEP fidelity fixes (#2600, #2718, #2719, #2754, #2781,
+  #2844, #2919, #2973, #2976, #3079).
+- Linked models import again when their file changes (#2463). A model of
+  unknown fidelity can be vouched for (#1339).
+- An optional `cadmpeg` runner for native CAD files (#1873; no format is
+  enabled yet). DXF stock-face import accepts empty layout records (#3176).
+- A true-shape nesting kernel (#2158).
+
+### Viewport and UI
+- A Home button with a start page and the recent projects (#2384).
+- Display menu: quality presets, ground shadow, ambient occlusion and "Look
+  at a work plane" (#2834), a "Wireframe, see-through" mode (#2636), and
+  anti-aliased overlay lines (#2958).
+- The tool body and profile editor has its own window (#2397), with one
+  tool preview (#2007, #2017).
+- The move gizmo has rotate rings, typed values and Shift snapping (#1198,
+  #2624). The Stock page sets the stock axis (#2576).
+- Saved panel setups (#2339), a Report button (#1696), Delete in the model
+  and tool menus (#2777), and hover help on the viewport toolbar (#2776).
+- `camcraft-ui <file>` opens the named file (#2462, #2648).
+
+### Simulation
+- Cylinder stock along X or Y (#2758). Shared keyframe bricks use much less
+  memory (#2194). The playhead waits for the stock removal (#2611).
+- A generated machine model posed by axis values (#2584).
+
+### AI chat and MCP
+- AI chat reaches cloud providers over https and local servers on loopback.
+  Keys come from the environment or the OS keychain, and an "Offline only"
+  switch blocks the other hosts (#1945).
+- Compact MCP read modes and chat context budgets (#1944).
+  `camcraft-cli mcp reference` and `camcraft-cli mcp prompt` print the tool
+  reference (#1947).
+
+### Examples
+- New catalog cases for slots, contour tabs, edge work, hole work, turning
+  kinds, groove and part-off, cone thread, indexed pockets and open pockets,
+  with images for each operation (#2855, #2858).
+
+## Not exercised on a real control
+The pull requests record no run on a real control for these changes. The
+test goldens are regression records. Check the first program on the machine
+before you cut.
+- The iTNC 530 Klartext, Grbl 1.1 and LinuxCNC posts (#3182, #2481, #2303).
+- The fine boring cycle (#1445) and the back bore dwell (#1480).
+- The ISO wire decimal points (#3206), the Sodick skim words (#2649, #2686)
+  and the Sinker Side Burn feeds (#3001).
+- The flipped WCS mirror on the posts other than Fanuc and Haas (#2475,
+  #2476).
+
+## Known issues
+The cut line is 2026-11-21 22:16 UTC. These `P1` and `P2` issues are open:
+- #3264 (P1): Wire ISO post: a non-finite OriginX or OriginY is ignored
+  without a warning, so the program is shifted. It was filed after the cut
+  line. Its fix ships in the next minor.
+
+Open defects with a workaround:
+- #1950 (P3): 3D Pocket Adaptive on a whole model. The stock ring exceeds
+  the planner limits, and Offset rings cut the level. The output is safe.
+- #2849 (P3): on a solidcore STEP mesh, the 2D pocket corner check meets a
+  loop that crosses itself.
+- The release gate skips the tests that pin #1950 and #2849, and checks that
+  they still fail (known-fail markers).
+
+## Process changes
+`PROCESS_VERSION` went from 100 to 122 (pinned issue #681):
+- 101: the MCP skill follows the holder reference (v70).
+- 102: a known-fail list in the release gate; FreeBSD removed.
+- 103-105: MCP skill rows for `import_dxf`, `move_dxf_profile`,
+  `break_through` and `set_model_link`.
+- 106: known-fail markers in the test source.
+- 107: `cargo xtask gate heavy`; the rule "Heavy lanes at review"; the
+  quick gate selects the tests of a changed library fixture (PR #2775); an
+  MCP skill row (PR #2704).
+- 108: the batch tier builds each crate alone and runs parallel lanes.
+- 109: the gate job budget follows the CPU count.
+- 110: batch steps start the test executables directly.
+- 111: MCP skill rows for thread infeed and patch refusals; STEP fixture
+  selection in the quick gate.
+- 112: batch lanes on separate runners; catalog images.
+- 113: `cargo xtask gate light`.
+- 114: MCP skill wording for mill-turn; the post-merge report on a red gate.
+- 115: LF endings for stl/obj fixtures.
+- 116: the rule "Own blocked PRs first".
+- 117: the gate seeds the `target/` of a new worktree.
+- 118: the gate pins `CARGO_INCREMENTAL` and the profile env.
+- 119: the gate removes old test units; catalog metadata; MCP skill rows
+  for sketch picks.
+- 120: the MCP skill has `set_stock` and the stock axis.
+- 121: one independent post-merge run for each merge.
+- 122: `release.yml` runs the site tests.
+
+## Pixel snapshots
+The pixel-snapshot lanes were not run for this cut, by the maintainer's
+earlier decision. The structural UI tests assert what the goldens guard.
+
+---
+
 # CamCraft 0.24.0 (clean-room implementation)
 
 Released 2026-11-18.

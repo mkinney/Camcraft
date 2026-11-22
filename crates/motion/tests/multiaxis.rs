@@ -41,6 +41,7 @@ fn angle(a: Point3, b: Point3) -> f64 {
 
 fn finish(top_z: f64, bottom_z: f64) -> Finish3DParams {
     Finish3DParams {
+        gap_link: camcraft_motion::finishing3d::GapLink::Jump,
         pattern: FinishPattern::Waterline,
         stepover: None,
         tool_diameter: 2.0 * R,

@@ -352,7 +352,7 @@ pub(super) fn resolve(base: Region, ctx: &AreaCtx) -> Result<AreaApplied, GenErr
     if !rides(ctx.family) {
         area = check(excludes(area)?, "exclude boundaries")?;
     }
-    if matches!(ctx.family, Family::Face | Family::Finish) {
+    if matches!(ctx.family, Family::Face | Family::Finish | Family::Clearing) {
         if let Some(f) = far_side {
             forbidden.push(("the far side of the open boundary", f));
         }
@@ -361,7 +361,9 @@ pub(super) fn resolve(base: Region, ctx: &AreaCtx) -> Result<AreaApplied, GenErr
                 forbidden.push(("an exclude boundary", b.clone()));
             }
         }
-        if let Some(b) = &ctx.blocked {
+        if matches!(ctx.family, Family::Face | Family::Finish)
+            && let Some(b) = &ctx.blocked
+        {
             forbidden.push(("part material standing above Cut Z", b.clone()));
         }
     }

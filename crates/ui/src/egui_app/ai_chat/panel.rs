@@ -83,7 +83,10 @@ fn draw_header(ui: &mut Ui, state: &mut State, pal: &theme::Tokens) {
     });
 
     ui.horizontal_wrapped(|ui| {
-        ui.checkbox(&mut state.ai_chat.offline_only, "Offline only");
+        // #1945: the switch is the person's policy - kept in prefs.json.
+        if ui.checkbox(&mut state.ai_chat.offline_only, "Offline only").changed() {
+            state.persist_prefs();
+        }
         ui.checkbox(&mut state.ai_chat.attach_selection, "Attach selection");
         ui.add_enabled(
             false,

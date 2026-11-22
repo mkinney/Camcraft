@@ -157,6 +157,7 @@ fn pocket(bottom: f64) -> OpParams {
         optimal_load: camcraft_app::load::load_of_degrees(60.0),
         feed_opt: false,
         shell: false,
+        method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
     }
 }
 

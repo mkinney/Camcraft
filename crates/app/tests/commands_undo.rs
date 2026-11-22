@@ -529,7 +529,7 @@ fn set_geometry_refusals_never_write_the_world() {
     let before = op_src(&world, "G1");
 
     // Op that does not exist: NotFound.
-    let ghost = GeoSel { entity: "part".into(), feature: top };
+    let ghost = GeoSel { entity: "part".into(), feature: top.clone() };
     assert!(matches!(
         SetOperationGeometry::new(&world, "no-op", vec![ghost.clone()]),
         Err(CommandError::NotFound(_))
@@ -544,7 +544,7 @@ fn set_geometry_refusals_never_write_the_world() {
         SetOperationGeometry::new(
             &world,
             "G1",
-            vec![GeoSel { entity: "gone".into(), feature: top }]
+            vec![GeoSel { entity: "gone".into(), feature: top.clone() }]
         ),
         Err(CommandError::NotFound(_))
     ));

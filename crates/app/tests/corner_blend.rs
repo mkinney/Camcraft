@@ -163,6 +163,7 @@ fn pocket_op(blend: bool) -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: blend,
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 
@@ -188,6 +189,7 @@ fn contour_op(blend: bool) -> OpParams {
         blend_turns: blend,
         tilt: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 

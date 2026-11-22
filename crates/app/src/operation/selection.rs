@@ -59,11 +59,14 @@ pub(super) fn selection_geometry(
 }
 
 /// [`side_sane`]'s question, answered for one concrete source.
-pub(crate) fn side_sane(params: &OpParams, src: &SrcRef) -> Option<String> {
+pub(crate) fn side_sane(world: &World, params: &OpParams, src: &SrcRef) -> Option<String> {
     let OpParams::Contour { side, .. } = params else {
         return None;
     };
-    if *side != Side::Inside || matches!(src, SrcRef::Selection(_)) {
+    if *side != Side::Inside
+        || matches!(src, SrcRef::Selection(_))
+        || !crate::sketch_model::source_profiles(world, src).is_empty()
+    {
         return None;
     }
     Some(
@@ -88,12 +91,14 @@ pub fn contour_auto_side(
     src: &SrcRef,
     params: &OpParams,
 ) -> Option<bool> {
-    match src {
-        SrcRef::Stock | SrcRef::Entity(_) => Some(false),
-        // The display's ask, one walk per input (#2249): generation
-        // reads the side from its own walk in `job`, never from here.
-        SrcRef::Selection(items) => super::selection_memo::answer(world, setup, items, params).inside,
+    if !super::contour_sketch::is_sketch_contour(world, src, params)
+        && matches!(src, SrcRef::Stock | SrcRef::Entity(_))
+    {
+        return Some(false);
     }
+    // The display's ask, one walk per input (#2249): generation
+    // reads the side from its own walk in `job`, never from here.
+    super::selection_memo::answer(world, setup, src, params).inside
 }
 
 /// The drive chains, in WORLD 3D (M5.1 J): the same entity/name/
@@ -152,6 +157,11 @@ pub(super) fn drive_chains(world: &World, setup: Option<&str>, items: &[GeoSel])
             FeatureSel::Vertex(_) => {
                 return Err(GenError::Invalid(format!(
                     "{label} is a point - Multi-Axis Contour machines picked EDGE CHAINS; pick the edges through it"
+                )));
+            }
+            FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                return Err(GenError::Invalid(format!(
+                    "{label} is a DXF sketch feature, not a 3D model edge chain"
                 )));
             }
         }
@@ -303,6 +313,11 @@ pub(super) fn selection_geometry_in(
                 // A point bounds no region: refuse by name, never drop it.
                 return Err(GenError::Invalid(format!(
                     "{label} is a point - a boundary needs faces or edge chains; pick those, or use the vertex as a height or origin reference"
+                )));
+            }
+            FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                return Err(GenError::Invalid(format!(
+                    "{label} is a DXF sketch feature - only 2D Contour machines sketch picks"
                 )));
             }
             FeatureSel::Face(fid) => {

@@ -38,7 +38,7 @@ fn line(x: f64, z: f64) -> Toolpath {
 
 fn hits(path: &Toolpath, budget: f64) -> Vec<Warning> {
     let mut w = Vec::new();
-    mark_into(&mut w, path, &stepped(), &cutter(), budget, 0.0);
+    mark_into(&mut w, path, &stepped(), &cutter(), budget, 0.0, false);
     w
 }
 
@@ -94,7 +94,7 @@ fn a_wall_beside_the_line_is_the_part_not_the_mark() {
 #[test]
 fn a_conviction_another_law_already_made_is_not_repeated() {
     let mut w = vec![Warning::Gouge { at: 0 }];
-    let found = mark_into(&mut w, &line(15.0, 9.0), &stepped(), &cutter(), 0.3, 0.0);
+    let found = mark_into(&mut w, &line(15.0, 9.0), &stepped(), &cutter(), 0.3, 0.0, false);
     assert_eq!(found, Marked { deep: 1, through: 0, stack: 0 }, "found, and not said twice");
     assert_eq!(w, vec![Warning::Gouge { at: 0 }]);
 }
@@ -106,7 +106,7 @@ fn plate() -> Vec<Triangle> {
 
 fn found_on(part: &[Triangle], path: &Toolpath, c: &verify::Cutter, budget: f64) -> (Marked, Vec<Warning>) {
     let mut w = Vec::new();
-    let found = mark_into(&mut w, path, part, c, budget, 0.0);
+    let found = mark_into(&mut w, path, part, c, budget, 0.0, false);
     (found, w)
 }
 

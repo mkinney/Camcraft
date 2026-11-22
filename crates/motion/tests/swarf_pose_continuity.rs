@@ -73,6 +73,7 @@ fn blade() -> Vec<Triangle> {
 /// The app test's swarf parameters, the debug band (11 down to 1).
 fn params(bottom_z: f64) -> Finish3DParams {
     Finish3DParams {
+        gap_link: camcraft_motion::finishing3d::GapLink::Jump,
         pattern: FinishPattern::Parallel,
         stepover: Some(2.0),
         tool_diameter: 6.0,

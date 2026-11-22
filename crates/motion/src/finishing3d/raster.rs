@@ -7,7 +7,8 @@ use crate::machining2d::GenError;
 
 use super::ladder::levels;
 use super::params::{Finish3DParams, FinishPattern, dirs, refinement_floor, scallop_stepdown, scallop_stepover, validate};
-use super::support::{Sup, build_sups, plunge_support};
+use super::grid::SupSet;
+use super::support::{build_sups, plunge_support};
 use super::march::{emit_runs, march_curve};
 use super::raster_bridge::bridge_line;
 use super::rim::rim_rows;
@@ -23,7 +24,7 @@ pub(super) fn raster_pass(
     b: &mut PathBuilder,
     p: &Finish3DParams,
     r: f64,
-    sups: &[Sup],
+    sups: &SupSet,
     ux: f64,
     uy: f64,
     continuing: bool,
@@ -41,7 +42,7 @@ pub(super) fn raster_pass_spaced(
     b: &mut PathBuilder,
     p: &Finish3DParams,
     r: f64,
-    sups: &[Sup],
+    sups: &SupSet,
     (ux, uy): (f64, f64),
     continuing: bool,
     spacing_tol: f64,
@@ -145,6 +146,17 @@ pub(super) fn raster_pass_spaced(
         // #2431: a hole the ball cannot enter is crossed, not hopped.
         let mut pieces = bridge_line(pieces, r, p.tolerance, eps_chord, sups);
         if back {
+            // The line runs back WHOLE: the pieces too. Reversing
+            // only each piece's points made the chain run one piece
+            // backwards and then hop back across the whole field to
+            // the next piece's far end - every break a backwards
+            // long traverse instead of a crossing of the gap. Under
+            // the plain jump that mis-pairing hid inside a high
+            // rapid; a gap link authors the same line at the cut,
+            // where it shows. Pieces in order and points in order
+            // is what makes the serpentine cross each gap once,
+            // between the facing edges.
+            pieces.reverse();
             for pc in pieces.iter_mut() {
                 pc.reverse();
             }
@@ -269,7 +281,7 @@ pub(super) fn rings_and_tail_with_trim(
 /// and the smallest shallow tilt - the cos-law's `m_z`. `None`
 /// when every facet is steep: the rings alone carry the model,
 /// exactly as the raster answers to that case.
-pub(super) fn shallow_footprint(sups: &[Sup]) -> Option<(Point2, f64, f64)> {
+pub(super) fn shallow_footprint(sups: &SupSet) -> Option<(Point2, f64, f64)> {
     let (mut x0, mut x1, mut y0, mut y1) =
         (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
     let mut mz = 1.0f64;

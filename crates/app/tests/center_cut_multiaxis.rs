@@ -305,6 +305,7 @@ fn the_rotary_twins_under_the_forced_ramp_retry() {
     use camcraft_app::multiaxis::{rotary_contour, rotary_parallel, AxisControl};
     let axis = AxisControl { lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: Some(60.0) };
     let base = Finish3DParams {
+        gap_link: camcraft_motion::finishing3d::GapLink::Jump,
         pattern: FinishPattern::Waterline,
         stepover: Some(2.0),
         tool_diameter: 2.0 * R,
@@ -363,6 +364,7 @@ fn swarf_first_entry_ramps_under_the_forced_retry() {
     use camcraft_app::multiaxis::{swarf5d, AxisControl};
     let axis = AxisControl { lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: Some(60.0) };
     let base = Finish3DParams {
+        gap_link: camcraft_motion::finishing3d::GapLink::Jump,
         pattern: FinishPattern::Parallel,
         stepover: Some(2.0),
         tool_diameter: 2.0 * R,

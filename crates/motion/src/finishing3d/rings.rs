@@ -8,7 +8,8 @@ use crate::machining2d::{fit_arcs, GenError};
 use super::ladder::levels;
 use super::params::{BLEND_MZ, Finish3DParams, FinishPattern, SPLIT_MZ, TOUCH_EPS, dirs, validate};
 use super::scan::{level_region, push_walk};
-use super::support::{Sup, build_sups, closest_pt_tri, column_clear, dist2_pt_tri};
+use super::grid::SupSet;
+use super::support::{build_sups, closest_pt_tri, column_clear, dist2_pt_tri};
 
 #[path = "rings_overhang.rs"]
 mod overhang;
@@ -98,7 +99,7 @@ pub(super) fn leg_clears(facets: &[Triangle], a: Point3, b: Point3, r: f64, tol:
 /// (unclassifiable - ring samples are tangencies by construction)
 /// rides: a redundant cut costs a pass, a skipped one can leave
 /// raw material, and the Prime Directive ranks those differently.
-fn touches_steep(sups: &[Sup], c: Point3, r: f64, tol: f64, band: bool) -> bool {
+fn touches_steep(sups: &SupSet, c: Point3, r: f64, tol: f64, band: bool) -> bool {
     let lim = r + tol + TOUCH_EPS;
     let mut touched = false;
     let mut steep = false;
@@ -183,7 +184,7 @@ fn split_true_runs(pts: &[Point2], flags: &[bool], closed: bool) -> Vec<(Vec<Poi
 /// a ring of one level.
 fn ring_runs(
     order: &[Point2],
-    sups: &[Sup],
+    sups: &SupSet,
     cz: f64,
     r: f64,
     tol: f64,

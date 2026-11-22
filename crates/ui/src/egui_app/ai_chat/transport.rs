@@ -3,10 +3,12 @@
 
 #[cfg(test)]
 use std::io::Cursor;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+#[cfg(target_arch = "wasm32")]
+use std::sync::atomic::Ordering;
 
 use camcraft_app::mcp::provider::{
-    FallbackMode, Provider, is_read_only_tool, prompt_context, qa_context, tools,
+    CORE_TOOLS, FallbackMode, Provider, ToolSet, is_read_only_tool, prompt_context, qa_context, tools_in,
 };
 use camcraft_app::mcp::requires_approval;
 use serde_json::{Value, json};
@@ -86,9 +88,12 @@ pub(crate) trait ChatTransport: Send + Sync {
     ) -> Result<TransportOutput, String>;
 }
 
-/// Default offline-safe transport used until an HTTP endpoint transport (#1945) is wired.
+/// Offline-safe transport for the browser build, which links no sockets;
+/// native builds use `transport_http::HttpTransport` (#1945).
+#[cfg(target_arch = "wasm32")]
 pub(crate) struct DefaultTransport;
 
+#[cfg(target_arch = "wasm32")]
 impl ChatTransport for DefaultTransport {
     fn complete(
         &self,
@@ -200,11 +205,18 @@ pub(crate) fn requires_confirmation(
 }
 
 /// Build the provider/fallback tool schema payload sent alongside chat messages.
+/// `set` picks the whole tool table or the core subset (#1944).
 #[must_use]
-pub(crate) fn build_tools_payload(provider: Provider, mode: FallbackMode, project: &Value) -> Value {
+pub(crate) fn build_tools_payload(provider: Provider, mode: FallbackMode, set: ToolSet, project: &Value) -> Value {
     match mode {
-        FallbackMode::Native => json!({ "tools": tools(provider) }),
-        FallbackMode::PromptJson => prompt_context(project),
+        FallbackMode::Native => json!({ "tools": tools_in(provider, set) }),
+        FallbackMode::PromptJson => {
+            let mut context = prompt_context(project);
+            if set == ToolSet::Core && let Some(tools) = context["tools"].as_array_mut() {
+                tools.retain(|tool| tool["name"].as_str().is_some_and(|name| CORE_TOOLS.contains(&name)));
+            }
+            context
+        }
         FallbackMode::ReadOnly => qa_context(project),
     }
 }

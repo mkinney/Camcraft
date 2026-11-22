@@ -155,6 +155,7 @@ impl Tool {
             ToolKind::Wire => crate::wire::refusal(self),
             ToolKind::Electrode => self.electrode_rule(),
             ToolKind::ThreadMill | ToolKind::ThreadMillSingle => self.thread_mill_rule(),
+            ToolKind::TSlot | ToolKind::Keyseat | ToolKind::Dovetail | ToolKind::Lollipop => crate::undercut::refusal(self),
             // No kind rule, or each guarded rule above held. Each kind is
             // named, with no catch-all: a new `ToolKind` does not compile
             // until this match names it (#2505).

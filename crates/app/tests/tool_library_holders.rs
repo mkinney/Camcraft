@@ -136,6 +136,15 @@ fn holders_off_lands_every_tool_bare_and_undo_restores() {
     assert_eq!(body_dto(&dst, DRAWN), body_dto(&src, DRAWN), "redo brings the body back");
 }
 
+/// Drop a definition's holder: its `body`, and (#2016) the `holder`
+/// reference a library holder is written as.
+fn bare_def(d: &mut Value) {
+    if let Some(o) = d.as_object_mut() {
+        o.remove("body");
+        o.remove("holder");
+    }
+}
+
 /// The file's `definition` of tool `n`, for corrupting.
 fn with_def(text: &str, n: &str, f: impl Fn(&mut Value)) -> String {
     let mut doc: Value = serde_json::from_str(text).expect("json");
@@ -153,9 +162,12 @@ fn a_malformed_or_ill_fitting_body_refuses_the_file_by_name() {
     let text = export_tool_library(&src).expect("export");
     let cases = [
         // Not a body at all.
-        with_def(&text, DRAWN, |d| d["body"] = json!({ "nonsense": 1 })),
+        with_def(&text, DRAWN, |d| {
+            bare_def(d);
+            d["body"] = json!({ "nonsense": 1 });
+        }),
         // A drawn outline that is no outline.
-        with_def(&text, DRAWN, |d| d["body"]["spun"] = json!([[0.0, 1.0, 0.0]])),
+        with_def(&text, MESH, |d| d["body"]["spun"] = json!([[0.0, 1.0, 0.0]])),
         // A mesh with no placement.
         with_def(&text, MESH, |d| {
             if let Some(o) = d["body"].as_object_mut() {
@@ -180,10 +192,8 @@ fn a_file_without_bodies_imports_as_before_and_the_skip_reads_bodies_only_when_o
     let (src, _) = source();
     let text = export_tool_library(&src).expect("export");
     // A pre-#889 file: no body keys at all.
-    let old = with_def(&with_def(&text, DRAWN, |d| { d.as_object_mut().map(|o| o.remove("body")); }), MESH, |d| {
-        d.as_object_mut().map(|o| o.remove("body"));
-    });
-    assert!(!old.contains("\"body\""));
+    let old = with_def(&with_def(&text, DRAWN, bare_def), MESH, bare_def);
+    assert!(!old.contains("\"body\"") && !old.contains("\"holder\""));
     let lib = parse_tool_library(&old).expect("an old file reads");
     assert_eq!(bodies_in(&lib), 0);
     // Into the source (bodied tools): a bare library tool matches on its
@@ -369,7 +379,7 @@ fn a_changed_body_in_update_and_replace_takes_the_change_gates() {
         // must fit the incoming record: flutes up into the holder refuse.
         let long = with_def(&text, DRAWN, |d| {
             d["flute_len"] = json!(200.0);
-            d.as_object_mut().map(|o| o.remove("body"));
+            bare_def(d);
         });
         let lib = parse_tool_library(&long).expect("a bare file reads");
         for holders in [false, true] {

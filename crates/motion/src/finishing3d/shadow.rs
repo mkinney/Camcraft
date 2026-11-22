@@ -7,7 +7,8 @@ use crate::machining2d::GenError;
 
 use super::drape;
 use super::params::{Finish3DParams, refinement_floor, scallop_stepdown, scallop_stepover, validate};
-use super::support::{Sup, build_sups, plunge_support};
+use super::grid::SupSet;
+use super::support::{build_sups, plunge_support};
 use super::march::{emit_runs, march_curve};
 use super::raster::{placement_guard, rings_and_tail};
 /// The center-shadow of the shallow terrain: the union of every
@@ -21,7 +22,7 @@ use super::raster::{placement_guard, rings_and_tail};
 /// are genuine islands (or air the tool sees from above); a lifted
 /// sample there answers through `support_at`'s own ball-clear law,
 /// so a wavefront that cannot be cut simply breaks - never a lie.
-pub(super) fn shadow_region(sups: &[Sup], r: f64) -> Result<Region, GenError> {
+pub(super) fn shadow_region(sups: &SupSet, r: f64) -> Result<Region, GenError> {
     let mut loops: Vec<Loop> = Vec::new();
     for s in sups.iter().filter(|s| s.shallow) {
         let pts: Vec<Point2> = s
@@ -131,7 +132,7 @@ pub(super) fn shadow_pass(
     b: &mut PathBuilder,
     p: &Finish3DParams,
     r: f64,
-    sups: &[Sup],
+    sups: &SupSet,
     shadow: &Region,
     max_rings: Option<usize>,
     family: &str,

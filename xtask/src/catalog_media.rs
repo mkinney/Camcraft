@@ -99,6 +99,7 @@ fn run_catalog_renderer(
     for (k, v) in exec::gate_cache_env() {
         cmd.env(k, v);
     }
+    crate::unit_env::apply(&mut cmd);
     let status = cmd
         .status()
         .map_err(|e| format!("failed to run catalog_render: {e}"))?;
@@ -141,6 +142,7 @@ fn run_guide_renderer_hook(root: &Path, out_dir: &Path) -> Result<(), String> {
     for (k, v) in exec::gate_cache_env() {
         cmd.env(k, v);
     }
+    crate::unit_env::apply(&mut cmd);
     let status = cmd
         .status()
         .map_err(|e| format!("failed to run #1902 guide_images renderer: {e}"))?;

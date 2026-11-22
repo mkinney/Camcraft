@@ -50,7 +50,10 @@ fn assert_page_layout(h: &H, page: &str, anchors: &[&str]) {
         let node = if *a == "Delete" {
             h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").query_by_label(a)
         } else {
-            h.query_by_label(a)
+            // A property row names its control by the row's label (#1119),
+            // so one row can match both the label and the control; either
+            // copy reports the row's place.
+            h.query_all_by_label(a).next()
         };
         let Some(node) = node else {
             panic!("{page} page: no widget labelled {a:?}");
@@ -121,6 +124,25 @@ fn layout_shell() {
 }
 
 #[test]
+fn layout_page_viewport() {
+    let mut h = shell_harness();
+    h.run();
+    let nav = hud(h.state()).nav_rect(viewcube::Nav::Move).center();
+    click_viewport(&mut h, nav);
+    let pane = super::layout::leaf_rect(&h.state().dock, &Tab::Viewport).expect("viewport leaf");
+    let move_choice = h.get_by_label("Move value").rect();
+    let turn_choice = h.get_by_label("Rotate value").rect();
+    let field = h.get_by_label("Move distance").rect();
+    assert!(pane.contains(move_choice.min) && pane.contains(turn_choice.max), "value selectors fit inside the viewport");
+    assert!(move_choice.bottom() <= field.top(), "the editor sits below the value selectors");
+    assert!(field.bottom() <= hud(h.state()).nav_rect(viewcube::Nav::Move).top(), "the editor clears the icon bar");
+    h.get_by_label("Rotate value").click();
+    h.run();
+    let angle = h.get_by_label("Rotate angle").rect();
+    assert!(pane.contains(angle.min) && pane.contains(angle.max), "the angle editor fits inside the viewport");
+}
+
+#[test]
 fn layout_shell_light() {
     let _g = snapshot_guard();
     let mut h = shell_harness();
@@ -138,7 +160,7 @@ fn layout_shell_light() {
 fn layout_page_stock() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Stock);
-    assert_page_layout(&h, "Stock", &["Shape", "Size", "Position and rotation", "Fit to models", "Apply"]);
+    assert_page_layout(&h, "Stock", &["Shape", "Size", "Position and rotation", "Stock axis", "Fit to models", "Apply"]);
 }
 
 #[test]
@@ -151,6 +173,9 @@ fn layout_page_wcs() {
         .with_size(Vec2::new(1280.0, 900.0))
         .build_ui_state(frame, ShellUi::seeded());
     let h = page_in(tall, UiTarget::Wcs);
+    for label in ["Pick origin", "Pick X axis", "Pick Y axis", "Pick Z axis", "Clear"] {
+        assert!(h.query_by_label(label).is_some(), "WCS feature table has {label}");
+    }
     // #870: the one "Set origin" sits in the footer, under the page body.
     assert_page_layout(&h, "WCS", &["Turn X+", "Turn X-", "Level", "Bottom", "Pick markers in viewport", "NW", "SW", "Set origin"]);
 }
@@ -173,14 +198,18 @@ fn layout_page_tool_library() {
 fn layout_page_tool() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Tool("EM-0600-4FL".into()));
-    // The selected tool edits its fields directly in Properties; catalog
-    // actions belong to the separate Tool library tab.
+    // #2014: the selected tool's settings are a label-left property grid
+    // in collapsible groups; the rows below the Geometry header follow it.
     assert_page_layout(
         &h,
         "Tool",
-        &["Tool: EM-0600-4FL", "Delete", "Type", "Diameter", "Corner radius", "Flute length"],
+        &["Tool: EM-0600-4FL", "Delete", "Edit tool shape", "Geometry", "Type", "Diameter", "Corner radius", "Flute length"],
     );
 }
+
+/// #2007 / #2397: the tool page's Profile tab moved into the tool shape
+/// window; its layout test is `layout_window_tool_shape` in
+/// `page_layout_windows.rs` (a rename, not a removal).
 
 #[test]
 fn layout_page_operation() {
@@ -211,7 +240,15 @@ fn layout_page_setup_settings() {
 fn layout_page_setup_machine() {
     let _g = snapshot_guard();
     let h = page(UiTarget::SetupNode("Setup1".into(), SetupPage::Machine));
-    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Refresh machine list", "Load machine (.mch)"]);
+    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Load machine (.mch)"]);
+    // #2105: "Refresh" no longer stacks under the combo - it shares the
+    // Library row, right of it. The action row's place above the page's
+    // visible bottom is the pin test's job:
+    // `machine_page::the_machine_page_buttons_fit_without_scrolling_at_720_px`.
+    let lib = h.query_by_label("Machine library").expect("the library combo").rect();
+    let refresh = h.query_by_label("Refresh machine list").expect("the refresh button").rect();
+    assert!((lib.top() - refresh.top()).abs() < 2.0, "Refresh shares the Library row: {lib:?} {refresh:?}");
+    assert!(refresh.left() > lib.left(), "Refresh right of the combo: {lib:?} {refresh:?}");
 }
 
 #[test]
@@ -241,6 +278,32 @@ fn layout_page_setup_tools() {
 
 /// The Debug info panel (a dock tab since #2262): inside the screen, its
 /// Copy button inside its tab's leaf.
+/// #2384: the start page stands where the dock stands, below the
+/// ribbon and above the status strip; its heading, the list and the
+/// actions stack top to bottom from the left.
+#[test]
+fn layout_page_home() {
+    use super::super::home::{OPEN, TITLE};
+    let mut h = shell_harness();
+    h.state_mut().state.recent = Default::default();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::Button, super::super::home::HOME).click();
+    h.run_steps(2);
+    let band = h.get_by_role_and_label(egui::accesskit::Role::Button, "Donate").rect();
+    let screen = h.ctx.content_rect();
+    let mut last: Option<(&str, f32)> = None;
+    for a in [TITLE, super::super::home::NO_RECENT, OPEN] {
+        let r = h.query_all_by_label(a).next().unwrap_or_else(|| panic!("home page: no widget labelled {a:?}")).rect();
+        assert!(r.top() > band.bottom(), "home page: {a:?} {r:?} is below the top band");
+        assert!(r.bottom() < screen.bottom(), "home page: {a:?} {r:?} is on the screen");
+        assert!(r.left() < screen.center().x, "home page: {a:?} {r:?} starts in the left half");
+        if let Some((prev, y)) = last {
+            assert!(r.top() >= y, "home page: {a:?} is not below {prev:?}");
+        }
+        last = Some((a, r.bottom()));
+    }
+}
+
 #[test]
 fn layout_window_debug_info() {
     let _g = snapshot_guard();

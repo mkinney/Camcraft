@@ -88,7 +88,8 @@ fn guarded(region: &Region, p: &PocketParams, stock: &RestStock, guards: Guards)
     // left it there), so Top Z is a cut level, not an air level (#2004):
     // with no material top stated, the ladder keeps the plane at Top Z.
     let stock_top = p.links.approach.stock_top.or(Some(f64::INFINITY));
-    let zs = cut_levels_under(p.top_z, stock_top, p.bottom_z, p.stepdown)?;
+    let step = crate::machining2d::ladder_stepdown(&p.links.approach, p.top_z, p.bottom_z, p.stepdown);
+    let zs = cut_levels_under(p.top_z, stock_top, p.bottom_z, step)?;
     // The depth guard speaks first, for every depth, before anything is
     // planned (`stock`).
     let materials = zs.iter().map(|&z| stock.material_at(z, guards)).collect::<Result<Vec<Region>, GenError>>()?;

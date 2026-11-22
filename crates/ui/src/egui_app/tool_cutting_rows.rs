@@ -17,7 +17,8 @@ use camcraft_app::units::Unit;
 
 use crate::state::ToolUi;
 
-use super::fields::{combo, field, num_feed, num_feed_named, num_named, num_plain, num_plain_named};
+use super::fields::{combo, num_feed_named, num_feed_row, num_named, num_plain_named, num_row};
+use super::layout::prop_row;
 
 /// Append a row for the first material the table does not name yet,
 /// starting from the draft's running numbers; `false` when every
@@ -27,7 +28,7 @@ pub(super) fn add_row(t: &mut ToolUi) -> bool {
     if t.tool_kind() == ToolKind::Waterjet {
         // Zero thickness deliberately needs the user's value before Apply succeeds.
         t.cutting.push(CuttingRow {
-            material: Some(WorkMaterial::ALL[0]), rpm: 0.0, feed: t.feed, stepdown: None, stepover: None,
+            material: Some(WorkMaterial::ALL[0]), rpm: 0.0, feed: t.feed, stepdown: None, stepover: None, plasma: None,
             waterjet: Some(WaterjetCutData {
                 thickness: 0.0, kerf: t.diameter, pierce_time: 0.0,
                 abrasive_delay: 0.0, re_pierce_time: 0.0, pierce_method: PierceMethod::Stationary,
@@ -35,7 +36,7 @@ pub(super) fn add_row(t: &mut ToolUi) -> bool {
         });
         return true;
     }
-    let Some(m) = WorkMaterial::ALL.into_iter().find(|m| !t.cutting.iter().any(|r| r.material == Some(*m))) else {
+    let Some(m) = WorkMaterial::ALL.into_iter().find(|m| !t.cutting.iter().any(|r| r.material == Some(*m) && !r.is_recipe())) else {
         return false;
     };
     t.cutting.push(CuttingRow::plain(Some(m), t.rpm, t.feed));
@@ -50,32 +51,43 @@ fn step_field(ui: &mut Ui, u: Unit, v: &mut Option<f64>, name: &str) {
 }
 
 /// The rows: a table of material, spindle rpm, feed, stepdown and
-/// stepover (#2015) - or a waterjet's recipes - under one collapsed
-/// header (open when the tool states a material row) so the editor
-/// keeps its height. The `Unknown` row is the tool's default: its
-/// material is fixed and it cannot be removed.
+/// stepover (#2015) - or a waterjet's recipes. They stand in the settings
+/// grid's Cutting data group (#2014). The `Unknown` row is the tool's
+/// default: its material is fixed and it cannot be removed.
 pub(super) fn cutting_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit, torch: bool) {
     let waterjet = t.tool_kind() == ToolKind::Waterjet;
-    let open = t.cutting.iter().any(|r| r.material.is_some());
-    egui::CollapsingHeader::new(if waterjet { "Cutting data by material and thickness" } else { "Cutting data by material" })
-        .id_salt("tool_cutting_header")
-        .default_open(open)
-        .show(ui, |ui| {
-            let remove = if waterjet { waterjet_rows(ui, t, u) } else { table(ui, t, u, torch) };
-            if let Some(i) = remove
-                && i < t.cutting.len()
-            {
-                t.cutting.remove(i);
-            }
-            let full = !waterjet && WorkMaterial::ALL.iter().all(|m| t.cutting.iter().any(|r| r.material == Some(*m)));
-            if ui
-                .add_enabled(!full, egui::Button::new("Add material row"))
-                .on_hover_text(if waterjet { "Add a recipe, then enter its material, thickness and pierce values" } else { "a row for the next material, starting from the rpm and feed above; the setup stock's material (else the document's) picks its row, else Unknown" })
-                .clicked()
-            {
-                add_row(t);
-            }
-        });
+    // #2014: no nested header here. The grid's "Cutting data" group
+    // header is the one header for these rows. `main`'s plasma recipe PR
+    // (#2596) wrapped this block in a CollapsingHeader; the merge of
+    // `main` into this branch replaces that header with the group
+    // header, with the plasma PR's rules intact (a recipe does not fill
+    // a material slot). A six-column table is wider than the settings
+    // column, so it scrolls across and never widens the page or an
+    // auto-sized window.
+    let remove = if waterjet {
+        waterjet_rows(ui, t, u)
+    } else {
+        egui::ScrollArea::horizontal()
+            .id_salt("tool_cutting_table_scroll")
+            .show(ui, |ui| table(ui, t, u, torch))
+            .inner
+    };
+    if let Some(i) = remove
+        && i < t.cutting.len()
+    {
+        t.cutting.remove(i);
+    }
+    let full = !waterjet
+        && WorkMaterial::ALL
+            .iter()
+            .all(|m| t.cutting.iter().any(|r| r.material == Some(*m) && !r.is_recipe()));
+    if ui
+        .add_enabled(!full, egui::Button::new("Add material row"))
+        .on_hover_text(if waterjet { "Add a recipe, then enter its material, thickness and pierce values" } else { "a row for the next material, starting from the rpm and feed above; the setup stock's material (else the document's) picks its row, else Unknown" })
+        .clicked()
+    {
+        add_row(t);
+    }
 }
 
 /// The speed-and-feed table; the index of a row to remove, if clicked.
@@ -108,6 +120,11 @@ fn table_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit, torch: bool) -> Option<usize
         ui.label("");
         ui.end_row();
         for (i, row) in t.cutting.iter_mut().enumerate() {
+            // #1521: a torch's thickness recipe is not a speed-and-feed
+            // row. It rides the draft untouched until it has an editor.
+            if row.is_recipe() {
+                continue;
+            }
             ui.push_id(("tool_cutting_row", i), |ui| {
                 ui.horizontal(|ui| match row.material {
                     None => {
@@ -151,7 +168,7 @@ fn waterjet_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit) -> Option<usize> {
     for (i, row) in t.cutting.iter_mut().enumerate() {
         ui.push_id(("tool_cutting_row", i), |ui| {
             let mut idx = row.material.and_then(|m| WorkMaterial::ALL.iter().position(|x| *x == m)).unwrap_or(0);
-            ui.horizontal(|ui| {
+            prop_row(ui, "Material", |ui| {
                 combo(ui, "material", &mut idx, &labels);
                 if ui.small_button("Remove").on_hover_text("drop this material's row").clicked() {
                     remove = Some(i);
@@ -160,21 +177,21 @@ fn waterjet_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit) -> Option<usize> {
             if let Some(m) = WorkMaterial::ALL.get(idx) {
                 row.material = Some(*m);
             }
-            field(ui, &format!("Feed ({})", u.feed_suffix()));
-            num_feed(ui, u, &mut row.feed);
+            // The feed keeps the feed-rate widget: suffix `mm/min` or
+            // `in/min`, feed precision, and the unit lens. A length row
+            // here shows `731.0 mm` under a feed-rate label (#2663 review).
+            prop_row(ui, "Feed", |ui| num_feed_row(ui, u, &mut row.feed));
             if let Some(w) = &mut row.waterjet {
-                field(ui, "Plate thickness");
-                super::fields::num(ui, u, &mut w.thickness);
-                field(ui, "Kerf width");
-                super::fields::num(ui, u, &mut w.kerf);
-                for (label, value) in [("Pierce time (s)", &mut w.pierce_time), ("Abrasive delay (s)", &mut w.abrasive_delay), ("Re-pierce time (s)", &mut w.re_pierce_time)] {
-                    field(ui, label);
-                    num_plain(ui, value);
-                }
+                prop_row(ui, "Plate thickness", |ui| num_row(ui, u, &mut w.thickness));
+                prop_row(ui, "Kerf width", |ui| num_row(ui, u, &mut w.kerf));
+                prop_row(ui, "Pierce time (s)", |ui| super::fields::num_plain_row(ui, &mut w.pierce_time));
+                prop_row(ui, "Abrasive delay (s)", |ui| super::fields::num_plain_row(ui, &mut w.abrasive_delay));
+                prop_row(ui, "Re-pierce time (s)", |ui| super::fields::num_plain_row(ui, &mut w.re_pierce_time));
                 let methods = [PierceMethod::Stationary, PierceMethod::Dynamic, PierceMethod::Wiggle];
                 let mut method = methods.iter().position(|m| *m == w.pierce_method).unwrap_or(0);
-                field(ui, "Pierce method");
-                combo(ui, "pierce_method", &mut method, &["Stationary", "Dynamic", "Wiggle"]);
+                prop_row(ui, "Pierce method", |ui| {
+                    combo(ui, "pierce_method", &mut method, &["Stationary", "Dynamic", "Wiggle"])
+                });
                 if let Some(m) = methods.get(method) { w.pierce_method = *m; }
             }
         });
@@ -231,5 +248,77 @@ mod tests {
         assert_eq!(d.cutting[0], first, "adding another thickness keeps the first recipe");
         for _ in 0..WorkMaterial::ALL.len() { assert!(add_row(&mut d)); }
         assert!(d.cutting.len() > WorkMaterial::ALL.len(), "waterjet rows are not capped at one per material");
+    }
+
+    /// #1521: a torch's thickness recipe is not a speed-and-feed row. The
+    /// table does not draw it, a material row may stand beside it, and it
+    /// rides the draft untouched.
+    #[test]
+    fn a_torch_recipe_rides_the_draft_and_is_not_drawn_as_a_material_row() {
+        use camcraft_app::plasma_cut_tools::PlasmaCutData;
+        use camcraft_app::tool_cutting_rows::CuttingRow;
+        use egui_kittest::kittest::Queryable;
+        let recipe = CuttingRow {
+            plasma: Some(PlasmaCutData {
+                thickness: 6.0, kerf: 1.5, cut_height: Some(1.5), pierce_height: Some(3.8), pierce_delay: Some(0.5),
+                transfer_height: None, puddle_jump: None, amperage: None, arc_voltage: None,
+                max_pierce_thickness: Some(12.0), edge_start: false,
+            }),
+            ..CuttingRow::plain(Some(WorkMaterial::ALL[0]), 0.0, 2400.0)
+        };
+        let mut torch = camcraft_app::tools::torch_tool(1.5);
+        torch.cutting = vec![recipe];
+        let mut d = ToolUi::from_tool("Torch", &torch, true);
+        assert_eq!(d.to_tool(), torch, "the draft carries the recipe both ways");
+        let count = |d: &ToolUi| {
+            let mut d = d.clone();
+            let mut h = egui_kittest::Harness::new_ui(move |ui| {
+                super::cutting_rows(ui, &mut d, camcraft_app::units::Unit::Millimeters, true);
+            });
+            h.run();
+            h.query_all_by_label("Remove").count()
+        };
+        assert_eq!(count(&d), 0, "a recipe is not drawn as a removable material row");
+        assert!(add_row(&mut d));
+        assert_eq!(d.cutting[1], CuttingRow::plain(Some(WorkMaterial::ALL[0]), d.rpm, d.feed), "the recipe's material is still free for a plain row");
+        assert_eq!(d.cutting[0], recipe);
+        assert_eq!(count(&d), 1, "only the plain material row is drawn");
+        assert!(d.to_tool().is_sane(), "{:?}", d.to_tool().why_not_sane());
+    }
+
+    /// #2681: thickness recipes do not occupy the plain material-row slots.
+    #[test]
+    fn torch_material_row_button_counts_plain_rows_only() {
+        use camcraft_app::plasma_cut_tools::PlasmaCutData;
+        use camcraft_app::tool_cutting_rows::CuttingRow;
+        use egui_kittest::kittest::{NodeT, Queryable};
+
+        for plain_rows in [false, true] {
+            let mut torch = camcraft_app::tools::torch_tool(1.5);
+            torch.cutting = WorkMaterial::ALL.into_iter().map(|material| CuttingRow {
+                plasma: Some(PlasmaCutData {
+                    thickness: 6.0, kerf: 1.5, cut_height: Some(1.5), pierce_height: Some(3.8), pierce_delay: Some(0.5),
+                    transfer_height: None, puddle_jump: None, amperage: None, arc_voltage: None,
+                    max_pierce_thickness: Some(12.0), edge_start: false,
+                }),
+                ..CuttingRow::plain(Some(material), 0.0, 2400.0)
+            }).collect();
+            if plain_rows {
+                torch.cutting.extend(WorkMaterial::ALL.into_iter().map(|material| {
+                    CuttingRow::plain(Some(material), 0.0, 2400.0)
+                }));
+            }
+            assert!(torch.is_sane(), "{:?}", torch.why_not_sane());
+            let mut d = ToolUi::from_tool("Torch", &torch, true);
+            let mut h = egui_kittest::Harness::new_ui(move |ui| {
+                super::cutting_rows(ui, &mut d, camcraft_app::units::Unit::Millimeters, true);
+            });
+            h.run();
+            assert_eq!(
+                h.get_by_label("Add material row").accesskit_node().is_disabled(),
+                plain_rows,
+                "only plain rows for every material disable Add material row"
+            );
+        }
     }
 }

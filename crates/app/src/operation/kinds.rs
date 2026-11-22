@@ -146,6 +146,7 @@ fn feed_of(p: &OpParams) -> f64 {
         OpParams::WireContour(_) => 0.0,
         // The sinker's servo feed down (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::SinkerSideBurnOp { burn: p, .. }) => p.feed,
+        OpParams::SlotUndercut(p) => p.feed,
     }
 }
 
@@ -222,6 +223,7 @@ fn plunge_of(p: &OpParams) -> f64 {
         OpParams::WireContour(_) => 0.0,
         // The sinker's servo feed down (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::SinkerSideBurnOp { burn: p, .. }) => p.feed,
+        OpParams::SlotUndercut(p) => p.plunge_feed,
     }
 }
 
@@ -296,6 +298,7 @@ fn climb_of(p: &OpParams) -> bool {
         // number says which way the circle runs (M2.4 C).
         OpParams::Bore { climb, .. } | OpParams::Thread { climb, .. } => *climb,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => false,
+        OpParams::SlotUndercut(p) => p.climb,
     }
 }
 
@@ -379,6 +382,7 @@ fn stepover_of(p: &OpParams) -> Option<f64> {
         // own edges are the pattern, nothing tiles (M2.5 E B).
         | OpParams::Deburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
+        OpParams::SlotUndercut(p) => Some(p.stepover),
     }
 }
 
@@ -456,6 +460,8 @@ fn stepdown_of(p: &OpParams) -> Option<f64> {
         // infeed ladder to step (M2.5 E B).
         OpParams::Deburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
+        // One depth: the undercut is cut at its floor (#1444).
+        OpParams::SlotUndercut(_) => None,
     }
 }
 
@@ -527,6 +533,7 @@ pub fn top_of(p: &OpParams) -> Option<Height> {
         OpParams::WireContour(p) => Some(p.top_z),
         // The work top the sinker's depth may be read from (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::SinkerSideBurnOp { burn: p, .. }) => Some(p.top_z),
+        OpParams::SlotUndercut(p) => Some(p.top_z),
     }
 }
 
@@ -607,6 +614,7 @@ pub fn bottom_of(p: &OpParams) -> Option<Height> {
         OpParams::WireContour(p) => Some(p.bottom_z),
         // The cavity floor datum no burn passes (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::SinkerSideBurnOp { burn: p, .. }) => Some(p.floor_z),
+        OpParams::SlotUndercut(p) => Some(p.bottom_z),
     }
 }
 
@@ -684,6 +692,7 @@ fn retract_of(p: &OpParams) -> Option<Height> {
         // the kernel's own word, no between-run plane authored (M2.5 E B).
         | OpParams::Deburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
+        OpParams::SlotUndercut(p) => p.retract_z,
     }
 }
 
@@ -742,6 +751,7 @@ fn seed_contour(c: &Carried) -> OpParams {
         // posted; staying down is the user's pick on Lead in / Lead out.
         links: crate::links::Links::PLANAR,
         tilt: c.tilt,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -772,6 +782,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         // Turning-point blends are opt-in (M11.1 C), as on Face.
         blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         tilt: c.tilt,
     }
 }
@@ -783,6 +794,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
 fn seed_adaptive2d(c: &Carried) -> OpParams {
     OpParams::Adaptive2D {
         blend_radius: None, blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -809,6 +821,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
 fn seed_offset2d(c: &Carried) -> OpParams {
     OpParams::Offset2D {
         blend_radius: None, blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -1078,6 +1091,8 @@ fn seed_pocket3d(c: &Carried) -> OpParams {
         // Feed modulation costs a sim run; the fresh op posts the
         // programmed feed everywhere until the user asks otherwise.
         feed_opt: false,
+        // #1591: the spiral is what every 3D Adaptive cut before the choice.
+        method: crate::machining2d::AdaptiveMethod::Spiral,
         // Off is the ladder exactly as it always generated; the shell
         // is the user's ask, not the fresh op's guess (M2.5 F).
         shell: false,
@@ -1121,6 +1136,9 @@ fn seed_finish3d(c: &Carried) -> OpParams {
         // The model is the finished surface until a machinist asks
         // for the land (#1196).
         fill_openings: None,
+        // Fresh finishes hop to clearance like every older file;
+        // straight links are the machinist's opt-in (the linking menu).
+        gap_link: crate::finishing3d::GapLink::Jump,
     }
 }
 
@@ -1138,6 +1156,17 @@ fn seed_deburr(c: &Carried) -> OpParams {
         bottom_z: c.bottom,
         feed: c.feed,
         plunge_feed: c.plunge,
+        // #1888: no edge is left out; a crease under 40 degrees is a
+        // facet seam of a smooth surface (the feature layer's own
+        // crease angle), and holes are edges until a machinist says
+        // which diameters a drill's own chamfer already broke.
+        exclude_edges: Vec::new(),
+        min_edge_angle_deg: 40.0,
+        exclude_holes: false,
+        hole_min_diameter: 0.0,
+        hole_max_diameter: 10.0,
+        // #1889: skip with a note, as each earlier Deburr did.
+        unreachable: crate::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 
@@ -2428,6 +2457,20 @@ impl KindInfo {
             seed: super::sinker_side_op::seed_sinker_side_burn,
             tool_kinds: tk::ELECTRODE,
         },
+        KindInfo {
+            ty: OpType::SlotUndercut,
+            label: "Slot Undercut",
+            caption: "Undercut",
+            tag: 44,
+            // The head cuts sideways under a roof (#1444): the column
+            // laws stand down for the undercut law - no Z move with
+            // the head under material, no neck through a slot mouth -
+            // and the solid law judges the cutter's real profile.
+            mode: Mode::Undercut,
+            section: Section::Mill2D,
+            seed: super::slot_undercut_op::seed_slot_undercut,
+            tool_kinds: tk::UNDERCUT,
+        },
     ];
 
     /// Whose machine this kind drives - read off the row's section
@@ -2505,6 +2548,7 @@ pub const ALL_LABELS: [&str; KIND_COUNT] = [
     KindInfo::ALL[41].label,
     KindInfo::ALL[42].label,
     KindInfo::ALL[43].label,
+    KindInfo::ALL[44].label,
 ];
 
 impl OpType {
@@ -2574,6 +2618,8 @@ impl OpType {
             OpType::SinkerBurn => 42,
             // #545: the side burn appends (stored ids never move).
             OpType::SinkerSideBurn => 43,
+            // #1444: the slot undercut appends (stored ids never move).
+            OpType::SlotUndercut => 44,
         }
     }
 

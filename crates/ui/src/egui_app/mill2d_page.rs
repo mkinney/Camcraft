@@ -119,6 +119,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             blend_turns,
             links,
             tilt,
+            chain_overrides,
         } => {
             if tab == SEC_GEO {
                 let mut s_idx = match side {
@@ -136,6 +137,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                     consequence(ui, note);
                 }
                 prop_row(ui, "Tolerance", |ui| num(ui, u, tolerance));
+                sketch_chain_overrides_ui(ui, world, cx.op_src, chain_overrides);
             }
             if tab == SEC_HEIGHTS {
                 orientation_editor(ui, u, tilt);
@@ -239,6 +241,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             optimal_load,
             blend_turns, blend_radius,
             rest,
+            corner_relief,
             tilt,
         } => {
             if tab == SEC_LEADS {
@@ -279,6 +282,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 // M11.1 C: pass corners and row-to-row links round on
                 // one arc inside the cleared area where it is legal.
                 super::kind_editors::arc_turn_rows(ui, u, "Arc turns at corners and links", blend_turns, blend_radius);
+                super::kind_editors::corner_relief_rows(ui, "pocket", corner_relief);
                 // #1517: Adaptive left 2D Pocket for 2D Adaptive.
                 let mut st_idx = match strategy {
                     PocketStrategy::Zigzag => 0,
@@ -330,6 +334,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             entry,
             helix_radius,
             optimal_load, method, troch, blend_turns, blend_radius,
+            corner_relief,
             tilt,
         } => roughing2d_pane(
             ui,
@@ -352,6 +357,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             helix_radius,
             Some(optimal_load), Some((method, troch)),
             links, (blend_turns, blend_radius),
+            corner_relief,
             tilt,
         ),
         OpParams::Offset2D {
@@ -368,6 +374,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             climb,
             entry,
             helix_radius, blend_turns, blend_radius,
+            corner_relief,
             tilt,
         } => roughing2d_pane(
             ui,
@@ -390,6 +397,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             helix_radius,
             None, None,
             links, (blend_turns, blend_radius),
+            corner_relief,
             tilt,
         ),
         _ => {}

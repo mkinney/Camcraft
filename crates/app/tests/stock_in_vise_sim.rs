@@ -85,7 +85,7 @@ fn located(rot: [f64; 4]) -> (World, History) {
     let mut h = History::default();
     h.execute(&world, ImportModel::from_mesh("part", cube(p(0.0, 0.0, 0.0), p(20.0, 10.0, 8.0))));
     h.execute(&world, MoveModel::new(&world, "part", Location { pos: p(150.0, 80.0, 30.0), rot }).expect("placed"));
-    h.execute(&world, ImportModel::from_mesh("vise", Mesh { facets: vise().into() }));
+    h.execute(&world, ImportModel::from_mesh("vise", Mesh::from_facets(vise())));
     h.execute(&world, TagFixture::new(&world, "vise", None).expect("mark the vise"));
     h.execute(&world, CreateSetup::new(&world, None, None).expect("Setup1"));
     let e = model::find_by_name(&world, "part").expect("part");

@@ -264,7 +264,7 @@ fn a_square_to_round_punch_posts_its_golden_and_verifies() {
     assert!(on < off && off < cut, "{text}");
     assert!(lines[on + 1..off].iter().all(|l| l.starts_with("G1 X") && l.contains(" U") && l.contains(" V")), "{text}");
     assert!(lines[..on].iter().any(|l| l.contains("4-AXIS") && l.contains("ARC LENGTH")), "{text}");
-    assert!(lines[off - 1].ends_with("U0 V0"), "the lead-out stands the wire upright: {text}");
+    assert!(lines[off - 1].ends_with("U0. V0."), "the lead-out stands the wire upright: {text}");
 }
 
 /// Done means: a constant taper stated as two profiles with sync pairs

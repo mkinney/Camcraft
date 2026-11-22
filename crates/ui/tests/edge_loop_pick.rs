@@ -56,6 +56,7 @@ fn setup() -> State {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     };
     let params = operation::retype_params(&pocket, OpType::Adaptive2D.ordinal());
     state.pending.push_back(CommandKind::CreateOperation {
@@ -224,6 +225,7 @@ fn shift_click_on_an_aligned_setup_closes_around_the_setup_horizontal_face() {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     };
     state.history.execute(
         &state.world,

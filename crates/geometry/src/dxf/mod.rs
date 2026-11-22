@@ -4,6 +4,8 @@
 //! Only planar, zero-width model-space geometry is accepted. Arcs remain analytic.
 //! This module performs no file I/O and has no dependency on the application or ECS.
 
+mod blocks;
+mod dictionaries;
 mod document_writer;
 mod entities;
 mod pairs;

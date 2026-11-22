@@ -64,6 +64,7 @@ fn contour() -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -106,7 +107,7 @@ fn flipped_hat() -> (World, History) {
 
 fn mesh_of(boxes: &[(Point3, Point3)]) -> Mesh {
     let tris: Vec<Triangle> = boxes.iter().flat_map(|(a, b)| cube(*a, *b).facets.iter().copied().collect::<Vec<_>>()).collect();
-    Mesh { facets: tris.into() }
+    Mesh::from_facets(tris)
 }
 
 /// One-piece soft jaws (80 x 80, Z -10..5) with a square nest pocket

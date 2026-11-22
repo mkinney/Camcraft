@@ -98,6 +98,7 @@ fn params_sanity_gates() {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     };
     assert!(!bad.is_sane());
     // A depth range that runs upward is nonsense, refused at command
@@ -220,8 +221,9 @@ fn stamp_follows_every_input() {
     // trochoidal slot, seated after it at 40, to 41 - #532's wire
     // contour, appended as the wire EDM's own section, to 42 - #541's
     // sinker burn, appended as the sinker EDM's own section, to 43 - #545's
-    // sinker side burn, appended behind it, to 44.)
-    assert_eq!(KindInfo::ALL.len(), 44);
+    // sinker side burn, appended behind it, to 44 - #1444's slot
+    // undercut, appended behind it, to 45.)
+    assert_eq!(KindInfo::ALL.len(), 45);
     for (i, row) in KindInfo::ALL.iter().enumerate() {
         assert_eq!(row.ty.ordinal(), i, "row {i} out of step with ordinal");
         assert_eq!(row.tag as usize, i, "digest tag must equal table order");
@@ -471,6 +473,7 @@ fn multiaxis_rough_stamp_moves_with_its_ladder_and_cone() {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         feed_opt: false,
         shell: false,
+        method: crate::machining2d::AdaptiveMethod::Spiral,
     };
     assert_ne!(
         digest(&rough(0.0, 0.0, 90.0)),
@@ -514,6 +517,7 @@ fn the_arc_entry_splits_the_stamp_and_leaves_the_others_alone() {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     };
     let digest = |p: &OpParams| {
         let mut h = std::hash::DefaultHasher::new();

@@ -20,13 +20,13 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State) {
                 ui,
                 state.in_browser(crate::browser_files::NO_EXPORT),
                 "Export library…",
-                "write the document's tools to a CamCraft tool library file",
+                "write the document's tools to a CamCraft (.camtools), PathPilot (.csv) or Hurco (.TCM) file",
             );
             let import = crate::browser_files::button(
                 ui,
                 state.in_browser(crate::browser_files::NEEDS_PICKER),
                 "Import library…",
-                "import the tools of a CamCraft tool library file (one undo step; the mode beside it says what happens to a name the document has)",
+                "import tools from a CamCraft (.camtools/.json), PathPilot (.csv) or Hurco (.TCM) file (one undo step; the mode beside it says what happens to a name the document has)",
             );
             tool_import_mode_combo(ui, &mut state.tool_import_mode);
             (new, export, import)
@@ -42,7 +42,7 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State) {
         state.set_import_tool_holders(holders);
     }
     if new {
-        actions::open_tool_editor(state, "");
+        actions::begin_new_tool(state);
     }
     if export {
         state.export_tool_library_dialog();

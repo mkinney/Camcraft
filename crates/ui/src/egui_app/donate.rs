@@ -70,13 +70,14 @@ fn open_native(ctx: &Context) {
 }
 
 /// The button stays available for an empty document and in the browser.
+/// Returns its left edge: the Home button (#2384) sits left of it.
 pub(super) fn draw(
     ui: &mut Ui,
     state: &mut State,
     pal: &Tokens,
     icons: Option<&IconSet>,
     band: Rect,
-) {
+) -> f32 {
     if let Some(result) = ui.ctx().data_mut(|data| {
         data.remove_temp::<Option<Result<(), String>>>(result_id())
             .flatten()
@@ -127,6 +128,7 @@ pub(super) fn draw(
             open_native(ui.ctx());
         }
     }
+    rect.left()
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

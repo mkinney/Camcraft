@@ -13,6 +13,7 @@ minimumRevision = 1;
 extension = "nc";
 setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
+axisInversion = true; // verified on the engine's mirrored stream for a flipped WCS X/Y and an inverted machine X/Y (#2475): trace equivalence test + golden
 coolantModes = true; // reads PARAM Coolant (#112/#150): the engine refuses non-Flood ops for a post without it
 afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a stop or home ask for a post without it
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
@@ -20,6 +21,12 @@ workOffsetMax = 6;      // G54..G57, G505, G506 (#934); more G505+ frames need t
 wcsRotation = true;        // #760: writes ROT RPL=.. / ROT in Control mode from PARAM WcsYaw & WcsRotationMode
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G710 / G700
 endUnits = "G700 G710";   // #2189: switches end units before M2 when asked
+// #1389: 840D Fundamentals, section 3.2.4: semicolon to block end.
+explains = "semi";
+explainWords = {
+  G700: "INCH LENGTHS AND FEEDS", G710: "MM LENGTHS AND FEEDS",
+  G505: "WORK OFFSET 5", G506: "WORK OFFSET 6", G58: "", G59: ""
+};
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
@@ -42,6 +49,7 @@ var setupNext = null;      // #1647: null means no marker; a cleaned name may be
 var homedAt = -1;          // linesWritten() just after a trip home (#504): onClose skips its own home when nothing followed
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;
+var wcsFlip = "";          // #1649: the flipped WCS axes ("X", "Y", "XY") - the engine mirrored the section
 var smoothTol = 0;          // #616: the section's PARAM Smoothing, mm (0: none asked)
 var smoothMode = "";        // #616: "finish" or "rough"
 var smoothActive = false;   // #616: this section wrote its smoothing words
@@ -86,7 +94,9 @@ function block(words) {  // one numbered line per block - the DIN law
   }
   if (a.length > 0) {
     nLine += 10;
-    writeln("N" + nLine + " " + a.join(" "));
+    var line = "N" + nLine + " " + a.join(" "), c = explain(a);
+    if (c && line.length + 1 + c.length <= 80) line += " " + c;
+    writeln(line);
   }
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
@@ -238,6 +248,8 @@ function joinDash(parts) {  // the non-empty parts, " - " between
   return a.join(" - ");
 }
 function note(s) { writeln("; " + s); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function commentParam(name, value) {
   if (name === "SetupName") setupName = clean(value);
   else if (name === "OperationName") opName = clean(value);
@@ -291,6 +303,18 @@ function mpfName(said) {
   }
   return t;
 }
+// The machine's inverted linear axes (#375): the engine has mirrored the
+// stream into the controller's frame, and the header says so, one note
+// for each axis. A standard machine lists none.
+function invertedNotes() {
+  var a = (typeof machine !== "undefined" && machine && machine.invertedAxes) || [];
+  var where = { X: "LEFT", Y: "TOWARD THE FRONT", Z: "DOWN" };
+  for (var i = 0; i < a.length; i++) {
+    var l = String(a[i]);
+    note("MACHINE " + l + "+ MOVES " + (where[l] || "THE OTHER WAY") + " - INVERTED AXIS");
+  }
+}
+
 function onOpen() {
   inch = typeof postOptions !== "undefined" && postOptions.Units === "inch";
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
@@ -298,6 +322,7 @@ function onOpen() {
   if (said) writeln("%_N_" + mpfName(said) + "_MPF");
   var t = said || clean(nm) || "CAMCRAFT"; // #594: cleaned
   writeln("; " + (progNumbered() ? "PROGRAM " + progNo() + " - " + t : t));
+  invertedNotes();
   var z = safeZ();
   if (z !== null && z !== 0) note("SAFE RETRACT G53 Z" + fu(z) + " - STATED BY THE MACHINE");
 }
@@ -395,6 +420,7 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsFlip") wcsFlip = String(value || "");
   else if (name === "WcsYaw" && has(value)) wcsYaw = Number(value);
   else if (name === "WcsRotationMode") wcsRotMode = String(value || "");
 }
@@ -445,6 +471,8 @@ function startPreamble() {
   // stopped before its first move, whatever the tool change did.
   var probeStop = spindleWait && !(sRpm > 0);
   opNotes();
+  // #1649: the operator reads why every sign on a flipped axis is the other one.
+  if (wcsFlip) note("WCS " + wcsFlip.split("").join(" AND ") + " FLIPPED - PROGRAM MIRRORED");
   // #901: G710 - metric for lengths AND feeds (the family's published
   // programming manual: G71 switches only geometric data, so F would
   // still read in the basic system's unit; G710 switches both). Stated
@@ -534,7 +562,7 @@ function endPreamble() {
 }
 
 function onSection() { seatKnown = false; startPreamble(); }
-function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028, #1633: the next section states its own planes
+function onSectionEnd() { endPreamble(); wcsFlip = ""; hopZ = null; clearZ = null; }  // #1028, #1633: the next section states its own planes
 
 // ------------------------------------------------------------- motions
 // While a canned-cycle group is open its expanded hole chain is the
@@ -765,7 +793,10 @@ function onCycle() {
   // Manual (SINUMERIK ONE / 840D sl / 828D, 07/2021), section 6.3, lists
   // no P in its G73 and G83 formats; an unverified G73 dwell is refused
   // above (#2354). G84 and G85 dwells are refused above (#2357).
-  if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
+  // #1480: Siemens ISO dialects Function Manual (07/2021), table 6-1,
+  // page 95, gives G89 dwell in milliseconds. Section 6.3.1 says cycle
+  // parameters are modal: write P0 when a Back bore has no dwell.
+  if ((ms > 0 && g !== "G73" && g !== "G84") || g === "G89") words.push("P" + ms);
   words.push(fw(p.FeedRate));
   block(words);
   cycX = p.X; cycY = p.Y; cycR = p.R;

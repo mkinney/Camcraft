@@ -17,6 +17,7 @@
 //! behavior only; every hook name, template and grammar key is ours
 //! (assets/posts/AGENTS.md). No flecs, no schema, no world.
 
+pub mod agie_setup;
 pub mod data_dir;
 pub mod data_scan;
 pub mod kinematics;

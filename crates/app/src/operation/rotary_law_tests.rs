@@ -24,7 +24,7 @@ fn bar(r: f64) -> Vec<Triangle> {
 /// A 6 mm ball on a 3 mm flute under a 10 mm shank: the shank's bottom
 /// stands 3 mm above the tip, wider than the cut.
 fn cutter() -> verify::Cutter {
-    verify::Cutter { radius: 3.0, corner_r: 3.0, tip_angle: 0.0, flute_len: 3.0, shank_radius: 5.0, shank_len: 20.0, holder_radius: 5.0, holder_len: 5.0, body: None, neck: None }
+    verify::Cutter { radius: 3.0, corner_r: 3.0, tip_angle: 0.0, flute_len: 3.0, shank_radius: 5.0, shank_len: 20.0, holder_radius: 5.0, holder_len: 5.0, body: None, neck: None, undercut: None }
 }
 
 /// The law's warnings for one upright move along the bar's crown with

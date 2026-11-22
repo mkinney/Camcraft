@@ -93,6 +93,8 @@ pub struct PlasmaParams {
     /// for a model that met the promise, and for every plate drawn by
     /// hand - each law then reads exactly as it always did.
     pub model_excess: f64,
+    /// All reduced sources were made coarse only by file tolerance.
+    pub file_tolerance: bool,
 }
 
 impl PlasmaParams {
@@ -106,7 +108,7 @@ impl PlasmaParams {
     /// excess more than it could at full fidelity.
     #[must_use]
     pub fn kerf_tol(&self) -> f64 {
-        crate::verify::excess_floor(KERF_TOL, self.model_excess).unwrap_or(KERF_TOL)
+        crate::verify::excess_floor_for(KERF_TOL, self.model_excess, self.file_tolerance).unwrap_or(KERF_TOL)
     }
 
     /// The door: every refusal of the numbers by name, before any

@@ -219,6 +219,20 @@ those compilations cache hits.
   `SCCACHE_DIR` moves it.
 - Dev builds have line tables only. `--config profile.dev.debug=true` gives
   the variable debug information back for a debugger.
+- Each gate cargo call gets `CARGO_INCREMENTAL=0`, and the gate removes the
+  `CARGO_PROFILE_*` variables of the caller (#3150). These inputs change
+  the unit hash. A different value gives each unit a new directory under
+  `target/<profile>/build/`, and cargo does not remove the old one. The
+  gate prints a note when `RUSTFLAGS` is set. The summary gives the number
+  of unit directories that the run added: a second run on the same tree
+  adds none. For a plain `cargo test` in a shared build worktree, use the
+  same env.
+- At the end of each run (not `--dry-run`), the gate removes superseded
+  test-harness units (#3169). A unit goes only when this run wrote a newer
+  variant of the same test target. Libraries and binaries stay. The sweep
+  does nothing while a cargo lock is held or another process uses the
+  tree's `target/`. The summary gives the directories and GB removed.
+  `CAMCRAFT_GATE_SWEEP=off` turns the sweep off.
 
 ## Local batch gate when the post-merge runner is down
 

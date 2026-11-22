@@ -155,7 +155,11 @@ explainBlockMax = 80;
 //    verified), and a record the cycle cannot state - alternating
 //    flank infeed, a one-pass thread, every roughing depth cut twice
 //    (issue #418: the cycle cuts each depth once), chip-break dips
-//    (issue #419: a cycle states no dip) - is refused by name.
+//    (issue #419: a cycle states no dip), or a start point above
+//    material (issue #2878: the control rapids to each pass's depth
+//    at the start Z, so the start must stand in free air in front of
+//    the end face or in a relief groove wider than the insert) - is
+//    refused by name.
 //    The control reads the ROUNDED words, so d is derived from their own
 //    ladder (g76Allowance): the allowance that makes the rounded Q, Q, P
 //    cut the record's rough pass count, nearest the record's allowance
@@ -946,6 +950,13 @@ function g76Why(p, r0, r1) {
   var rev = (p.Hand === "right") === (p.EndZ > p.Z);
   if (rev !== spinRev) {
     return "a " + p.Hand + "-hand thread cut " + (p.EndZ < p.Z ? "toward" : "away from") + " the chuck needs " + (rev ? "M04" : "M03") + ", the section's spindle runs " + (spinRev ? "M04" : "M03");
+  }
+  // #2878: a Fanuc-type G76 rapids from the start point to each pass's
+  // depth. If the start point stands above material (not in free air
+  // in front of the end face or in a relief groove wider than the
+  // insert), refuse the cycle by name and never write it.
+  if (p.StartInAir !== true) {
+    return "the start point is above material (G76 moves the insert to pass depth at rapid traverse) - start the thread in free air in front of the end face or in a relief groove wider than the insert, regenerate the operation, or choose G32 passes";
   }
   return null;
 }

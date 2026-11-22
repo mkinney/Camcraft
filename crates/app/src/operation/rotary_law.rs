@@ -10,7 +10,7 @@
 use crate::geometry::Triangle;
 use crate::verify::{self, Warning};
 
-use super::fidelity_law::tightened;
+use super::fidelity_law::tightened_strict as tightened;
 use super::material::GOUGE_TOL;
 use super::types::OpParams;
 

@@ -91,6 +91,23 @@ pub(super) fn stamp_spindle_c(
     stamp_c_about(&path, ax, machine, unwinds, tol, kind).map_err(|e| e.with_ghost(&path))
 }
 
+/// The spindle line that C turns the part about: the fitted line `ax`'s
+/// X/Y where it crosses z = 0. Refused by name when the line does not
+/// stand along world Z (#3096: the live-tool traverse reads it too).
+pub(super) fn c_center(ax: &crate::multiaxis::axis::Axis, kind: &str) -> Result<[f64; 2], GenError> {
+    let d = ax.dir;
+    let len = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
+    if !(len > 1e-12 && (d.z / len).abs() >= SAME_LINE) {
+        return Err(GenError::Invalid(format!(
+            "{kind}: the part turns about ({:.3}, {:.3}, {:.3}), not the spindle's Z line - C cannot hold it",
+            d.x, d.y, d.z
+        )));
+    }
+    // It stands within SAME_LINE of vertical, so the crossing is finite.
+    let t = -ax.origin.z / d.z;
+    Ok([ax.origin.x + d.x * t, ax.origin.y + d.y * t])
+}
+
 /// [`stamp_spindle_c`]'s body, over the path it may refuse.
 fn stamp_c_about(
     path: &crate::cl::Toolpath,
@@ -100,18 +117,7 @@ fn stamp_c_about(
     tol: f64,
     kind: &str,
 ) -> Result<crate::cl::Toolpath, GenError> {
-    let d = ax.dir;
-    let len = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
-    if !(len > 1e-12 && (d.z / len).abs() >= SAME_LINE) {
-        return Err(GenError::Invalid(format!(
-            "{kind}: the part turns about ({:.3}, {:.3}, {:.3}), not the spindle's Z line - C cannot hold it",
-            d.x, d.y, d.z
-        )));
-    }
-    // The line's XY where it crosses z = 0 (it stands within SAME_LINE
-    // of vertical, so the crossing is finite).
-    let t = -ax.origin.z / d.z;
-    let center = [ax.origin.x + d.x * t, ax.origin.y + d.y * t];
+    let center = c_center(&ax, kind)?;
     let tol = if tol.is_finite() && tol > 0.0 { tol } else { crate::machining2d::ARC_FIT_TOL };
     let stamped = crate::cl::stamp_c(path, center, tol).map_err(|e| GenError::Invalid(format!("{kind}: {e}")))?;
     let Some(c_ax) = c_axis(machine) else {

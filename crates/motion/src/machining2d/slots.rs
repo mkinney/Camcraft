@@ -140,7 +140,10 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
     let r = p.tool_diameter * 0.5;
     let h = p.width * 0.5 - r - p.stock_to_leave;
     if h < 0.0 {
-        return Err(GenError::Invalid("slot is narrower than the tool".into()));
+        return Err(GenError::Invalid(format!(
+            "slot is narrower than the tool: the slot is {:.3} mm wide ({:.3} mm left on each wall) and the tool is {:.3} mm",
+            p.width, p.stock_to_leave, p.tool_diameter
+        )));
     }
     let u = Point2::new(dx / len, dy / len);
     let n = Point2::new(-u.y, u.x);
@@ -157,7 +160,7 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         pass.push(e);
     }
 
-    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
+    let zs = super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,p.bottom_z, p.stepdown)?;
     let mut bld = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     let mut motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed);
     // `Plunge` passes no center and the ladder dives at the pass start

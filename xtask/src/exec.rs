@@ -31,6 +31,8 @@ pub struct Run {
     pub(crate) void: Option<String>,
     /// The test executables of the crates that this run built; their suite steps start no cargo (#1951).
     pub(crate) built: Built,
+    /// The unit directories under target/ when the run started (#3150); the summary prints what it added.
+    units: usize,
 }
 
 pub(crate) struct Done {
@@ -160,6 +162,7 @@ impl Run {
             guard,
             void: None,
             built: Built::new(),
+            units: crate::unit_env::units(root),
         })
     }
 
@@ -171,6 +174,8 @@ impl Run {
         if let Some(n) = &self.budget_note {
             println!("{n}");
         }
+        let vars: Vec<(String, String)> = std::env::vars().collect();
+        crate::unit_env::notes(&vars).iter().for_each(|l| println!("{l}"));
         println!("{}", crate::budget::header(self.budget, lanes));
         if lanes {
             self.run_lanes(plan)?;
@@ -287,6 +292,10 @@ impl Run {
             println!("  summed lane wall time {serial}s (serial estimate; not a serial benchmark)");
         }
         println!("  wall {mins:.1} min, {} step(s), {bad} failed", self.done.len());
+        if !self.dry {
+            crate::unit_sweep::lines(&crate::unit_sweep::after_run(&self.root, self.clock.elapsed())).iter().for_each(|l| println!("{l}"));
+            println!("{}", crate::unit_env::added_line(self.units, crate::unit_env::units(&self.root)));
+        }
         if self.label == "light" {
             let red: Vec<String> = self.done.iter().filter(|d| !d.ok).map(|d| d.name.clone()).collect();
             crate::light::rerun_note(&red).iter().for_each(|l| println!("{l}"));

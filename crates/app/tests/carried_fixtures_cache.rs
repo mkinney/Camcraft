@@ -62,6 +62,7 @@ fn contour(feed: f64) -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -201,6 +202,12 @@ fn a_carry_on_a_lathe_or_mill_turn_is_refused_by_name_on_every_path() {
         // the path cut on the mill goes stale).
         let rest = carry_refusal(&world, "Contour2", Some("Setup2")).expect("the rest chain refuses");
         assert!(rest.contains(CARRY_MACHINE_REFUSAL), "{machine}: {rest}");
+        // #3083: a mill-turn judges Face1's first traverse too, so its
+        // mill cache reads Stale once; regenerated, it leaves Contour2
+        // the one stale op.
+        if name == "mill-turn" {
+            h.execute(&world, GenerateOperation::new(&world, "Face1").expect("regenerate face"));
+        }
         // The sim never judges it: the op cut on the mill is stale by name.
         let sim = simulate_document(&world).map(|_| ()).expect_err("the program sim never judges it");
         assert!(sim.contains("Contour2") && sim.contains("regenerate"), "{machine}: {sim}");

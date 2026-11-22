@@ -37,6 +37,7 @@ pub(super) fn params_block(ui: &mut Ui, state: &mut State, u: Unit) {
             }
             ToolKind::Drill => angle(ui, "point angle °", &mut t.tip_angle),
             ToolKind::Taper => angle(ui, "cone angle °", &mut t.tip_angle),
+            ToolKind::Dovetail => angle(ui, "flank angle °", &mut t.tip_angle),
             _ => {
                 ui.label("");
                 ui.label("");

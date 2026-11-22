@@ -1,6 +1,7 @@
 //! Provenance: Held's published zigzag pocketing model and our scan-row implementation (#1490).
 //! Rest rows end inside the center boundary; closing rings remove wall cusps.
 
+use crate::cl::lattice;
 use crate::geo2d::{Point2, Region};
 use super::face::{GenError, band};
 use super::slots::chord_clears;
@@ -9,10 +10,16 @@ use super::waterscan::scan_row;
 /// Rows followed by each rest area's closed boundary. A gap up to 0.01 mm
 /// prevents rounded scan endpoints crossing the closing ring; the ring
 /// cuts that gap. Limit it to a quarter step so tiny tools retain rows.
-/// All passes stay inside the original center region.
-pub(super) fn rest_passes(center: &Region, step: f64, climb: bool) -> Result<Vec<Vec<Point2>>, GenError> {
+/// All passes stay inside the original center region. Row points stand
+/// on the 1 um lattice (the gap holds them inside): a helix entry snaps
+/// its turns there, and an off-lattice start made two levels' helices
+/// at one start read as crossing chords (#3021).
+pub(crate) fn rest_passes(center: &Region, step: f64, climb: bool) -> Result<Vec<Vec<Point2>>, GenError> {
     let rows = center.offset(-0.01_f64.min(step * 0.25))?;
     let mut passes = if rows.is_empty() { Vec::new() } else { zigzag_passes(&rows, step, climb)? };
+    for p in passes.iter_mut().flatten() {
+        *p = Point2::new(lattice(p.x), lattice(p.y));
+    }
     for ring in center.loops() {
         let mut points = ring.points().to_vec();
         if !climb {

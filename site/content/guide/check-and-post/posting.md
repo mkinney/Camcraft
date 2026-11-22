@@ -21,8 +21,16 @@ Sinker EDM (ISO). Select a post for your machine kind and control.
 A post is a `.cps` script, so you can load your own with
 **Load post (.cps)**.
 
+To write or debug a script, see the
+[Post-processor API](@/guide/reference/post-processors.md).
+
 The Post dialog opens where this document last posted, or beside the saved
 project with the project's name and the `.nc` extension.
+
+The scope label at the top right of the Post dialog names the selected
+post and, when applicable, its setup. **Hover** over that label to see
+the full built-in post script path. A custom post already shows its file
+path in the label. Check this path when two scripts have similar names.
 
 ### Controller details
 
@@ -73,6 +81,45 @@ the section's work clearance and refuses missing or unsafe clearance;
 it preserves a tip already above that height. Sinumerik refuses a missing
 machine retract. This does not establish a safe home position for every
 machine: inspect the retract and the setup before running it.
+
+### Heidenhain Klartext on the Fehlmann Picomax 55
+
+Select **Fehlmann Picomax 55 (iTNC 530)** as the setup's machine and
+**Heidenhain Klartext** as its post. The post writes a conversational
+`.H` program for NC software `340490-03`. The **Heidenhain** entry
+writes DIN/ISO `.I` programs.
+
+Use one metric setup, a defined stock blank, and one preset row (1–6).
+Place the clearance plane above the stock. Each operation must start and
+finish at or above that plane. The post supports three-axis straight moves, plunges, and constant-height
+XY arcs. It applies the work origin to the blank, points, and arc centers.
+It refuses drilling and tapping cycles, probing, tilted tool axes, helices,
+and control-side cutter compensation. Select Off or the machine's M8
+flood circuit for coolant.
+
+Use a flat, ball-nose, bull-nose, or chamfer mill. Each tool number
+must identify the same cutter and geometry throughout the program.
+
+The machine definition states a spindle range of 50–9000 rpm. The post
+checks the requested speed against the stated range. The bundled machine
+definition gives rapid rates only. The post checks the numeric range of
+each feed word. Verify axis-specific cutting feeds and machine-coordinate
+travel for the physical setup.
+
+Start with the spindle stopped and the quill at its upper tool-change
+position. At the initial stop, verify the quill is coupled for three-axis
+operation, W is fixed at the position used to set the preset, and the
+active tool axis is +Z. Check that the preset row has X, Y, and Z values,
+its basic rotation is zero, and no coordinate transformations are active.
+Check the tool table and confirm clear space for the full retract and transfer. The program
+uses `M140 MB MAX`, which moves along the active tool axis toward the
+active travel limit. At each installation stop, confirm the quill is at
+the physical tool-change position and the spindle drive is off before
+handling the tool. After the retract with the called tool, confirm its
+actual height clears the entire XY transfer before resuming. HEIDENHAIN documents that
+preset cycle 247 has no effect in Test Run. Check the selected physical
+preset independently. This profile has software tests. Acceptance on the
+target control and machine is pending. [iTNC 530 manual, §§7.4 and 8.9](https://content.heidenhain.de/doku/tnc_guide/pdf_files/iTNC530/34049x-neu/en/bhb.pdf)
 
 ## What is checked before anything is written
 

@@ -58,6 +58,7 @@ fn contour_params(comp: Compensation) -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: Links { approach: Approach { compensation: comp, ..Approach::DEFAULT }, ..Links::PLANAR },
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -157,7 +158,7 @@ fn the_other_posts_refuse_wear_by_name_and_the_gate_blocks() {
     let m = posting::machine_value(&world);
     let out = engine::run(&post_text("fanuc-lathe"), &m, &text).unwrap();
     assert!(out.warnings.iter().any(|w| w.contains("nose-radius compensation")), "{:?}", out.warnings);
-    for stem in ["heidenhain", "tormach", "grblhal", "tinyg"] {
+    for stem in ["heidenhain", "tormach", "grblhal", "tinyg", "linuxcnc", "grbl"] {
         let mut path = std::env::temp_dir();
         path.push(format!("camcraft_wear_comp_{stem}_{}.nc", std::process::id()));
         let err = posting::post_script(&world, &path, &post_text(stem)).expect_err("the gate blocks");

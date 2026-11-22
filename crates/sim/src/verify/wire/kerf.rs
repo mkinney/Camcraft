@@ -82,7 +82,7 @@ pub(super) fn gouge_at(p: &Product<'_>, wire: &Wire, k: f64, z: f64, tol: f64) -
     let pts = wire.at(z);
     let mut read = Reading::new(tol);
     for (i, w) in pts.windows(2).enumerate() {
-        let (d, at) = dist::clearance(p, w[0], w[1]);
+        let (d, at) = dist::entry(p, w[0], w[1]);
         read.take(i + 1, d, reach(k, w[0], w[1], wire.lean.get(i).copied(), wire.lean.get(i + 1).copied(), at), at);
     }
     read.close(z)

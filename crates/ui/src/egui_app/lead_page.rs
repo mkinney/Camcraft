@@ -20,7 +20,7 @@ use camcraft_app::units::Unit;
 
 use super::approach_page::{arm_fields, engagement_group, feeds_group, plunge_group};
 use super::fields::{combo, num, num_unit};
-use super::layout::{auto_value, group, hint, prop_row, prop_row_hint};
+use super::layout::{auto_value, check_row, group, hint, prop_row, prop_row_hint};
 
 const ENTRY_KINDS: [&str; 4] = ["Plunge", "Ramp", "Helix", "Arc"];
 const TRANSITIONS: [&str; 5] = ["Same as entry", "Plunge", "Ramp", "Helix", "Arc"];
@@ -117,6 +117,9 @@ fn linking_group(ui: &mut Ui, u: Unit, tag: &str, entry: Option<Entry3D>, links:
     {
         arm_fields(ui, u, arm, &mut links.approach);
     }
+    // #2012: the depth ladder's mode - off keeps the remainder last step.
+    check_row(ui, "Equal depth steps", &mut links.approach.equal_steps);
+    hint(ui, "the same number of levels, each step the same depth, none over the stepdown");
     let mut l_idx = link_idx(links.level);
     prop_row(ui, "Between levels", |ui| combo(ui, &format!("{tag}_level_link"), &mut l_idx, &LINKS));
     links.level = link_of(l_idx);

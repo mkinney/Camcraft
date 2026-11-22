@@ -13,7 +13,7 @@ use super::direction::AxisDirection;
 /// negative or NaN reads `Some` only for travel bounds (where a
 /// negative stroke limit is the point), and `None` for rates (where
 /// it is a broken file, checked at the point of use).
-fn rate(v: Option<&serde_json::Value>) -> Option<f64> {
+pub(super) fn rate(v: Option<&serde_json::Value>) -> Option<f64> {
     let x = v?.as_f64()?;
     if x.is_finite() && x > 0.0 {
         Some(x)
@@ -25,7 +25,7 @@ fn rate(v: Option<&serde_json::Value>) -> Option<f64> {
 /// Length-unit factor: a file declaring inches multiplies every
 /// distance - and every distance-per-minute - by 25.4 on the way in,
 /// so the whole checker stays mm-only.
-fn mm_factor(units: Option<&serde_json::Value>) -> Option<f64> {
+pub(super) fn mm_factor(units: Option<&serde_json::Value>) -> Option<f64> {
     match units?.get("length")?.as_str()? {
         "inch" | "inches" => Some(25.4),
         _ => Some(1.0),
@@ -185,10 +185,13 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
         return Err("machine file: expected a machine object".to_owned());
     }
 
+    super::installation::check_input_form(&v)?;
     let general = v.pointer("/general");
     let mut m = Machine {
         model: text_of(general.and_then(|g| g.get("model"))),
         vendor: text_of(general.and_then(|g| g.get("vendor"))),
+        controller_identity: super::installation::identity(&v)?,
+        tool_change: super::installation::tool_change(&v)?,
         ..Default::default()
     };
 
@@ -211,6 +214,8 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
             ));
         }
     };
+
+    m.post = super::post_name::parse_post_name(&v).map_err(|e| format!("machine file: controller.post: {e}"))?;
 
     let kine = v.pointer("/kinematics/default/parts");
     let f = mm_factor(v.pointer("/kinematics/default/units")).unwrap_or(1.0);
@@ -243,6 +248,7 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
                 Some(serde_json::Value::Bool(b)) => Some(*b),
                 Some(x) => return Err(format!("machine file: spindle.rigid_tapping must be true or false, not {x}")),
             };
+            m.spindle_orientation = super::judge::stated_orientation(sp)?; // #1445
             let ts = head.get("tool_station");
             m.max_tool_length = scale(rate(ts.and_then(|t| t.get("max_tool_length"))), f);
             m.max_tool_diameter = scale(rate(ts.and_then(|t| t.get("max_tool_diameter"))), f);
@@ -410,7 +416,7 @@ fn text_of(v: Option<&serde_json::Value>) -> String {
     v.and_then(|x| x.as_str()).unwrap_or("unknown").to_owned()
 }
 
-fn scale(v: Option<f64>, f: f64) -> Option<f64> {
+pub(super) fn scale(v: Option<f64>, f: f64) -> Option<f64> {
     v.map(|x| x * f)
 }
 

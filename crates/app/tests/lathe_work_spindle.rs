@@ -323,7 +323,7 @@ fn live_tool_and_turning_sections_pass_the_lathe_door() {
     h.execute(&world, ImportModel::from_mesh("bar", bar));
     let wrap = OpParams::RotaryContour {
         tolerance: 0.05,
-        clearance_z: Height::fixed(25.0),
+        clearance_z: Height::fixed(40.0),
         retract_z: None,
         top_z: Height::fixed(6.0),
         bottom_z: Height::fixed(-8.0),

@@ -194,6 +194,7 @@ fn tilted_world() -> World {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     };
     history.execute(
         &world,

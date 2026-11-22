@@ -136,6 +136,7 @@ fn pocket(predrilled: bool) -> OpParams {
         blend_turns: false,
         tilt: None,
         links: Links { approach: Approach { predrilled, ..Approach::DEFAULT }, ..Links::PLANAR },
+        corner_relief: Default::default(),
     }
 }
 

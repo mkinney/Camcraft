@@ -509,6 +509,7 @@ fn pocket(top: f64, bottom: f64) -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 
@@ -518,7 +519,7 @@ fn a_part_fills_the_selection_refusal_speaks_the_document_unit() {
     // names the Z plane it checked.
     let (world, name) = boss_world();
     let top = picks_of(&world, &name, |r, z, _, _| (r - 18f64.sqrt()).abs() < 0.01 && (z - 12.0).abs() < 1e-9);
-    let face = top.iter().find(|(l, _)| l.starts_with("face")).map(|(_, s)| *s).expect("boss top face");
+    let face = top.iter().find(|(l, _)| l.starts_with("face")).map(|(_, s)| s.clone()).expect("boss top face");
     let op = Operation {
         tool: "EM-1000-4FL".into(),
         src: SrcRef::Selection(vec![GeoSel { entity: name.clone(), feature: face }]),

@@ -54,7 +54,10 @@ pub fn side_names() -> &'static [&'static str] {
 /// for a tap, a boring cycle for a bore, depth-vs-diameter otherwise),
 /// so the note next to the combo reads from the op's tool, not a guess.
 pub fn cycle_names() -> &'static [&'static str] {
-    &["Auto", "Spot", "Drill", "Peck", "Tap (rigid)", "Bore", "Back bore", "Tap (floating holder)", "Ream (feed in, feed out)"]
+    &[
+        "Auto", "Spot", "Drill", "Peck", "Tap (rigid)", "Bore", "Back bore", "Tap (floating holder)",
+        "Ream (feed in, feed out)", "Fine bore (oriented stop, shift)",
+    ]
 }
 
 /// Combo index for a cycle choice - the inverse of what picking names.
@@ -70,6 +73,7 @@ pub(crate) fn cycle_index(c: &camcraft_app::drilling::CycleChoice) -> usize {
         C::Bore => 5,
         C::BackBore => 6,
         C::Ream => 8,
+        C::FineBore { .. } => 9,
     }
 }
 
@@ -86,6 +90,10 @@ pub(crate) fn cycle_from_index(i: usize) -> camcraft_app::drilling::CycleChoice 
         6 => C::BackBore,
         7 => C::FloatingTap,
         8 => C::Ream,
+        // #1445: a fine bore has no default shift. The pick states none
+        // (zero); the page's two shift fields state it, and Apply refuses
+        // the cycle by name while it is zero.
+        9 => C::FineBore { shift_x_um: 0, shift_y_um: 0 },
         _ => C::Auto,
     }
 }
@@ -207,9 +215,7 @@ pub(crate) fn unresolved_note(
     src: Option<&SrcRef>,
     params: &OpParams,
 ) -> Option<String> {
-    operation::resolve_params(world, setup, src, params)
-        .err()
-        .map(|why| format!("{why}; set the source up or switch the reference"))
+    crate::height_memo::unresolved_note(world, setup, src, params)
 }
 
 /// Swap the draft's parameter variant, carrying over every shared number
@@ -265,12 +271,19 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             Warning::StockChamferGouge { .. } | Warning::StockDeburrGouge { .. } => (1, true),
             Warning::ShankHit { part, .. } => (2, *part),
             Warning::RapidInStock { .. } => (3, false),
+            // #2901: the first traverse under a top - its own fix (raise
+            // the clearance height), clear of the avoid range (216..=220).
+            Warning::FirstTraverseLow { .. } => (221, false),
+            // #3081: a down-pointing tool axis under the table top - the
+            // opposite fix (lower the clearance plane), so its own line.
+            Warning::FirstTraverseUnderTable { .. } => (224, false),
             Warning::NonFinite { .. } => (4, false),
             Warning::Envelope { .. } => (5, false),
             // Fixture hits group by the part that hit (M3.2 stage B): a
             // shank against a vise reads differently from a rapid into
             // the table, and the fixes differ too.
             Warning::FixtureHit { fixture_part, .. } => (6 + *fixture_part as u8, false),
+            Warning::AvoidHit { part, .. } => (216 + *part as u8, false),
             // Sweep hits (M5.1 stage G) split stock from part like the
             // shank law's two flavors; the key space starts clear of
             // the fixture range's worst case.
@@ -286,6 +299,8 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             Warning::SinkerFinishOrder { .. } => (215, false),
             // A hole wider than its drill (#2496): advisory, its own line.
             Warning::DrillUndersize { .. } => (216, false),
+            // An undercut cutter's Z move under material (#1444): its own line.
+            Warning::UndercutLift { .. } => (217, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -300,7 +315,11 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::HolderHit { at, .. }
             | Warning::SweepHit { at, .. }
             | Warning::RapidInStock { at }
+            | Warning::UndercutLift { at }
+            | Warning::FirstTraverseLow { at, .. }
+            | Warning::FirstTraverseUnderTable { at, .. }
             | Warning::FixtureHit { at, .. }
+            | Warning::AvoidHit { at, .. }
             | Warning::NonFinite { at }
             | Warning::Envelope { at, .. }
             | Warning::RestUnjudged { at, .. }
@@ -500,6 +519,7 @@ mod height_row_tests {
             helix_radius: 1.0,
             blend_turns: false,
             links: camcraft_app::links::Links::PLANAR,
+            chain_overrides: Vec::new(),
         }
     }
 

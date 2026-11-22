@@ -81,7 +81,7 @@ Exit: 0 stood, 1 refused, 2 usage.
 ";
 
 const MCP_USAGE: &str = "\
-camcraft-cli mcp [--connect <host:port>]
+camcraft-cli mcp [--connect <host:port> | reference | prompt]
 
     a Model Context Protocol server on stdio (JSON-RPC 2.0): an AI agent
     drives one headless document through tools. Stdout carries the
@@ -90,6 +90,10 @@ camcraft-cli mcp [--connect <host:port>]
 OPTIONS:
     --connect <host:port>   bridge stdio to a running app started with
                             --mcp-port (the agent drives the open window)
+    reference               print the Markdown tool reference, generated
+                            from the live tool table, and exit 0
+    prompt                  print the compact prompt for a local model
+                            (rules and one line per tool), and exit 0
     -h, --help              print this usage and exit 0
 
 Exit: 0 stood, 1 session ended with an error, 2 usage.
@@ -314,6 +318,15 @@ fn lane_process(args: &[String]) -> i32 {
 fn lane_mcp(args: &[String]) -> i32 {
     match args {
         [] => {}
+        // #1947: the generated agent docs, from the same tool table.
+        [word] if word == "reference" => {
+            print!("{}", crate::mcp::catalog::reference_markdown());
+            return 0;
+        }
+        [word] if word == "prompt" => {
+            print!("{}", crate::mcp::catalog::local_prompt());
+            return 0;
+        }
         // #183: bridge stdio to a running app's live session.
         [flag, addr] if flag == "--connect" => {
             return match crate::mcp::bridge(addr, std::io::stdin(), std::io::stdout().lock()) {
@@ -325,7 +338,7 @@ fn lane_mcp(args: &[String]) -> i32 {
             };
         }
         _ => {
-            eprintln!("camcraft-cli: mcp takes no arguments, or --connect <host:port>");
+            eprintln!("camcraft-cli: mcp takes no arguments, --connect <host:port>, reference or prompt");
             return 2;
         }
     }

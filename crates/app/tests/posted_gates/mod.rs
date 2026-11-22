@@ -93,11 +93,13 @@ fn region_law(t: &Toolpath, region: &Region, tool: &ToolGeom, mode: Mode, top: f
             stock_to_leave: leave,
             gouge_tol: 0.01,
             model_excess: 0.0,
+            file_tolerance: false,
             z_tol: 1e-6,
             finish_tol: None,
             fixtures: &[],
             spindle: None,
             rims: &[],
+            corner_reliefs: &[],
         },
     )
 }

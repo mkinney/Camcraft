@@ -311,7 +311,7 @@ fn a_stock_source_cut_through_the_plate_meets_the_same_floor() {
 fn roofed() -> Mesh {
     let mut f = cube(Point3::new(-20.0, -20.0, 0.0), Point3::new(20.0, 20.0, 8.0)).facets.to_vec();
     f.extend(cube(Point3::new(-20.0, -20.0, 120.0), Point3::new(20.0, 20.0, 125.0)).facets.iter().copied());
-    Mesh { facets: f.into() }
+    Mesh::from_facets(f)
 }
 
 #[test]

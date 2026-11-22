@@ -7,6 +7,7 @@ description = "Mach4";
 vendor = "Camcraft";
 extension = "nc";
 capabilities = 1;
+axisInversion = true; // verified on the engine's mirrored stream for a flipped WCS X/Y and an inverted machine X/Y (#2475): trace equivalence test + golden
 programUnits = "mm inch";
 explains = "paren";
 coolantModes = true;
@@ -49,6 +50,7 @@ var coolantAsk = "flood", coolantOp = "", coolant = "", afterAsk = "", setupNext
 
 var toolWait = false, spindleWait = false, spindleOn = false, isFirstTool = true;
 var sectionOpen = false, kindProbe = false, probeSection = false;
+var wcsFlip = "";  // #1649: the flipped WCS axes ("X", "Y", "XY") - the engine mirrored the section
 var clearZ = null, hopZ = null, xyUnknown = true, traverseRefused = false, retractRefused = false;
 var justRetracted = false, homedAt = -1;
 
@@ -69,6 +71,8 @@ function who() { return opName ? "operation " + opName + ": " : (coolantOp ? "op
 function msg(s) { if (typeof message === "function") message(s); else writeln("(MSG: " + s + ")"); }
 function clean(s) { return String(s || "").replace(/[()]/g, " ").replace(/\s+/g, " ").trim(); }
 function note(s) { if (s) block(["(" + clean(s) + ")"]); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function block(ws) {
   var xs = [];
   for (var i = 0; i < ws.length; i++) if (ws[i]) xs.push(ws[i]);
@@ -384,6 +388,7 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsFlip") wcsFlip = String(value || "");
 }
 
 function onSpindleSpeed() {
@@ -439,6 +444,8 @@ function startPreamble() {
   if (setupName && setupName !== setupSaid) { note("SETUP: " + setupName); setupSaid = setupName; }
   if (opName) note("OPERATION: " + opName + (opKind ? " - " + opKind : "") + " - " + wcsWord);
   opName = ""; opKind = "";
+  // #1649: the operator reads why every sign on a flipped axis is the other one.
+  if (wcsFlip) note("WCS " + wcsFlip.split("").join(" AND ") + " FLIPPED - PROGRAM MIRRORED");
   if (toolWait) {
     if (spindleOn) { block(["M5"]); spindleOn = false; }
     if (coolant) { block(["M9"]); coolant = ""; }
@@ -519,6 +526,7 @@ function onSectionEnd() {
   wearNoted = false;
   smoothTol = 0; smoothMode = "";
   sectionOpen = false;
+  wcsFlip = "";
   seatKnown = false;
   hopZ = null; clearZ = null;
   coolantAsk = "flood";

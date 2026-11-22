@@ -110,6 +110,8 @@ fn unsupported_op_reason(
             | OpParams::WireContour(_)
             | OpParams::SinkerBurn(_)
             | OpParams::SinkerSideBurn(_)
+            // #1444: not verified under a rotated offset.
+            | OpParams::SlotUndercut(_)
             | OpParams::RotaryContour { .. }
             | OpParams::RotaryParallel { .. }
             | OpParams::RotaryOffset { .. }

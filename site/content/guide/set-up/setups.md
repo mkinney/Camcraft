@@ -30,6 +30,47 @@ Below the pages, {{ <icon name="tree-op-group" /> }} **Operations** lists the se
 
 ![CamCraft setup overview showing browser tree, part, stock outline, work offset, and generated 2D toolpaths](../../../images/guide/setup-overview.png)
 
+## Place a DXF profile
+
+A DXF drawing is a profile on the stock of one setup, not a solid model.
+Create the stock first. The automation commands `import_dxf` (MCP) and
+`cam.importDxf(path, { setup, units, join_tol, name })` (script) place it
+on the stock top at the stock origin. For box and cylinder stock, that
+origin is the XY centre. A moved or resized stock carries its profile.
+
+Use `move_dxf_profile` to set X, Y and a rotation about the stock face
+normal. The profile stays on that face; it has no independent Z move.
+Import and placement changes are undoable. A drawing without units is
+refused with its width and height until you state the intended units.
+Read the import summary for skipped DXF items.
+
+**Current limit:** a 2D operation can name a profile, but generation from
+the chains is not available yet. Generate refuses by name and writes no
+toolpath. A 3D operation needs a solid model. Model-top and model-bottom
+heights have no value for a profile; use stock or fixed references.
+
+**Breaking file change:** profiles require project format version 71 or
+later. A build that reads only version 70 or earlier refuses a newer file
+instead of opening the setup without its profiles. Keep an older copy
+when you need to return to an older build.
+
+## Linked models
+
+A desktop model import from a file records a link to that source file.
+When that file changes, CamCraft imports it again through the normal
+import command. This keeps the model
+identity and makes dependent toolpaths stale. Regenerate and verify the
+job after a source change. Nothing generates or posts automatically.
+The import is one undo step. Undo keeps the old model until the file
+changes again. A missing or unreadable file keeps the model and reports
+the problem on the status line.
+
+To stop updates, right-click the model in the browser and choose
+**Unlink from** followed by its filename. Undo restores the link. MCP `set_model_link` can
+link to another path or clear the link. A moved source file needs a new
+link; there is no Link to file control in the window yet. See
+[opening a file from the command line](@/guide/automate/cli.md#open-a-file-in-the-window).
+
 ## Work offset
 
 Each setup owns one {{ <icon name="tree-wcs" /> }} work coordinate system. G54 to G59 is only the label
@@ -106,7 +147,8 @@ a gouge; a later setup cannot erase it.
 
 The workspace button on the Setup group mounts a built-in machine for
 Milling, Turning or Mill-turning, and the ribbon shows only the operations
-that machine can run. CamCraft also ships machine files for several
+that machine can run. Mill-turning is a lathe with live tooling, not
+turning on a mill: see [Mill-turn](@/guide/check-and-post/machines.md#mill-turn). CamCraft also ships machine files for several
 Tormach mills, and **View > Panels > Machines** browses, validates and
 edits `.mch` machine files. The pane's kind filter offers **All** and every
 machine kind: Mill, Lathe, Mill-turn, Plasma, Waterjet, Wire EDM and Sinker

@@ -16,7 +16,7 @@ use crate::tool_numbers;
 pub struct SetToolNumber {
     name: String,
     prev: Option<u32>,
-    next: Option<u32>,
+    next: u32,
 }
 
 fn machines_of(world: &World, tool: &str) -> Vec<(String, Option<crate::machine::Machine>)> {
@@ -86,8 +86,15 @@ impl SetToolNumber {
         Ok(Self {
             name: name.to_string(),
             prev,
-            next: Some(n),
+            next: n,
         })
+    }
+
+    /// The number this set writes. Always a number: `new` refuses `None`
+    /// (#2442), so a caller's status line needs no "cleared" case (#2517).
+    #[must_use]
+    pub fn number(&self) -> u32 {
+        self.next
     }
 }
 
@@ -101,7 +108,7 @@ fn write(world: &World, name: &str, number: Option<u32>) {
 
 impl Command for SetToolNumber {
     fn apply(&self, world: &World) {
-        write(world, &self.name, self.next);
+        write(world, &self.name, Some(self.next));
     }
 
     fn invert(&self, world: &World) {

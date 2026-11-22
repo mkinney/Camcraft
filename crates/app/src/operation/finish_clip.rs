@@ -254,6 +254,7 @@ mod law {
 
     fn params() -> Finish3DParams {
         Finish3DParams {
+            gap_link: finishing3d::GapLink::Jump,
             pattern: finishing3d::FinishPattern::Parallel,
             stepover: None,
             tool_diameter: 6.0,

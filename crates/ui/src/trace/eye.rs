@@ -145,6 +145,11 @@ impl StockEye {
         self.verdict = Self::verdict_of(p);
     }
 
+    /// #2958: the composite follows the viewport pass's sample count.
+    pub fn set_samples(&mut self, device: &wgpu::Device, samples: u32) {
+        self.composite.set_samples(device, samples);
+    }
+
     /// The same eye with its GPU march dropped: the CPU fallback a
     /// refusing device lands on, reachable on purpose for the tests.
     #[must_use]

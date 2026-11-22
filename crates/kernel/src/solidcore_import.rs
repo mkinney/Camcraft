@@ -1,7 +1,7 @@
 //! The solidcore side of import (M12.1 stage 3): healing behind the seam,
 //! and the port's native B-rep text format (SMLib's ASCII `.smb`) as the
-//! importer the corrupt-input corpus drives. STEP stays on truck-stepio;
-//! this is the port's own reader, the one format it reads without truck.
+//! importer the corrupt-input corpus drives. STEP has its own reader
+//! (`solidcore_step`, #917); this is the port's native-format reader.
 //! Provenance: calls solidcore 1.0.1's public API as documented in its
 //! rustdoc (`heal::heal_data::p1::api_heal_brep`, `topology::brep::p7::
 //! read_from_file`, `topology::brep_data_write`) and its `corpus` example's

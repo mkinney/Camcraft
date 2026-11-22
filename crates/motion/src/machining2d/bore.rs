@@ -305,7 +305,7 @@ pub fn bore(p: &BoreParams) -> Result<Toolpath, GenError> {
             prev = start;
         }
         // #871: a part-way refusal hands back the holes bored so far.
-        let zs = super::levels::cut_levels_under(h.top_z, p.links.approach.stock_top, bottom, p.stepdown).map_err(|e| e.with_ghost_moves(b.moves()))?;
+        let zs = super::equal_steps::cut_levels_for(h.top_z, &p.links.approach,bottom, p.stepdown).map_err(|e| e.with_ghost_moves(b.moves()))?;
         // Each hole's own entry surface is its top of cut (M11.3 B).
         if h.top_z.is_finite() {
             motion.top_z = h.top_z.min(motion.clearance_z);

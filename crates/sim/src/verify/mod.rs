@@ -157,6 +157,11 @@ pub use crate::tools::ToolGeom;
 
 
 mod air;
+mod avoid_links;
+mod avoid_poly;
+
+pub use avoid_links::{AVOID_LINK_GAP, elevate_rapid_links};
+pub mod avoid;
 mod axis_door;
 mod arc_bulge;
 mod arc_wall;
@@ -167,11 +172,15 @@ mod crossing;
 mod cut_index;
 mod engine;
 mod excess;
+mod fine_bore;
 mod finish;
+mod first_traverse;
+mod first_traverse_posed;
 mod hidden;
 mod hidden_span;
 mod hole_wall;
 mod laws;
+mod live_traverse;
 mod mesh_posed;
 mod mesh_steel;
 mod midpose;
@@ -207,10 +216,19 @@ mod thread_bore;
 mod turn_cells;
 mod turn_hidden;
 mod types;
+// #1444: the undercut cutters' Z-move and neck law.
+mod undercut;
 mod upright;
 mod workholding;
+mod corner_relief;
 
-pub use excess::excess_floor;
+pub use corner_relief::CornerReliefZone;
+
+pub use avoid::{AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, avoid_hits, avoid_hits_named};
+pub use excess::{band_growth, excess_floor, excess_floor_for, strict_floor, PROMISED_CHORD, WIDE_CHORD_LIMIT};
+pub use first_traverse::{box_top, first_traverse_low, first_traverse_low_swept, swept_top, SweptSteel};
+pub use first_traverse_posed::{first_traverse_low_posed, posed_top, PosedTurn, PosedWork};
+pub use live_traverse::{live_first_traverse, LiveHit, LiveSolids, LiveStart, LiveUnjudged};
 pub use types::{FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]
 pub use crossing::{crossed_pairs, crossed_pairs_all};
@@ -219,6 +237,7 @@ pub use engine::{verify, verify_bodies};
 pub use thread_bore::{CHORD_CREDIT, ThreadBore};
 pub use air::cuts_no_material;
 pub use prior::{acquit_by_prior, prior_surface};
+pub use undercut::acquit_undercut_by_prior;
 pub use prior_traverse::{acquit_traverses_by_prior, Traverse};
 pub use traverse_solids::acquit_traverses_by_solids;
 pub use stock_top::acquit_by_stock_top;
@@ -235,7 +254,7 @@ pub use probe::Cutter;
 pub use rotary::{rotary_hits, RotaryAxis, RotaryLaw};
 pub use hole_wall::{HoleAxis, WALL_SAG, hole_is_round};
 pub use seat::{seat_skin, undersides, MARK_FLOOR};
-pub use solid::{SolidLaw, solid_hits, solid_hits_threaded, solid_hits_walled, stack_hits};
+pub use solid::{SolidLaw, solid_hits, solid_hits_relieved, solid_hits_threaded, solid_hits_walled, stack_hits};
 pub use mesh_steel::{mesh_refined, steel_stack, MeshSteel, SteelBand};
 #[doc(hidden)]
 pub use contact::posed_contact;

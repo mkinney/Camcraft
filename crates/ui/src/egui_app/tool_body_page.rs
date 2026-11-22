@@ -13,9 +13,11 @@ use egui::{Color32, ComboBox, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 
 use camcraft_app::geometry::Triangle;
 use camcraft_app::tool_body_view::{self, AXIS_CHOICES};
+use camcraft_app::tool_body;
 use camcraft_app::units::{self, Unit};
 
-use super::fields::{field, num};
+use super::fields::num_row;
+use super::layout::prop_row_hint;
 use crate::state::{BodyPickMode, State};
 
 /// The preview's side, logical px.
@@ -35,6 +37,7 @@ const PITCH0: f32 = 0.45;
 /// machine-default body includes the conservative parameter-cylinder floor.
 pub(super) fn envelope(state: &mut State) -> Option<Vec<(f64, f64, f64)>> {
     state.sync_tool_body_ui();
+    let tool = state.tool_ui.to_tool();
     let d = &state.tool_body_ui;
     if let Some(b) = state.editor_tool_body()
         && b.machine_default
@@ -44,11 +47,10 @@ pub(super) fn envelope(state: &mut State) -> Option<Vec<(f64, f64, f64)>> {
         && d.lathe.is_none()
     {
         // Use the stored profile, as judging does; a mesh rebuild loses its exact bands.
-        let profile = b.profile()?.floored(&state.tool_ui.to_tool().geom());
-        return Some(profile.bands().iter().map(|q| (q.above, q.len, q.r)).collect());
+        return tool_body::checked_bands(&tool, &b);
     }
     match state.tool_body_preview()? {
-        Ok(b) => Some(b.profile()?.bands().iter().map(|q| (q.above, q.len, q.r)).collect()),
+        Ok(b) => tool_body::checked_bands(&tool, b),
         Err(_) => None,
     }
 }
@@ -66,10 +68,10 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
     let draft_src = state.tool_body_ui.source.clone();
     let has_draft = !state.tool_body_ui.facets.is_empty();
     ui.label(match (&landed, has_draft) {
-        (Some(src), _) if *src == draft_src => format!("body: {src}"),
-        (_, true) => format!("draft: {draft_src} (not applied)"),
-        _ if state.tool_body_ui.lathe.is_some() => "none - the holder is not judged".to_owned(),
-        _ => "none - the holder cylinder is judged".to_owned(),
+        (Some(src), _) if *src == draft_src => format!("In use: {src}"),
+        (_, true) => format!("Ready to apply: {draft_src} (not applied yet)"),
+        _ if state.tool_body_ui.lathe.is_some() => "In use: no body (the holder is not checked for collisions)".to_owned(),
+        _ => "In use: the holder cylinder from the dimensions".to_owned(),
     });
     // #361: a boring bar chooses its frame; a lathe steel's is the
     // turning tool frame.
@@ -84,7 +86,7 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
             );
             let clear = ui
                 .add_enabled(landed.is_some() || has_draft, egui::Button::new("Clear body"))
-                .on_hover_text("remove the body - the holder cylinder is judged again (undoable)")
+                .on_hover_text("remove the body and check the holder cylinder from the dimensions again (undoable)")
                 .clicked();
             (import, clear)
         })
@@ -105,10 +107,12 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
     }
     let old_axis = state.tool_body_ui.axis;
     let old_offset = state.tool_body_ui.offset;
-    field(ui, "Tool axis (model direction, tip to spindle)");
-    axis_combo(ui, &mut state.tool_body_ui.axis);
-    field(ui, "Tip offset (model origin above the tip)");
-    num(ui, u, &mut state.tool_body_ui.offset);
+    prop_row_hint(ui, "Tool axis", "model direction from the tip toward the spindle", |ui| {
+        axis_combo(ui, &mut state.tool_body_ui.axis);
+    });
+    prop_row_hint(ui, "Tip offset", "height of the model origin above the tool tip", |ui| {
+        num_row(ui, u, &mut state.tool_body_ui.offset);
+    });
     if state.tool_body_ui.axis != old_axis || (state.tool_body_ui.offset - old_offset).abs() > 1e-9 {
         state.tool_body_ui.align_note = None;
     }
@@ -133,21 +137,23 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
             state.fit_body_preview();
         }
     });
-    preview_3d(ui, state);
+    placement_view(ui, state);
     let note = match state.tool_body_preview() {
         Some(Ok(b)) => match b.profile() {
             Some(p) => format!(
-                "placed: foot {} to top {} {} above the tip",
+                "Placed from {} to {} {} above the tip",
                 units::len(p.bottom(), u, 1),
                 units::len(p.top(), u, 1),
                 u.suffix()
             ),
             None => String::new(),
         },
-        Some(Err(e)) => format!("placement: {e}"),
+        Some(Err(e)) => format!("Placement error: {e}"),
         None => String::new(),
     };
-    ui.label(note);
+    if !note.is_empty() {
+        ui.label(note);
+    }
     if ui.button("Apply body").on_hover_text("attach the body with this placement (one undo step)").clicked() {
         state.queue_apply_tool_body();
     }
@@ -248,7 +254,16 @@ impl View {
     }
 }
 
-pub(super) fn preview_3d(ui: &mut Ui, state: &mut State) {
+/// #2017: the tool page's one preview is the side view beside the fields.
+/// The 3D view is a placement aid only: it shows while a Pick button is
+/// armed (a click on the mesh is the only way to pick), and not otherwise.
+pub(super) fn placement_view(ui: &mut Ui, state: &mut State) {
+    if state.tool_body_ui.pick != BodyPickMode::Off {
+        preview_3d(ui, state);
+    }
+}
+
+fn preview_3d(ui: &mut Ui, state: &mut State) {
     let (resp, painter) = ui.allocate_painter(SIDE, Sense::click_and_drag());
     let rect = resp.rect;
     painter.rect_filled(rect, 4.0, Color32::from_rgb(24, 26, 31));
@@ -315,7 +330,10 @@ pub(super) fn preview_3d(ui: &mut Ui, state: &mut State) {
     if resp.double_clicked() {
         state.fit_body_preview();
     }
-    if resp.dragged() && mode == BodyPickMode::Off {
+    // A drag orbits, also while a pick is armed: a face behind the body
+    // turns into view, and the pick waits for a click (egui does not
+    // report a drag as a click). View state only.
+    if resp.dragged() {
         let dv = resp.drag_delta();
         state.tool_body_ui.yaw -= dv.x * 0.01;
         state.tool_body_ui.pitch = (state.tool_body_ui.pitch + dv.y * 0.01).clamp(-1.9, 1.0);
