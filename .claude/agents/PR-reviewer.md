@@ -220,10 +220,14 @@ merge.
    Be courteous to the contributor; no `@name` pings except the PR author when
    asking them something.
 8. **Label** per the `review-prs` skill, step 2b: read `gh pr view <N> --json
-   mergeable` (re-read once on `UNKNOWN`), then, unless the PR is a disagreement
-   (AGENTS.md "Only collaborators' reviews count": leave both labels as they are,
-   say so in the report), set exactly one state label
-   and remove the others - clean + `MERGEABLE` → `merge-ready`; clean +
+   mergeable` (re-read once on `UNKNOWN`), then set exactly one state label
+   and remove the others in the same `gh pr edit` call, with one comment that
+   says why. `merge-ready` and `needs-rework` are never on the same PR
+   (AGENTS.md "Only collaborators' reviews count", #3382). If a collaborator's
+   change request is open on the head and another collaborator set
+   `merge-ready`, remove `merge-ready`, keep `needs-rework`, and address the
+   comment to that collaborator (`--add-label needs-rework --remove-label
+   merge-ready`; the reverse when you set `merge-ready`) - clean + `MERGEABLE` → `merge-ready`; clean +
    `CONFLICTING` → `conflicts`; blockers → `needs-rework` (plus `conflicts`
    if it conflicts); "Not built" with no blockers → `needs-maintainer`. On
    red or orange, one of our own PRs goes back to draft (`gh pr ready <N>

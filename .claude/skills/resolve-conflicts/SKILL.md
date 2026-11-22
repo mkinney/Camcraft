@@ -172,7 +172,9 @@ reports `CONFLICTING` without the label - add the label to those):
      reviewer checks only the remerge-diff of those merges (both sides kept,
      nothing from main dropped, targeted tests; rebuild only if logic was
      merged by hand). Its labels follow the review-prs table (step 2b):
-     `needs-rework` if the resolution is wrong, `conflicts` if main moved
+     `needs-rework` if the resolution is wrong (remove `merge-ready` in the
+     same `gh pr edit` call: the two labels are never on one PR, AGENTS.md
+     "Only collaborators' reviews count", #3382), `conflicts` if main moved
      again, `needs-maintainer` if the merge brought in a dependency,
      `build.rs`, scripts or `.github` change the reviewer only reads.
    - **NEW CODE** or **Rewritten** (new code commits, or the history was

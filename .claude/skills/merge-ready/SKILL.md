@@ -112,15 +112,25 @@ Worked examples (#1828; assume the other merge checks pass):
 | Collaborator author; same-account clean review with a named different agent and linked independent review dispatch/result | Keep the PR; record the review URL and head SHA |
 | Clean independent collaborator review in an issue comment; no formal pull review; collaborator-set label | Keep the PR; record the review URL and head SHA |
 
-A PR whose current head carries a collaborator review that requests changes
-and also a `merge-ready` label (or `merge-ready` beside `needs-rework`) is a
-disagreement (AGENTS.md "Only collaborators' reviews count"): report it,
-leave it out, and change neither label.
+`merge-ready` and `needs-rework` are never on the same PR (AGENTS.md
+"Only collaborators' reviews count", #3382). The person or agent that sets
+one of them removes the other in the same `gh pr edit` call
+(`--add-label needs-rework --remove-label merge-ready`, or the reverse),
+then posts one comment that says why. If two collaborators disagree on the
+same head, `needs-rework` stays and `merge-ready` is removed: an open change
+request wins, and the comment goes to the collaborator who set `merge-ready`.
+`conflicts` is not part of this rule: it stays an add-alongside label.
+Never offer a PR that has `needs-rework`. If a PR carries both labels, or a
+`merge-ready` label beside an open collaborator change request on the current
+head, remove `merge-ready` and `needs-rework` stays (`gh pr edit <N>
+--add-label needs-rework --remove-label merge-ready`), post the one comment,
+and leave the PR out.
 
 Drop a PR from the list, with a one-line note to the user, when:
 - it is a **draft** (a ready one is required for merging);
-- it carries **`needs-rework` or `needs-maintainer`** alongside `merge-ready`
-  (contradictory labels): report it rather than ask about it;
+- it carries **`needs-rework`** (never offered; see the rule above), or
+  **`needs-maintainer`** alongside `merge-ready` (contradictory labels):
+  report it rather than ask about it;
 - its **head moved since the collaborator's review** and the move is more than
   a clean merge of main. Use the head from the counted independent review
   recorded above, not a newer author-only marker, and classify the move:

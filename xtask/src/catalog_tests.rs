@@ -72,7 +72,7 @@ fn links_fixture(tag: &str) -> TempDir {
     }
     write_file(
         &tmp.0.join("examples/catalog/2d/sample/case.toml"),
-        "kinds = [\"Face\"]\nmachine = \"3-axis mill\"\nexpect = \"Face the top\"\n",
+        "kinds = [\"Face\"]\nmachine = \"3-axis mill\"\nexpect = \"post\"\n",
     );
     tmp
 }
@@ -93,7 +93,7 @@ fn catalog_check_rejects_unknown_case_kind() {
     let tmp = links_fixture("unknown-kind");
     write_file(
         &tmp.0.join("examples/catalog/2d/sample/case.toml"),
-        "kinds = [\"Imaginary operation\"]\nmachine = \"3-axis mill\"\nexpect = \"Face the top\"\n",
+        "kinds = [\"Imaginary operation\"]\nmachine = \"3-axis mill\"\nexpect = \"post\"\n",
     );
     let err = catalog::run(&tmp.0, &["--check".into()]).expect_err("unknown kind must refuse");
     assert!(
@@ -164,7 +164,7 @@ fn catalog_links_generate_idempotently_and_check_without_touching_prose() {
 
 #[test]
 fn catalog_metadata_rejects_missing_duplicate_and_empty_fields() {
-    let valid = "kinds = [\"Face\"]\nmachine = \"mill\"\nexpect = \"Faces top\"\n";
+    let valid = "kinds = [\"Face\"]\nmachine = \"mill\"\nexpect = \"post\"\n";
     for key in ["kinds", "machine", "expect"] {
         let missing = valid
             .lines()
@@ -203,14 +203,14 @@ fn catalog_metadata_rejects_missing_duplicate_and_empty_fields() {
 #[test]
 fn catalog_metadata_rejects_invalid_syntax_by_name() {
     for text in [
-        "kinds = [\"Face\",,]\nmachine = \"mill\"\nexpect = \"top\"",
-        "kinds = [\"Face\"\nmachine = \"mill\"\nexpect = \"top\"",
-        "kinds = \"Face\"\nmachine = \"mill\"\nexpect = \"top\"",
-        "kinds = [\"Face\"]\nmachine = mill\nexpect = \"top\"",
-        "kinds [\"Face\"]\nmachine = \"mill\"\nexpect = \"top\"",
+        "kinds = [\"Face\",,]\nmachine = \"mill\"\nexpect = \"post\"",
+        "kinds = [\"Face\"\nmachine = \"mill\"\nexpect = \"post\"",
+        "kinds = \"Face\"\nmachine = \"mill\"\nexpect = \"post\"",
+        "kinds = [\"Face\"]\nmachine = mill\nexpect = \"post\"",
+        "kinds [\"Face\"]\nmachine = \"mill\"\nexpect = \"post\"",
         "kinds = [\"Face\"]\nmachine = \"mill\"\nexpect = \"unterminated",
-        "kinds = [\"Face\"]\nmachine = \"mill\"\nexpect = \"top\"\nextra = \"x\"",
-        "kinds = [\"Face\"]\nmachine = \"mill\"expect = \"top\"",
+        "kinds = [\"Face\"]\nmachine = \"mill\"\nexpect = \"post\"\nextra = \"x\"",
+        "kinds = [\"Face\"]\nmachine = \"mill\"expect = \"post\"",
     ] {
         let err = catalog::links::metadata::parse(text).expect_err("bad metadata must refuse");
         assert!(!err.is_empty(), "must explain rejected metadata: {text}");
@@ -220,11 +220,11 @@ fn catalog_metadata_rejects_invalid_syntax_by_name() {
 #[test]
 fn catalog_metadata_accepts_multiline_arrays_comments_and_literal_strings() {
     let parsed = catalog::links::metadata::parse(
-        "# case metadata\nkinds = [\n  \"Face\", # first\n  '2D Pocket',\n]\nmachine = '3-axis mill'\nexpect = \"Faces part's top #1\" # trailing comment\n# final comment\n",
+        "# case metadata\nkinds = [\n  \"Face\", # first\n  '2D Pocket',\n]\nmachine = \"mill's #1 axis\"\nexpect = 'post' # trailing comment #1\n# final comment\n",
     ).expect("supported flat TOML");
     assert_eq!(parsed["kinds"], ["Face", "2D Pocket"]);
-    assert_eq!(parsed["machine"], ["3-axis mill"]);
-    assert_eq!(parsed["expect"], ["Faces part's top #1"]);
+    assert_eq!(parsed["machine"], ["mill's #1 axis"]);
+    assert_eq!(parsed["expect"], ["post"]);
 }
 
 #[test]

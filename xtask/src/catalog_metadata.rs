@@ -90,7 +90,33 @@ pub fn parse(text: &str) -> Result<BTreeMap<String, Vec<String>>, String> {
             return Err(format!("missing {key}"));
         }
     }
+    let expect = fields.get("expect").and_then(|v| v.first()).map(String::as_str);
+    if !matches!(expect, Some("post" | "refusal")) {
+        return Err(format!(
+            "expect: must be \"post\" or \"refusal\", got '{}'",
+            expect.unwrap_or_default()
+        ));
+    }
     Ok(fields)
+}
+
+/// What a case's script ends with (#2856): a posted program (`<case>.nc`)
+/// or a refused post (`refusal.txt`, the refusal lines of the run).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expect {
+    Post,
+    Refusal,
+}
+
+/// Read the `expect` field of `<dir>/case.toml`.
+pub fn expect_of(dir: &Path) -> Result<Expect, String> {
+    let path = dir.join("case.toml");
+    let text = fs::read_to_string(&path).map_err(|e| format!("read case.toml: {e}"))?;
+    let fields = parse(&text).map_err(|e| format!("case.toml: {e}"))?;
+    match fields.get("expect").and_then(|v| v.first()).map(String::as_str) {
+        Some("refusal") => Ok(Expect::Refusal),
+        _ => Ok(Expect::Post),
+    }
 }
 
 fn string(value: Option<&str>) -> Result<String, String> {

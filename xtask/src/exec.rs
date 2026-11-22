@@ -390,7 +390,7 @@ pub fn read_log(text: &str, code: i32) -> Result<String, String> {
         }
         n
     } else if code != 0 {
-        format!("exit {code}")
+        crate::exit_status::note(code, text)
     } else {
         String::new()
     };

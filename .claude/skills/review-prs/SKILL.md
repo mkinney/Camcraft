@@ -130,9 +130,9 @@ closed or gets `needs-rework`.
 
 After posting the review, read `gh pr view <N> --json mergeable`
 (re-read once if it says `UNKNOWN`):
-- clean review + `MERGEABLE` -> add `merge-ready`, remove `needs-rework`, `conflicts` and `needs-maintainer`;
+- clean review + `MERGEABLE` -> add `merge-ready`, remove `needs-rework`, `conflicts` and `needs-maintainer` in the same `gh pr edit` call;
 - clean review + `CONFLICTING` -> add `conflicts`, remove `merge-ready` and `needs-maintainer` (never green while it conflicts);
-- blocking review -> add `needs-rework`, remove `merge-ready` and `needs-maintainer`; also add `conflicts` if it conflicts;
+- blocking review -> add `needs-rework`, remove `merge-ready` and `needs-maintainer` in the same `gh pr edit` call; also add `conflicts` if it conflicts;
 - "Not built - needs a maintainer look" with no blockers -> add `needs-maintainer`, remove `merge-ready` and `needs-rework`; also add `conflicts` if it conflicts. With blockers it is `needs-rework` as above, and the comment still names the owner's decision.
 
 A PR that changes `crates/ui/tests/snapshots/*.png` is a blocking review
@@ -166,10 +166,17 @@ Merging a PR can turn others `CONFLICTING`, so each run also re-checks
 every open PR labelled `merge-ready` and swaps any that now conflict to
 `conflicts`.
 
-A requested change that is still open on the current head, or `merge-ready`
-beside a collaborator review that requests changes, is a disagreement
-(AGENTS.md "Only collaborators' reviews count"): no agent removes either
-label.
+`merge-ready` and `needs-rework` are never on the same PR (AGENTS.md
+"Only collaborators' reviews count", #3382). The person or agent that sets
+one of them removes the other in the same `gh pr edit` call
+(`--add-label needs-rework --remove-label merge-ready`, or the reverse),
+then posts one comment that says why. If two collaborators disagree on the
+same head, `needs-rework` stays and `merge-ready` is removed: an open change
+request wins, and the comment goes to the collaborator who set `merge-ready`.
+`conflicts` is not part of this rule: it stays an add-alongside label.
+A requested change that is still open on the current head, with `merge-ready`
+beside it, is the disagreement case above: remove `merge-ready`, keep
+`needs-rework`, and comment.
 
 Only collaborators set the review labels and the markers that count
 (AGENTS.md "Only collaborators' reviews count"; the collaborator list is

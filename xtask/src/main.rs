@@ -30,6 +30,7 @@ mod docs_images;
 #[cfg(test)]
 mod directory_tests;
 mod exec;
+mod exit_status;
 mod fixture_inputs;
 mod heavy;
 mod lanes;

@@ -132,6 +132,7 @@ fn shown(p: &Path, root: &Path) -> String {
 /// Runs each executable of `d` with its output in `log`, after a `Running` line in cargo's form. All of
 /// them run (the step has `--no-fail-fast`). The exit code of the first one that failed, else 0. An
 /// executable that cannot start is an `error:` line in the log and code -1: a red step, never a pass.
+/// One that a signal kills, or that stops on a crash status, gets an `exit_status::STOPPED` line (#3258).
 pub fn run(d: &Direct, root: &Path, mut log: File) -> Result<i32, String> {
     let io = |e: std::io::Error| format!("gate log: {e}");
     let mut code = 0;
@@ -146,7 +147,13 @@ pub fn run(d: &Direct, root: &Path, mut log: File) -> Result<i32, String> {
             .stderr(log.try_clone().map_err(io)?)
             .status();
         let one = match status {
-            Ok(st) => st.code().unwrap_or(-1),
+            Ok(st) => match crate::exit_status::read(st) {
+                (c, Some(how)) => {
+                    writeln!(log, "{} {how}", crate::exit_status::STOPPED).map_err(io)?;
+                    c
+                }
+                (c, None) => c,
+            },
             Err(e) => {
                 writeln!(log, "error: could not start the test executable {}: {e}", t.exe.display()).map_err(io)?;
                 -1

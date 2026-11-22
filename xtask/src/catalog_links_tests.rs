@@ -53,7 +53,7 @@ fn a_case_kind_without_a_guide_heading_refuses_before_writing() {
     fs::create_dir_all(&case_dir).expect("case dir");
     fs::write(
         case_dir.join("case.toml"),
-        "kinds = [\"Face\"]\nmachine = \"mill\"\nexpect = \"top\"\n",
+        "kinds = [\"Face\"]\nmachine = \"mill\"\nexpect = \"post\"\n",
     )
     .expect("metadata");
     let registry = tmp.0.join("crates/app/src/operation");
@@ -85,4 +85,28 @@ fn a_case_kind_without_a_guide_heading_refuses_before_writing() {
             "# Guide\n"
         );
     }
+}
+
+#[test]
+fn committed_slot_undercut_has_its_generated_catalog_block() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root");
+    let cases = crate::catalog::discover_cases(root).expect("catalog cases");
+    sync(root, &cases, true).expect("committed metadata and links check");
+    let text = fs::read_to_string(root.join("site/content/guide/operations/operations-2d.md"))
+        .expect("2D page");
+    let undercut = text
+        .split("## Slot Undercut\n")
+        .nth(1)
+        .expect("Slot Undercut heading")
+        .split("\n## ")
+        .next()
+        .expect("Slot Undercut section");
+    assert!(
+        undercut.contains(&format!(
+            "{START}\n**Example cases**\n\nNo catalog case yet.\n{END}"
+        )),
+        "Slot Undercut lacks its generated catalog block"
+    );
 }

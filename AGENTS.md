@@ -406,10 +406,14 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
     withdraws the request in a comment. A `merge-ready` label or a "ready"
     review from a different collaborator on the same head does not override
     it.
-  - A PR whose current head has a collaborator's change request and also
-    `merge-ready` (or `merge-ready` with `needs-rework`) is a disagreement.
-    `/merge-ready` reports it and does not offer it. No agent removes a
-    label. The two collaborators decide on the PR.
+  - `merge-ready` and `needs-rework` are never on the same PR (#3382). The
+    person or agent that sets one of the two labels removes the other label
+    in the same step, with one comment that says why.
+  - Two collaborators can disagree on the same head: one set `merge-ready`,
+    and the other has an open change request. Then `needs-rework` stays and
+    `merge-ready` is removed. An open change request wins. The comment goes
+    to the collaborator who set `merge-ready`.
+  - `/merge-ready` never offers a PR that has `needs-rework`.
 - **Outside PRs are reviewed with `/review-prs`.** The `PR-reviewer` agent
   reviews one PR for each run. It trial-merges the PR with main, builds it,
   runs the touched suites and clippy, and checks this file. It posts a plain
@@ -432,6 +436,9 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   | `needs-rework` | red | blockers |
   | `conflicts` | orange | does not merge with `main` |
   | `needs-maintainer` | yellow | no blockers, but read and not built: a new dependency, or a `build.rs` / scripts / `.github` change, waits for the owner's decision |
+
+  `merge-ready` and `needs-rework` exclude each other: a PR never has both
+  (#3382). `conflicts` is different: it is set alongside the other labels.
 
   On red or orange the reviewer makes one of our own PRs a draft again. A
   fork PR stays as its contributor set it, and the comment says what to fix.
@@ -719,7 +726,7 @@ tests are in `crates/ui/tests/`; they start the real app through
 - **The cut runner**, **The post-merge gate** and **The PR test runner**
   are self-hosted. The `runners` skill has their installation, labels and
   safety rules.
-  - `cut.yml` runs the release tier of a cut on `[self-hosted, linux]`.
+  - `cut.yml` runs the release tier of a cut on `[self-hosted, camcraft-cut]`: only a runner given that label takes it, never a post-merge or PR-test runner (#3253).
   - `post-merge.yml` runs the batch tier on each push to `main`, on the
     runner label `camcraft-post-merge`.
   - `pr-test.yml` (`workflow_dispatch` only) builds and tests a PR for a
