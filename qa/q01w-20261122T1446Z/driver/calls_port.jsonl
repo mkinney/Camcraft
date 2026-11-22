@@ -1,0 +1,3 @@
+{"step":"P","name":"open_project","arguments":{"path":"{RUN}/fromwin/win-saved.camproj"}}
+{"step":"P","name":"verify","arguments":{}}
+{"step":"P","name":"post","arguments":{"output":"{RUN}/fromwin/win-saved-on-linux.nc","post":"Tormach PathPilot"}}

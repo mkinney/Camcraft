@@ -1,0 +1,7 @@
+{"step": "R", "name": "open_project", "arguments": {"path": "{RUN}/ref/q01-2d-plate.camproj"}}
+{"step": "R", "name": "verify", "arguments": {}}
+{"step": "R", "name": "post", "arguments": {"output": "{RUN}/ref/ref-asis.nc", "post": "Tormach PathPilot"}}
+{"step": "R", "name": "generate", "arguments": {}}
+{"step": "R", "name": "verify", "arguments": {}}
+{"step": "R", "name": "post", "arguments": {"output": "{RUN}/ref/ref-regen.nc", "post": "Tormach PathPilot"}}
+{"step": "R", "name": "save_project", "arguments": {"path": "{RUN}/ref/ref-resaved.camproj"}}

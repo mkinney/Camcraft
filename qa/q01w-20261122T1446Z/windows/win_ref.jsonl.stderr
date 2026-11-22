@@ -1,0 +1,10 @@
+[2m2026-11-22T14:48:29.773343Z[0m [32m INFO[0m [2mcamcraft_app::project::wire[0m[2m:[0m project opened [3mfile[0m[2m=[0mq01-2d-plate.camproj [3mbytes[0m[2m=[0m2644799
+[2m2026-11-22T14:48:29.936736Z[0m [32m INFO[0m [2mcamcraft_app::posting::files[0m[2m:[0m read shipped posts file C:\qa\cc\camcraft-0.25.0-win-x64\assets\posts\tormach.cps
+[2m2026-11-22T14:48:30.038359Z[0m [32m INFO[0m [2mcamcraft_app::posting::files[0m[2m:[0m read shipped posts file C:\qa\cc\camcraft-0.25.0-win-x64\assets\posts\fanuc.cps
+[2m2026-11-22T14:48:30.038446Z[0m [32m INFO[0m [2mcamcraft_app::posting::files[0m[2m:[0m read shipped posts file C:\qa\cc\camcraft-0.25.0-win-x64\assets\posts\haas.cps
+[2m2026-11-22T14:48:30.038521Z[0m [32m INFO[0m [2mcamcraft_app::posting::files[0m[2m:[0m read shipped posts file C:\qa\cc\camcraft-0.25.0-win-x64\assets\posts\sinumerik.cps
+[2m2026-11-22T14:48:30.038589Z[0m [32m INFO[0m [2mcamcraft_app::posting::files[0m[2m:[0m read shipped posts file C:\qa\cc\camcraft-0.25.0-win-x64\assets\posts\heidenhain.cps
+[2m2026-11-22T14:48:30.038659Z[0m [32m INFO[0m [2mcamcraft_app::posting::files[0m[2m:[0m read shipped posts file C:\qa\cc\camcraft-0.25.0-win-x64\assets\posts\mazak.cps
+[2m2026-11-22T14:48:30.681166Z[0m [32m INFO[0m [2mcamcraft_app::posting[0m[2m:[0m NC program written [3mfile[0m[2m=[0mref-asis.nc [3mbytes[0m[2m=[0m64924 [3mops[0m[2m=[0m8 [3mlines[0m[2m=[0m2352 [3mms[0m[2m=[0m662
+[2m2026-11-22T14:48:31.626830Z[0m [32m INFO[0m [2mcamcraft_app::posting[0m[2m:[0m NC program written [3mfile[0m[2m=[0mref-regen.nc [3mbytes[0m[2m=[0m64924 [3mops[0m[2m=[0m8 [3mlines[0m[2m=[0m2352 [3mms[0m[2m=[0m660
+[2m2026-11-22T14:48:31.643652Z[0m [32m INFO[0m [2mcamcraft_app::project::wire[0m[2m:[0m project saved [3mfile[0m[2m=[0mref-resaved.camproj [3mbytes[0m[2m=[0m2644799

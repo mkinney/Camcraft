@@ -1,0 +1,50 @@
+{"step": "2", "name": "import_model", "arguments": {"path": "{RUN}/q01-2d-plate.step", "name": "q01-2d-plate"}}
+{"step": "2", "name": "load_machine", "arguments": {"builtin": "Tormach 770MX"}}
+{"step": "2", "name": "set_work_material", "arguments": {"material": "aluminium_6061"}}
+{"step": "2", "name": "fit_stock", "arguments": {"sides": [3, 3, 3, 3, 0, 1]}}
+{"step": "2", "name": "add_setup", "arguments": {"name": "Setup1"}}
+{"step": "2", "name": "set_wcs", "arguments": {"stock_point": {"x": "min", "y": "min", "z": "max"}}}
+{"step": "2", "name": "set_setup_post", "arguments": {"post": "Tormach PathPilot"}}
+{"step": "2", "name": "set_stock_material", "arguments": {"material": "aluminium_6061"}}
+{"step": "3", "name": "add_tool", "arguments": {"catalog": "EM-1000-4FL"}}
+{"step": "3", "name": "add_tool", "arguments": {"catalog": "EM-0600-4FL"}}
+{"step": "3", "name": "add_tool", "arguments": {"name": "SPOT-0800-90", "definition": {"kind": "drill", "diameter": 8.0, "corner_r": 0.0, "tip_angle": 90.0, "pitch": 0.0, "nose_radius": 0.0, "width": 0.0, "flute_len": 16.0, "shank_d": 8.0, "shank_len": 40.0, "holder_d": 44.0, "holder_len": 35.0, "material_group": "aluminum", "rpm": 3000.0, "feed": 200.0, "tool_material": "carbide", "flutes": 2, "number": 3}}}
+{"step": "3", "name": "add_tool", "arguments": {"name": "DR-0500", "definition": {"kind": "drill", "diameter": 5.0, "corner_r": 0.0, "tip_angle": 118.0, "pitch": 0.0, "nose_radius": 0.0, "width": 0.0, "flute_len": 30.0, "shank_d": 5.0, "shank_len": 40.0, "holder_d": 44.0, "holder_len": 35.0, "material_group": "aluminum", "rpm": 4000.0, "feed": 250.0, "tool_material": "carbide", "flutes": 2, "number": 4}}}
+{"step": "3", "name": "add_tool", "arguments": {"name": "DR-0660", "definition": {"kind": "drill", "diameter": 6.6, "corner_r": 0.0, "tip_angle": 118.0, "pitch": 0.0, "nose_radius": 0.0, "width": 0.0, "flute_len": 35.0, "shank_d": 6.6, "shank_len": 40.0, "holder_d": 44.0, "holder_len": 35.0, "material_group": "aluminum", "rpm": 3200.0, "feed": 250.0, "tool_material": "carbide", "flutes": 2, "number": 5}}}
+{"step": "3", "name": "add_tool", "arguments": {"catalog": "TAP-M6"}}
+{"step": "3", "name": "add_tool", "arguments": {"catalog": "CM-1000-90"}}
+{"step": "4f", "name": "list_features", "arguments": {"model": "q01-2d-plate", "kinds": ["chains"], "compact": true}}
+{"step": "4f", "name": "detect_pockets", "arguments": {"model": "q01-2d-plate"}}
+{"step": "4a", "name": "add_operation", "arguments": {"kind": "face", "name": "Face_Top", "source": "stock", "tool": "EM-1000-4FL", "params": {"stepover": 6.0, "clearance_z": {"reference": "top_of_stock", "offset": 25.0}, "cut_z": {"reference": "top_of_model", "offset": 0.0}, "feed": 1200.0, "plunge_feed": 300.0, "climb": true}}}
+{"step": "4b", "name": "detect_pockets", "arguments": {"model": "q01-2d-plate", "create": 1, "tool": "EM-0600-4FL", "name": "Pocket_Center"}}
+{"step": "4b", "name": "edit_operation", "arguments": {"name": "Pocket_Center", "params": {"stepover": 3.0, "stepdown": 3.0, "feed": 1200.0, "plunge_feed": 300.0, "entry": "helix", "helix_radius": 1.2, "strategy": "auto", "climb": true}}}
+{"step": "4d", "name": "add_operation", "arguments": {"kind": "drill", "name": "Spot_All_5", "source": "q01-2d-plate", "tool": "SPOT-0800-90"}}
+{"step": "4d", "name": "detect_holes", "arguments": {"name": "Spot_All_5"}}
+{"step": "4d", "name": "edit_operation", "arguments": {"name": "Spot_All_5", "params": {"clearance_z": {"reference": "top_of_stock", "offset": 25.0}, "top_z": {"reference": "top_of_model", "offset": 0.0}, "cycle": "spot", "peck": 0.0, "dwell": 0.0, "feed": 200.0, "plunge_feed": 200.0, "holes": [{"xy": [-50.0, -30.0], "radius": 3.3, "entry_z": 12.0, "floor_z": 10.0, "through": false, "stepped": false}, {"xy": [50.0, -30.0], "radius": 3.3, "entry_z": 12.0, "floor_z": 10.0, "through": false, "stepped": false}, {"xy": [0.0, 0.0], "radius": 2.5, "entry_z": 12.0, "floor_z": 10.5, "through": false, "stepped": false}, {"xy": [-50.0, 30.0], "radius": 3.3, "entry_z": 12.0, "floor_z": 10.0, "through": false, "stepped": false}, {"xy": [50.0, 30.0], "radius": 3.3, "entry_z": 12.0, "floor_z": 10.0, "through": false, "stepped": false}], "break_through_from": "full_diameter"}}}
+{"step": "4d", "name": "add_operation", "arguments": {"kind": "drill", "name": "Drill_6_6_Thru", "source": "q01-2d-plate", "tool": "DR-0660"}}
+{"step": "4d", "name": "detect_holes", "arguments": {"name": "Drill_6_6_Thru"}}
+{"step": "4d", "name": "edit_operation", "arguments": {"name": "Drill_6_6_Thru", "params": {"clearance_z": {"reference": "top_of_stock", "offset": 25.0}, "top_z": {"reference": "top_of_model", "offset": 0.0}, "cycle": "peck", "peck": 3.0, "dwell": 0.0, "feed": 250.0, "plunge_feed": 250.0, "holes": [{"xy": [-50.0, -30.0], "radius": 3.3, "entry_z": 12.0, "floor_z": 0.0, "through": true, "stepped": false}, {"xy": [50.0, -30.0], "radius": 3.3, "entry_z": 12.0, "floor_z": 0.0, "through": true, "stepped": false}, {"xy": [-50.0, 30.0], "radius": 3.3, "entry_z": 12.0, "floor_z": 0.0, "through": true, "stepped": false}, {"xy": [50.0, 30.0], "radius": 3.3, "entry_z": 12.0, "floor_z": 0.0, "through": true, "stepped": false}], "break_through": 1.5, "break_through_from": "full_diameter"}}}
+{"step": "4d", "name": "add_operation", "arguments": {"kind": "drill", "name": "Drill_5_0_Blind", "source": "q01-2d-plate", "tool": "DR-0500"}}
+{"step": "4d", "name": "detect_holes", "arguments": {"name": "Drill_5_0_Blind"}}
+{"step": "4d", "name": "edit_operation", "arguments": {"name": "Drill_5_0_Blind", "params": {"clearance_z": {"reference": "top_of_stock", "offset": 25.0}, "top_z": {"reference": "top_of_model", "offset": 0.0}, "cycle": "peck", "peck": 3.0, "dwell": 0.0, "feed": 250.0, "plunge_feed": 250.0, "holes": [{"xy": [0.0, 0.0], "radius": 2.5, "entry_z": 12.0, "floor_z": 2.0, "through": false, "stepped": false}], "break_through_from": "full_diameter"}}}
+{"step": "4d", "name": "add_operation", "arguments": {"kind": "drill", "name": "Tap_M6", "source": "q01-2d-plate", "tool": "TAP-M6"}}
+{"step": "4d", "name": "detect_holes", "arguments": {"name": "Tap_M6"}}
+{"step": "4d", "name": "edit_operation", "arguments": {"name": "Tap_M6", "params": {"clearance_z": {"reference": "top_of_stock", "offset": 25.0}, "top_z": {"reference": "top_of_model", "offset": 0.0}, "cycle": "auto", "peck": 0.0, "dwell": 0.0, "feed": 600.0, "plunge_feed": 600.0, "holes": [{"xy": [0.0, 0.0], "radius": 2.5, "entry_z": 12.0, "floor_z": 4.0, "through": false, "stepped": false}], "break_through_from": "full_diameter"}}}
+{"step": "4c", "name": "add_operation", "arguments": {"kind": "contour", "name": "Contour_Outside", "source": "q01-2d-plate", "tool": "EM-1000-4FL", "params": {"stock_to_leave": 0.0, "clearance_z": {"reference": "top_of_stock", "offset": 25.0}, "retract_z": {"reference": "top_of_stock", "offset": 10.0}, "top_z": {"reference": "top_of_model", "offset": 0.0}, "bottom_z": {"reference": "bottom_of_model", "offset": 0.0}, "stepdown": 3.0, "feed": 1200.0, "plunge_feed": 300.0, "climb": true, "lead": {"linear": {"length": 8.0}}, "tolerance": 0.01, "tab_count": 4, "tab_width": 3.0, "tab_height": 1.0, "side": "outside", "entry": "plunge", "helix_radius": 1.0}}}
+{"step": "4c", "name": "set_operation_geometry", "arguments": {"operation": "Contour_Outside", "picks": [{"model": "q01-2d-plate", "id": "chain:0x65b60046ba17817d"}]}}
+{"step": "4e", "name": "add_operation", "arguments": {"kind": "chamfer2_d", "name": "Chamfer_Outside_Top", "source": "q01-2d-plate", "tool": "CM-1000-90", "params": {"width": 0.5, "angle_deg": 45.0, "clearance_z": {"reference": "top_of_stock", "offset": 25.0}, "top_z": {"reference": "top_of_model", "offset": 0.0}, "feed": 600.0, "plunge_feed": 300.0, "climb": true, "side": "outside", "tolerance": 0.01}}}
+{"step": "4e", "name": "set_operation_geometry", "arguments": {"operation": "Chamfer_Outside_Top", "picks": [{"model": "q01-2d-plate", "id": "chain:0x60e930a9e55bf92d"}]}}
+{"step": "5", "name": "generate", "arguments": {}}
+{"step": "5", "name": "verify", "arguments": {}}
+{"step": "5", "name": "render_stock", "arguments": {"view": "iso", "width": 64, "height": 48}}
+{"step": "5", "name": "post", "arguments": {"output": "{RUN}/q01-2d-plate.nc", "post": "Tormach PathPilot"}}
+{"step": "5", "name": "save_project", "arguments": {"path": "{RUN}/q01-2d-plate.camproj"}}
+{"step": "5", "name": "get_job", "arguments": {"summary": true}}
+{"step": "X", "name": "post", "arguments": {"output": "{RUN}/sp dir ü/q01 plate ü.nc", "post": "Tormach PathPilot"}}
+{"step": "X", "name": "save_project", "arguments": {"path": "{RUN}/sp dir ü/q01 plate ü.camproj"}}
+{"step": "X", "name": "open_project", "arguments": {"path": "{RUN}/sp dir ü/q01 plate ü.camproj"}}
+{"step": "X", "name": "import_model", "arguments": {"path": "{RUN}/sp dir ü/q01 plate ü.step", "name": "uni"}}
+{"step": "X", "name": "delete_model", "arguments": {"name": "uni"}}
+{"step": "X", "name": "generate", "arguments": {}}
+{"step": "X", "name": "verify", "arguments": {}}
+{"step": "X", "name": "post", "arguments": {"output": "{RUN}/sp dir ü/q01 plate ü-reopen.nc", "post": "Tormach PathPilot"}}

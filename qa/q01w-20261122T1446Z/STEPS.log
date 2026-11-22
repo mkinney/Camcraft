@@ -1,0 +1,57 @@
+2 #1 | import_model | OK | { "facets": 5412, "model": "q01-2d-plate" }
+2 #2 | load_machine | OK | { "default_holder": "BT30 ER20", "machine": "Tormach 770MX", "path": "built-in: Tormach 770MX", "post_offer": { "hint": "post with \"post\": \"Tormach PathPilot\" uses it for one program; add_setup, t
+2 #3 | set_work_material | OK | { "work_material": "aluminium_6061" }
+2 #4 | fit_stock | OK | { "stock": { "box": { "dx": 126.0, "dy": 86.0, "dz": 13.0 } } }
+2 #5 | add_setup | OK | { "active": "Setup1", "setup": "Setup1", "setups": [ "Setup1" ] }
+2 #6 | set_wcs | OK | { "index": 1, "label": "WCS (G54)", "name": "G54", "origin": [ -63.0, -43.0, 13.0 ], "rotation": [ 0.0, 0.0, 0.0, 1.0 ], "setup": "Setup1", "word": "G54" }
+2 #7 | set_setup_post | OK | { "own_post": true, "post": "Tormach PathPilot (built-in)", "posts_with": "Tormach PathPilot (built-in)", "setup": "Setup1" }
+2 #8 | set_stock_material | OK | { "operations_seeded": 0, "stock": "Stock", "stock_material": "aluminium_6061" }
+3 #9 | add_tool | OK | { "holder": "BT30 ER20", "holder_from": "machine default", "note": "holder BT30 ER20 (machine default - judged no smaller than the tool's holder cylinder)", "number": 1, "posts_as": 1, "tool": "EM-100
+3 #10 | add_tool | OK | { "holder": "BT30 ER20", "holder_from": "machine default", "note": "holder BT30 ER20 (machine default - judged no smaller than the tool's holder cylinder)", "number": 2, "posts_as": 2, "tool": "EM-060
+3 #11 | add_tool | OK | { "holder": "BT30 ER20", "holder_from": "machine default", "note": "holder BT30 ER20 (machine default - judged no smaller than the tool's holder cylinder)", "number": 3, "posts_as": 3, "tool": "SPOT-0
+3 #12 | add_tool | OK | { "holder": "BT30 ER20", "holder_from": "machine default", "note": "holder BT30 ER20 (machine default - judged no smaller than the tool's holder cylinder)", "number": 4, "posts_as": 4, "tool": "DR-050
+3 #13 | add_tool | OK | { "holder": "BT30 ER20", "holder_from": "machine default", "note": "holder BT30 ER20 (machine default - judged no smaller than the tool's holder cylinder)", "number": 5, "posts_as": 5, "tool": "DR-066
+3 #14 | add_tool | OK | { "holder": "BT30 ER20", "holder_from": "machine default", "note": "holder BT30 ER20 (machine default - judged no smaller than the tool's holder cylinder)", "number": 6, "posts_as": 6, "tool": "TAP-M6
+3 #15 | add_tool | OK | { "holder": "BT30 ER20", "holder_from": "machine default", "note": "holder BT30 ER20 (machine default - judged no smaller than the tool's holder cylinder)", "number": 7, "posts_as": 7, "tool": "CM-100
+4f #16 | list_features | OK | { "chains": [ { "closed": true, "edges": 64, "id": "chain:0x23df0090feac46c3", "length": 20.390250404511434, "name": "Edge 11 of 'q01-2d-plate'" }, { "closed": true, "edges": 132, "id": "chain:0x27cd6
+4f #17 | detect_pockets | OK | { "count": 2, "features": [ { "area": 19.603225373594004, "boundary": [ [ 1.7489577050795764, 1.7863781642873888 ], [ 1.5701196709142757, 1.945436768185501 ], [ 1.3718102979424995, 2.0900087335843627 
+4a #18 | add_operation | OK | { "kind": "Face", "operation": "Face_Top", "status": "never" }
+4b #19 | detect_pockets | OK | { "count": 2, "created": { "feature": 1, "kind": "2D Pocket", "operation": "Pocket_Center", "status": "never" }, "features": [ { "area": 19.603225373594004, "boundary": [ [ 1.7489577050795764, 1.78637
+4b #20 | edit_operation | OK | { "operation": "Pocket_Center", "params": { "pocket": { "bottom_z": { "offset": 0.0, "reference": "bottom_of_selection" }, "clearance_z": { "offset": 25.0, "reference": "top_of_stock" }, "climb": true
+4d #21 | add_operation | OK | { "kind": "Drill", "operation": "Spot_All_5", "status": "never" }
+4d #22 | detect_holes | OK | { "holes": 5, "operation": "Spot_All_5", "radial_holes": 0, "skipped": [], "status": "stale", "undersize": [] }
+4d #23 | edit_operation | OK | { "operation": "Spot_All_5", "params": { "drill": { "break_through_from": "full_diameter", "clearance_z": { "offset": 25.0, "reference": "top_of_stock" }, "cycle": "spot", "dwell": 0.0, "feed": 200.0,
+4d #24 | add_operation | OK | { "kind": "Drill", "operation": "Drill_6_6_Thru", "status": "never" }
+4d #25 | detect_holes | OK | { "holes": 5, "operation": "Drill_6_6_Thru", "radial_holes": 0, "skipped": [], "status": "stale", "undersize": [] }
+4d #26 | edit_operation | OK | { "operation": "Drill_6_6_Thru", "params": { "drill": { "break_through": 1.5, "break_through_from": "full_diameter", "clearance_z": { "offset": 25.0, "reference": "top_of_stock" }, "cycle": "peck", "d
+4d #27 | add_operation | OK | { "kind": "Drill", "operation": "Drill_5_0_Blind", "status": "never" }
+4d #28 | detect_holes | OK | { "holes": 5, "operation": "Drill_5_0_Blind", "radial_holes": 0, "skipped": [], "status": "stale", "undersize": [ "the 6.600 mm hole at (-50.000, -30.000) is wider than the 5.000 mm drill: it is drill
+4d #29 | edit_operation | OK | { "operation": "Drill_5_0_Blind", "params": { "drill": { "break_through_from": "full_diameter", "clearance_z": { "offset": 25.0, "reference": "top_of_stock" }, "cycle": "peck", "dwell": 0.0, "feed": 2
+4d #30 | add_operation | OK | { "kind": "Drill", "operation": "Tap_M6", "status": "never" }
+4d #31 | detect_holes | OK | { "holes": 5, "operation": "Tap_M6", "radial_holes": 0, "skipped": [], "status": "stale", "undersize": [] }
+4d #32 | edit_operation | OK | { "operation": "Tap_M6", "params": { "drill": { "break_through_from": "full_diameter", "clearance_z": { "offset": 25.0, "reference": "top_of_stock" }, "cycle": "auto", "dwell": 0.0, "feed": 600.0, "ho
+4c #33 | add_operation | OK | { "kind": "2D Contour", "operation": "Contour_Outside", "status": "never" }
+4c #34 | set_operation_geometry | OK | { "area": { "containment": null, "corner": "round", "extension": 0.0, "extra": [], "offset": 0.0, "open": null }, "area_applies": true, "chain_overrides": [], "do_not_touch": { "clearance": 0.0, "pick
+4e #35 | add_operation | OK | { "kind": "2D Chamfer", "operation": "Chamfer_Outside_Top", "status": "never" }
+4e #36 | set_operation_geometry | OK | { "area": { "containment": null, "corner": "round", "extension": 0.0, "extra": [], "offset": 0.0, "open": null }, "area_applies": false, "chain_overrides": [], "do_not_touch": { "clearance": 0.0, "pic
+5 #37 | generate | OK | { "generated": [ { "key": "Face_Top", "kind": "Face", "name": "Face_Top", "setup": "Setup1", "status": "ok" }, { "key": "Pocket_Center", "kind": "2D Pocket", "name": "Pocket_Center", "setup": "Setup1"
+5 #38 | verify | OK | { "findings": [], "gate": { "ok": true, "problems": [] }, "held_by": [], "ok": true, "operations": [ { "key": "Face_Top", "kind": "Face", "name": "Face_Top", "setup": "Setup1", "status": "ok", "warnin
+5 #39 | render_stock | OK | { "cell": 0.3073375, "clean": false, "gouge": { "cells": 0, "max": 0.0, "max_at": null, "volume": 0.0 }, "image": { "height": 48, "png_bytes": 605, "stock_pixels": 1158, "toolpath": false, "view": "is
+5 #40 | post | OK | { "files": [ "C:\\qa\\runs\\q01w-20261122T1446Z\\q01-2d-plate.nc" ], "lines": 2352, "ops": 8, "path": "C:\\qa\\runs\\q01w-20261122T1446Z\\q01-2d-plate.nc" }
+5 #41 | save_project | OK | { "path": "C:\\qa\\runs\\q01w-20261122T1446Z\\q01-2d-plate.camproj" }
+5 #42 | get_job | OK | { "active_setup": "Setup1", "can_redo": false, "can_undo": true, "document": "C:\\qa\\runs\\q01w-20261122T1446Z\\q01-2d-plate.camproj", "machine": { "definition_omitted": true, "path": "built-in: Torm
+X #43 | post | OK | { "files": [ "C:\\qa\\runs\\q01w-20261122T1446Z\\sp dir ü\\q01 plate ü.nc" ], "lines": 2352, "ops": 8, "path": "C:\\qa\\runs\\q01w-20261122T1446Z\\sp dir ü\\q01 plate ü.nc" }
+X #44 | save_project | OK | { "path": "C:\\qa\\runs\\q01w-20261122T1446Z\\sp dir ü\\q01 plate ü.camproj" }
+X #45 | open_project | OK | { "operations": [ { "key": "Face_Top", "kind": "Face", "name": "Face_Top", "setup": "Setup1", "status": "ok" }, { "key": "Pocket_Center", "kind": "2D Pocket", "name": "Pocket_Center", "setup": "Setup1
+X #46 | import_model | OK | { "facets": 5412, "model": "uni" }
+X #47 | delete_model | OK | { "deleted": "uni" }
+X #48 | generate | OK | { "generated": [] }
+X #49 | verify | OK | { "findings": [], "gate": { "ok": true, "problems": [] }, "held_by": [], "ok": true, "operations": [ { "key": "Face_Top", "kind": "Face", "name": "Face_Top", "setup": "Setup1", "status": "ok", "warnin
+X #50 | post | OK | { "files": [ "C:\\qa\\runs\\q01w-20261122T1446Z\\sp dir ü\\q01 plate ü-reopen.nc" ], "lines": 2352, "ops": 8, "path": "C:\\qa\\runs\\q01w-20261122T1446Z\\sp dir ü\\q01 plate ü-reopen.nc" }
+R #1 | open_project | OK | { "operations": [ { "key": "Face_Top", "kind": "Face", "name": "Face_Top", "setup": "Setup1", "status": "ok" }, { "key": "Pocket_Center", "kind": "2D Pocket", "name": "Pocket_Center", "setup": "Setup1
+R #2 | verify | OK | { "findings": [], "gate": { "ok": true, "problems": [] }, "held_by": [], "ok": true, "operations": [ { "key": "Face_Top", "kind": "Face", "name": "Face_Top", "setup": "Setup1", "status": "ok", "warnin
+R #3 | post | OK | { "files": [ "C:\\qa\\runs\\q01w-20261122T1446Z\\ref\\ref-asis.nc" ], "lines": 2352, "ops": 8, "path": "C:\\qa\\runs\\q01w-20261122T1446Z\\ref\\ref-asis.nc" }
+R #4 | generate | OK | { "generated": [] }
+R #5 | verify | OK | { "findings": [], "gate": { "ok": true, "problems": [] }, "held_by": [], "ok": true, "operations": [ { "key": "Face_Top", "kind": "Face", "name": "Face_Top", "setup": "Setup1", "status": "ok", "warnin
+R #6 | post | OK | { "files": [ "C:\\qa\\runs\\q01w-20261122T1446Z\\ref\\ref-regen.nc" ], "lines": 2352, "ops": 8, "path": "C:\\qa\\runs\\q01w-20261122T1446Z\\ref\\ref-regen.nc" }
+R #7 | save_project | OK | { "path": "C:\\qa\\runs\\q01w-20261122T1446Z\\ref\\ref-resaved.camproj" }
