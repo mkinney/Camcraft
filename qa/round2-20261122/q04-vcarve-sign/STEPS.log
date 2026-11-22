@@ -1,0 +1,46 @@
+1a | solidcraft:batch (Plate+OuterFillets+Pocket+PocketFillets) | OK | 1 body, bbox [-80,-35,0]..[80,35,15], vol 139189.663 mm3 (expected 139189.663 mm3)
+1b | solidcraft:batch (MountHoleRight+MountHoleLeft at X=+-70,Y=0) | OK | 1 body, vol 138454.531 mm3 (exact match for holes straddling pocket wall at X=+-70)
+1c | solidcraft:batch (LettersSketch+sketch.text "CC" h=30+export_dxf+save .sc+export .step) | OK | 2 profiles, 2 DXF entities, .sc 59561B, .step 52862B
+1d | solidcraft:measure+body_topology | OK | closed=true, vol=138454.531 mm3, bbox [-80,-35,0]..[80,35,15], 10 cyls (4xR8, 4xR2, 2xR3 at +-70,0), DXF ext [-29.28,-15.43]..[29.83,15.45]
+2a | camcraft:import_model (q04-vcarve-sign.sc) | REFUSED | import_model: Solidcraft design refused: machining mesh: face 19 capped at 3.307e0 mm sag, tolerance 5e-3 mm
+2b | camcraft:import_model (q04-vcarve-sign.step) | OK | model "sign" imported, 8876 facets, no reduced_fidelity
+2c | camcraft:load_machine (Tormach 24R) | OK | Tormach 24R loaded, post_offer="Tormach PathPilot", default_holder=null
+2d | camcraft:fit_stock (sides=[2,2,2,2,0,1]) | OK | box 164x74x16 mm (bbox 160x70x15 + 2mm XY each side, +1mm top)
+2e | camcraft:set_wcs (stock_point min,min,max) | OK | G54 origin [-82.0, -37.0, 16.0]
+2f | camcraft:import_dxf (q04-vcarve-sign-letters.dxf) | REFUSED | import_dxf: DXF import: DXF CLASSES: unsupported SECTION (SolidCraft join=true writes AC1015 with CLASSES section)
+2g | solidcraft:execute sketch.export_dxf (join=false, R12) | OK | 894 entities written to q04-vcarve-sign-letters-r12.dxf
+2h | camcraft:import_dxf (q04-vcarve-sign-letters-r12.dxf) | OK | 894 primitives in mm, 2 closed chains, origin [0,0,16], bounds [-29.28,-15.43]..[29.83,15.45]
+3a | camcraft:add_tool (Router up-cut 6 mm, 3 mm, V-bit 60 deg 6 mm) | OK | T1=Router up-cut 6mm, T2=Router up-cut 3mm, T3=Router V-bit 60 deg 6mm (all catalog wood tools default 18000 RPM, 600 mm/min)
+3b | camcraft:set_work_material (hard_maple) | REFUSED | set_work_material: unknown workpiece material 'hard_maple' (no wood/maple/MDF in material list despite wood router tools & machines)
+4a | camcraft:add_operation (Face Top, 6mm) + detect_pockets | OK | Face Top added (cut_z=top_of_model, feed=2500); detect_pockets found pocket floor face:0x899db5f7e23b15d3 z=11..15 min_R=2.0 (open_pocket due to holes at +-70,0)
+3c | camcraft:suggest_cutting_data (Face Top) | REFUSED | suggest_cutting_data: no workpiece material is stated - pick one first (cannot use wood cutting data because no wood material exists)
+4b | camcraft:detect_pockets (create=0, Pocket 6mm) | OK | 2D Pocket created on floor face:0x899db5f7e23b15d3, bottom_z=bottom_of_selection+0, top_z=+4, default coolant=flood on wood router!
+4c | camcraft:list_operation_types + edit_operation (Pocket 3mm Rest) | WRONG | list_operation_types omits optional field `rest` (struct RestDto{previous_tool_diameter,...}) from pocket fields, only printing generic note
+4d | camcraft:edit_operation (Pocket 3mm Rest) | OK | rest={previous_tool_diameter:6.0}, feed=1500, plunge=400, stepdown=2.0, stepover=1.5
+4e | camcraft:add_operation+generate (V-Carve CC, kind=engrave, source=letters) | REFUSED | generate: V-Carve CC: invalid machining parameters: a toolpath from the chains of a DXF profile is not generated yet (even though add_operation accepted source="letters"!)
+4f | camcraft:set_operation_geometry (V-Carve CC, sketch_layer:0) | REFUSED | set_operation_geometry: 'letters' is a DXF profile - picked chains of a profile are not supported yet (contradicts tool schema doc)
+4g | camcraft:add_operation+generate (Test Trace DXF, source=letters) | REFUSED | generate: a toolpath from the chains of a DXF profile is not generated yet (same refusal on Trace as Engrave!)
+4h | solidcraft:execute solid.extrude (LettersCut 0.5mm) + export STEP | OK | closed=true, 61 faces, vol 138192.723 mm3 (-261.81 mm3 => 523.6 mm2 letter area), exported q04-vcarve-sign-with-letters.step
+4i | camcraft:set_operation_geometry+generate (V-Carve CC on sign_letters 8 chains->2 rings) | OK | generated status=ok; note "Engrave cuts deeper than a mark: >3.000 mm under part's surface"
+4j | camcraft:generate (Face Top, Pocket 6mm, Pocket 3mm Rest, V-Carve CC) | OK | All 4 generated; Pocket 3mm Rest computed 7.5 of 6968.3 mm2 rest material (only corners + hole-notch corners)
+4k | camcraft:render_stock (top, toolpath=true) | WRONG | Confirmed: CamCraft has NO V-Carve op; `engrave` with 60deg V-bit just traces the letter outline on-center at constant Z stepdowns (gouging 5.5mm deep) instead of variable-Z medial-axis V-carving; Pocket 3mm Rest cleanly cleared all 4 R2 corners (0 corner rest)
+4l | camcraft:add_operation+detect_holes (Bore Mount Holes, 3mm) | OK | Detected 2 Ø6mm through holes even though they straddle the 4mm pocket step
+4m | camcraft:add_operation+set_operation_geometry (Contour Cutout, 6mm, 4 tabs 6x2mm) | OK | Picked bottom outer chain chain:0x68271d2095f17a12 (len 445.9mm, closed)
+5a | camcraft:generate {} | STUCK | MCP tool call to server "camcraft" timed out after 3m0s: context deadline exceeded (after adding Bore Mount Holes and Contour Cutout with 4 tabs, and updating V-Carve CC to 2 faces)
+5b | camcraft:get_job | OK | Server recovered after ~4m50s total: all 6 ops status=ok; Face/Pocket6/Pocket3Rest/Bore/Contour have 0 warnings; V-Carve CC has 552 warnings
+5c | camcraft:verify {} + render_stock | WRONG | CRITICAL: Contour Cutout silently stopped at Z=7.061 ("part is solid below it; levels below skipped 6,3,2,0") skipping bottom half & all 4 tabs with 0 warnings! V-Carve CC blocked post (552 gouges + rapid_in_stock + post_gate gouge 1.00mm)
+5d | camcraft:generate (Contour Cutout alone, stock_to_leave=0.02, tab_count=4) | STUCK | MCP tool call timed out after 3m0s: isolated the ~4-5min hang specifically to 2D Contour generation on the 132-edge outer chain with tabs
+5e | camcraft:get_job+verify (Contour Cutout, stock_to_leave=0.02) | WRONG | Took 5m45s to generate 1 simple 2D contour, and STILL falsely stopped at Z=7.081 ("part is solid below it; levels below skipped 6,3,2,0") — moving outward 0.02mm shifted false floor up 0.02mm!
+5f | camcraft:edit_operation+generate+verify (V-Carve CC bottom=-4.5) | WRONG | Even at 0.5mm depth matching sign_letters cutout, V-Carve CC still has 552 blocking gouge warnings + 2 rapid_in_stock warnings (rapids at top_z=11.0 < stock_top=16.0)
+5g | camcraft:post (Tormach PathPilot) | REFUSED | post: Bore Mount Holes: inputs moved since generation - regenerate before posting (editing V-Carve CC staled downstream ops)
+5h | camcraft:insert_text+add_operation+generate (Test Engrave Text) | REFUSED | Even CamCraft's own insert_text stroke profile cannot be engraved: "a toolpath from the chains of a DXF profile is not generated yet"
+5i | camcraft:generate (Contour Cutout, tab_count=0) | STUCK | MCP tool call timed out after 3m0s even with tab_count=0 (2D Contour itself takes ~5-6 min on this model!)
+5j | camcraft:verify (Contour Cutout, tab_count=0) | WRONG | Even with tab_count=0, Contour Cutout took ~4m30s and still falsely stopped at Z=7.061 ("part is solid below it; levels below skipped 6,3,0")
+5k | camcraft:edit_operation+generate+verify (V-Carve CC top=top_of_stock, bottom=-4.2) | WRONG | Even at 0.2mm depth with top_z=top_of_stock, engrave still blocks post with 553 gouge findings + rapid_in_stock on retract move 555
+5l | camcraft:set_operation_coolant(off x6)+reorder_operation+set_operation_geometry(Contour top chain)+edit_operation(tab_count=4) | OK | All 6 ops coolant=off; V-Carve CC moved last; Contour Cutout set to top outer chain with 4 tabs (6x2mm)
+5m | camcraft:generate {} | WRONG | Finished in 2m57s; Contour Cutout on top outer chain STILL falsely stops at Z=7.061 skipping levels (6,3,2,0) & all 4 tabs
+5n | camcraft:save_project + post (with V-Carve CC) | REFUSED | Saved q04-vcarve-sign.camproj; post refused: "post: post blocked - gouge: program cuts below the model in 914 cell(s), worst 0.20 mm at (-7.66, 9.59, z 10.80)"
+5o | camcraft:delete_operation(V-Carve CC)+verify+post(Tormach PathPilot) | REFUSED | verify ok=true (0 findings), yet post blocked: "asks off coolant, but this post script does not declare coolantModes - set the operation's coolant to Flood"!
+5p | camcraft:set_operation_coolant(flood x5)+post(Tormach PathPilot)+save_project | OK | Posted 5 ops (without V-Carve CC) to q04-vcarve-sign.nc (6824 lines); saved q04-vcarve-sign-posted-5ops.camproj
+5q | G-code audit (q04-vcarve-sign.nc, 6824 lines) | WRONG | Face Top (Z-1, F2500, S18000), Pocket 6mm (Z-1/-3/-5, F2500), Pocket 3mm Rest (8 corner/notch regions only, Z-1/-3/-5, F1500, S18000, verbose 5973-line ramp), Bore Mount Holes (X12/X152 Y37, Ø6, Z-1..-16.5, F1500) OK; Contour Cutout stops at Z-8.939 (world Z=7.061) missing Z-10/-13/-14(tabs)/-16! No V-Carve in posted NC; no M8 emitted despite post refusing coolant=off.
+6 | Write REPORT.md | OK | 11 problems documented (10 CamCraft, 1 SolidCraft); end-to-end: not posted (5-op workaround without V-Carve posted to q04-vcarve-sign.nc)
