@@ -38,6 +38,7 @@ const POSTS: &[(&str, bool)] = &[
     ("grblhal", true),
     ("linuxcnc", true),
     ("mach3", true),
+    ("uccnc", true),
     ("tinyg", false),
     ("grbl", false),
     ("carvera", false),

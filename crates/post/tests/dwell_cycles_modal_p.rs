@@ -5,7 +5,7 @@
 //! numbers stay sticky until programmed again).
 //! Gate map: covers assets/posts/fanuc.cps, assets/posts/mazak.cps,
 //! assets/posts/doosan-dnm.cps, assets/posts/grblhal.cps,
-//! assets/posts/tormach.cps, assets/posts/linuxcnc.cps, assets/posts/mach3.cps,
+//! assets/posts/tormach.cps, assets/posts/linuxcnc.cps, assets/posts/mach3.cps, assets/posts/uccnc.cps,
 //! camcraft_post::post::engine and
 //! camcraft_post::post::cnc.
 
@@ -26,6 +26,7 @@ const POSTS: [(&str, &str, &str); 7] = [
     ("tormach", "P0.5", "P0.75"),
     ("linuxcnc", "P0.5", "P0.75"),
     ("mach3", "P0.5", "P0.75"),
+    ("uccnc", "P0.5", "P0.75"),
 ];
 
 fn read(rel: &str) -> String {

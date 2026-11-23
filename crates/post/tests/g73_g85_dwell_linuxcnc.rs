@@ -2,7 +2,7 @@
 //! Mach3 (#2482) has the same formats ("Using Mach3Mill" 1.84, 10.7.22 and
 //! 10.7.24.6: no P word on G73 or G85).
 //! Gate map: covers assets/posts/tormach.cps, assets/posts/grblhal.cps,
-//! assets/posts/linuxcnc.cps, assets/posts/mach3.cps, camcraft_post::post::cnc, camcraft_post::post::engine.
+//! assets/posts/linuxcnc.cps, assets/posts/mach3.cps, assets/posts/uccnc.cps, camcraft_post::post::cnc, camcraft_post::post::engine.
 
 use camcraft_post::cl::{CycleKind, MoveKind};
 use camcraft_post::post::{
@@ -12,7 +12,7 @@ use camcraft_post::post::{
 use serde_json::json;
 use std::path::Path;
 
-const POSTS: [&str; 4] = ["tormach", "grblhal", "linuxcnc", "mach3"];
+const POSTS: [&str; 5] = ["tormach", "grblhal", "linuxcnc", "mach3", "uccnc"];
 
 fn read(rel: &str) -> String {
     std::fs::read_to_string(
@@ -183,6 +183,16 @@ fn mach3_refuses_g73_dwell() {
 #[test]
 fn mach3_refuses_g85_dwell() {
     refuses("mach3", CycleKind::Ream, "G85", "ream");
+}
+
+#[test]
+fn uccnc_refuses_g73_dwell() {
+    refuses("uccnc", CycleKind::Peck, "G73", "peck");
+}
+
+#[test]
+fn uccnc_refuses_g85_dwell() {
+    refuses("uccnc", CycleKind::Ream, "G85", "ream");
 }
 
 #[test]

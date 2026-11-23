@@ -158,7 +158,7 @@ fn a_post_that_cannot_go_home_refuses_by_name() {
     // #710: grblHAL's G28/G30 positions are controller settings too;
     // TinyG's are set at the machine with G28.1 / G30.1 (its stops are
     // pinned in tinyg_post.rs: a tool change writes an M0 of its own).
-    for name in ["Heidenhain", "grblHAL", "TinyG", "Grbl 1.1", "Mach3"] {
+    for name in ["Heidenhain", "grblHAL", "TinyG", "Grbl 1.1", "Mach3", "UCCNC"] {
         let out = post_with(&world, script(name));
         assert!(
             out.warnings.iter().any(|w| w.contains(name) && w.contains("home")),

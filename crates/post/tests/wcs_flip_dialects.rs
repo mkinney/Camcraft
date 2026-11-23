@@ -64,6 +64,7 @@ const POSTS: &[Post] = &[
     Post { stem: "linuxcnc", comp: false, dialect: RS274, tol: 0.003, note: paren },
     Post { stem: "grblhal", comp: false, dialect: RS274, tol: 0.003, note: paren },
     Post { stem: "mach3", comp: false, dialect: RS274, tol: 0.003, note: paren },
+    Post { stem: "uccnc", comp: false, dialect: RS274, tol: 0.003, note: paren },
     Post { stem: "carvera", comp: false, dialect: RS274, tol: 0.003, note: paren },
     Post { stem: "tinyg", comp: false, dialect: RS274, tol: 0.03, note: paren },
 ];

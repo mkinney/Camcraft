@@ -49,6 +49,7 @@ fn writing_mill_posts_emit_end_unit_word_before_program_end() {
         ("tormach", "G20", "G21", "M30"),
         ("grblhal", "G20", "G21", "M30"),
         ("mach3", "G20", "G21", "M30"),
+        ("uccnc", "G20", "G21", "M30"),
         ("tinyg", "G20", "G21", "M30"),
         ("grbl", "G20", "G21", "M30"),
         ("fanuc", "G20", "G21", "M30"),
