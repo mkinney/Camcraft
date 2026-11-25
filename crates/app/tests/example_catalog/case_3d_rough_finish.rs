@@ -1,13 +1,74 @@
 // Provenance: original CamCraft 3D rough-and-finish catalog contract (#2866).
 mod catalog_3d_rough_finish {
     use super::*;
+
     #[test]
     fn regenerates() {
         run_case("3d", "rough-finish", "regenerates", regenerate);
     }
+
     #[test]
     fn rebuilds() {
         run_case("3d", "rough-finish", "rebuilds", rebuild);
+    }
+
+    #[test]
+    fn interlevel_rapid_stops_at_feed_height_above_prior_floor() {
+        // #3671: between levels the tool must not rapid down to the floor
+        // of the cut level above with 0 margin. The rapid must stop at feed
+        // height (plunge_height = 2.0 mm) above the last cut floor.
+        let dir = repo("examples/catalog/3d/rough-finish");
+        let nc = std::fs::read_to_string(dir.join("rough-finish.nc")).expect("read nc");
+        let op_lines = section(&nc, "3D Pocket1");
+        assert!(!op_lines.is_empty(), "3D Pocket1 section present");
+        let mut lowest_rapid_z = f64::INFINITY;
+        for line in &op_lines {
+            if (line.starts_with("G00") || line.starts_with("G0 "))
+                && let Some(z) = word(line, 'Z')
+                && z < lowest_rapid_z
+            {
+                lowest_rapid_z = z;
+            }
+        }
+        // The last level cuts at Z8. The level above it cut at Z10.
+        // The rapid before the last level must stop at Z10 + 2.0 = Z12.
+        assert!(
+            lowest_rapid_z >= 12.0 - 1e-6,
+            "lowest rapid in 3D Pocket1 was Z {lowest_rapid_z}, expected >= 12.0 (feed height above Z10)"
+        );
+    }
+    /// #3852: in the posted 3D Pocket, no plunge feeds from the hop plane
+    /// (none is longer than the 2 mm plunge height plus the 2 mm stepdown),
+    /// and no linear move posts with zero length (the same X, Y and Z as
+    /// the position before it).
+    #[test]
+    fn pocket_posts_no_hop_plane_plunge_and_no_zero_length_move() {
+        let dir = repo("examples/catalog/3d/rough-finish");
+        let nc = std::fs::read_to_string(dir.join("rough-finish.nc")).expect("read nc");
+        let op_lines = section(&nc, "3D Pocket1");
+        assert!(!op_lines.is_empty(), "3D Pocket1 section present");
+        let mut at: Option<(f64, f64, f64)> = None;
+        let (mut zero, mut long) = (Vec::new(), Vec::new());
+        for line in &op_lines {
+            let g = line.split_whitespace().next().unwrap_or("");
+            if !matches!(g, "G00" | "G01" | "G02" | "G03") {
+                continue;
+            }
+            let (Some(x), Some(y), Some(z)) = (word(line, 'X'), word(line, 'Y'), word(line, 'Z')) else {
+                continue;
+            };
+            if g == "G01" && let Some((px, py, pz)) = at {
+                if (px, py, pz) == (x, y, z) {
+                    zero.push(*line);
+                }
+                if (px, py) == (x, y) && pz - z > 2.0 + 2.0 + 1e-6 {
+                    long.push(*line);
+                }
+            }
+            at = Some((x, y, z));
+        }
+        assert!(zero.is_empty(), "{} zero-length moves posted: {:?}", zero.len(), zero);
+        assert!(long.is_empty(), "plunges that feed from the hop plane: {long:?}");
     }
 
     /// #3670: the 3D Pocket's entry is a helix. A pass that restarts in a

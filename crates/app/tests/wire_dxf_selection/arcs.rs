@@ -27,6 +27,14 @@ const PUNCH: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nS
     0\nLWPOLYLINE\n8\noutline\n90\n7\n70\n1\n10\n-10\n20\n-10\n10\n7\n20\n-10\n42\n0.41421356237309503\n\
     10\n10\n20\n-7\n10\n10\n20\n0\n10\n0\n20\n0\n10\n0\n20\n10\n10\n-10\n20\n10\n0\nENDSEC\n0\nEOF\n";
 
+/// A start pick at a world point (#3339 moved `start` into `picks`).
+fn start_at(p: [f64; 2]) -> camcraft_app::path_picks::PathPicks {
+    camcraft_app::path_picks::PathPicks {
+        start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(p[0], p[1]))],
+        exit: Vec::new(),
+    }
+}
+
 /// The drawing point (`x`, `y`) in world XY.
 fn to_world(world: &World, x: f64, y: f64) -> [f64; 2] {
     let (e, _) = sketch::find(world, "drawing").expect("drawing");
@@ -46,7 +54,7 @@ fn doc(dxf: &str, machine: &str, condition: &str, side: WireSide, hole: (f64, f6
     let op = WireContourOp {
         condition: condition.into(),
         side,
-        start: Some(to_world(&world, hole.0, hole.1)),
+        picks: start_at(to_world(&world, hole.0, hole.1)),
         sharp_corners: sharp,
         ..wire_op()
     };
@@ -132,7 +140,7 @@ fn line_and_arc_punch_pivots_its_corners_and_posts_its_goldens() {
 #[test]
 fn arcs_stay_refused_for_taper_and_a_hatch_still_blocks_the_cut() {
     let world = doc(DIE, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
-    let tapered = WireContourOp { start: Some(to_world(&world, 0.0, 0.0)), taper_deg: 1.0, ..wire_op() };
+    let tapered = WireContourOp { picks: start_at(to_world(&world, 0.0, 0.0)), taper_deg: 1.0, ..wire_op() };
     let mut h = History::default();
     h.execute(&world, EditOperationParams::new(&world, "Cut", OpParams::WireContour(tapered)).expect("taper"));
     let why = refusal(&world);

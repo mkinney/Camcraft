@@ -32,9 +32,9 @@ A 50 x 50 x 8 mm clean-room aluminum plate with a spherical dome on top
   - [#3670](https://github.com/NeoTech/Camcraft/issues/3670): a re-entry in a
     level is a straight plunge into the stock, although the entry is a helix.
     The program has about 29 of them, for example NC lines 126-128.
-  - [#3671](https://github.com/NeoTech/Camcraft/issues/3671): the rapid
-    between two levels goes down to the floor of the last cut with no
-    margin. The lowest `G0` is at `Z10`, NC line 1625.
+  - [#3671](https://github.com/NeoTech/Camcraft/issues/3671) (fixed): the rapid
+    between two levels stops at feed height above the last cut floor. The lowest
+    `G0` in `3D Pocket1` is at `Z12`.
 - The parallel passes are close on the flat top of the dome and far apart
   on its steep sides. The waterline loops are the opposite: close on the
   steep sides and far apart near the top. The two patterns together give

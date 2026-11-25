@@ -194,6 +194,7 @@ mod tests {
             prev_z: 0.0,
             prev_cut: Some(0.0),
             air: false,
+            restart: true,
         };
         let mut b = PathBuilder::new(Point3::new(-10.0, prior_y, -1.0));
         b.push(MoveKind::Feed, Point3::new(10.0, prior_y, -1.0), Some(p.feed));
