@@ -129,6 +129,8 @@ mod thread_r_plane;
 // #985: external threads - the boss door, the crest region, the neighbour law.
 mod thread_boss;
 pub mod wire_op;
+// #3332: the wire's exit pick, and the cuts that do not take one yet.
+pub mod wire_exit;
 mod agie_profile;
 mod agie_die;
 pub(crate) use agie_profile::{agie_job, agie_quality, agie_sketch_job};

@@ -14,6 +14,7 @@
 //!   directions until the wire stands the kerf offset plus the stated
 //!   clearance off the stock - threaded there, in the air, and run out
 //!   the same way at the far end (the wire leaves the cut; no return).
+//!   A stated exit pick (#3332, `exit`) chooses the end the cut leaves at.
 //! - Refused by name: a side of die / punch (no kerf side stated), no
 //!   stock to read the edge from, an end that stops inside the stock, a
 //!   run that never enters it, a run that crosses or doubles back on
@@ -69,7 +70,7 @@ fn depth(stock: &Region, q: Point2) -> f64 {
 ///
 /// # Errors
 /// Every refusal the module head lists, by name; none is a panic.
-pub(super) fn wire_open(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams) -> Result<Toolpath, GenError> {
+pub(super) fn wire_open(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams, exit: Option<Point2>) -> Result<Toolpath, GenError> {
     let sign = match p.side {
         WireSide::Left => 1.0,
         WireSide::Right => -1.0,
@@ -112,9 +113,18 @@ pub(super) fn wire_open(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams) 
     let fwd = unit(run[run.len() - 2], run[run.len() - 1]);
     let t0 = run_out(stock, first, Point2::new(-back.x, -back.y), target, k, z)?;
     let t1 = run_out(stock, last, fwd, target, k, z)?;
-    let mut b = PathBuilder::new(Point3::new(t0.x, t0.y, z));
-    let mut prev = t0;
-    for q in ride.iter().copied().chain(std::iter::once(t1)) {
+    // #3332: the cut ends at the end nearest a stated exit pick - the
+    // same wire-centre path, walked the other way when that is the
+    // run's first end.
+    let back = exit.map(|q| super::exit::against(&run, q, z)).transpose()?.unwrap_or(false);
+    let (from, to) = if back { (t1, t0) } else { (t0, t1) };
+    let mut walk = ride.clone();
+    if back {
+        walk.reverse();
+    }
+    let mut b = PathBuilder::new(Point3::new(from.x, from.y, z));
+    let mut prev = from;
+    for q in walk.into_iter().chain(std::iter::once(to)) {
         if dist(prev, q) > MIN_LEAD {
             b.push(MoveKind::Feed, Point3::new(q.x, q.y, z), None);
             prev = q;
@@ -127,7 +137,8 @@ pub(super) fn wire_open(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams) 
     let wire: Vec<Point2> = std::iter::once(t0).chain(ride.iter().copied()).chain(std::iter::once(t1)).collect();
     let corner_rest = laws::cover_run(&run, false, &wire, false, p)?;
     laws::kerf(&path, &run, false, k, z)?;
-    path.notes.extend(notes(p, t0, t1));
+    path.notes.extend(notes(p, from, to));
+    path.notes.extend(exit.map(|q| super::exit::open_note(q, back)));
     path.notes.extend(corner_rest.map(|r| laws::sharp_note(r, k)));
     Ok(path)
 }

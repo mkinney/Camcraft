@@ -50,6 +50,7 @@ mod arc_laws;
 mod arc_offset;
 mod arc_span;
 mod burnout;
+mod exit;
 mod laws;
 mod pairing;
 mod preimage;
@@ -73,6 +74,7 @@ pub use tabs::{cutoff_split, TabParams, MAX_TABS};
 pub use taper::{wire_contour_tapered, WireCorner, WireTaper};
 
 pub use burnout::{clearance_door, wire_burnout, CORE_AREA_TOL, RING_STEP};
+pub use exit::wire_contour_exit;
 pub use open::{CLEARANCE_MAX, EDGE_TOL};
 
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
@@ -220,12 +222,12 @@ impl WireParams {
 /// # Errors
 /// Every refusal the module head lists, by name; none is a panic.
 pub fn wire_contour(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams) -> Result<Toolpath, GenError> {
-    cut_pass(loops, chains, p, false)
+    cut_pass(loops, chains, p, false, None)
 }
 
-/// One pass round the profile at `p`'s offset, every law judged at
-/// that offset; `reverse` walks it clockwise (a skim's reversal, #538).
-pub(super) fn cut_pass(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams, reverse: bool) -> Result<Toolpath, GenError> {
+/// One pass at `p`'s offset, every law judged there; `reverse` walks it
+/// clockwise (a skim's reversal, #538); `exit` is the exit pick (#3332).
+pub(super) fn cut_pass(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams, reverse: bool, exit: Option<Point2>) -> Result<Toolpath, GenError> {
     p.door()?;
     if !chains.is_empty() {
         if p.tabs.is_some() {
@@ -233,7 +235,7 @@ pub(super) fn cut_pass(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams, r
                 "tabs are stated on an open run - an open run closes no slug for a tab to hold; tabs hold a closed profile's slug (#539)".into(),
             ));
         }
-        return open::wire_open(loops, chains, p);
+        return open::wire_open(loops, chains, p, exit);
     }
     let (given, profile) = ring::profile(loops, chains)?;
     if p.side.is_open_side() {
@@ -277,15 +279,19 @@ pub(super) fn cut_pass(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams, r
         Some(_) if reverse => {
             return Err(invalid("a reversed pass is stated with tabs - tabs are cut on the rough pass's walk only (#538 x #539)".into()))
         }
-        Some(t) => Some(tabs::tabbed(&path_ring, &given, start, p, t)?),
+        Some(t) => Some(tabs::tabbed(&path_ring, &given, start, p, t, exit)?),
         None => None,
     };
+    let mut left = None;
     let pts: Vec<Point2> = match &tabbed {
         Some(tb) => tb.main.iter().chain(&tb.cutoff).copied().collect(),
         None => {
             let mut v = ring::walk_from(&path_ring, seg, foot);
             if reverse {
                 v.reverse();
+            }
+            if let Some(q) = exit {
+                left = Some(exit::leave(&path_ring, &given, (start, foot, q), p, reverse, &mut v)?);
             }
             v.push(start);
             v
@@ -303,6 +309,8 @@ pub(super) fn cut_pass(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams, r
     let mut said = pass_notes(p, start, lead, reverse);
     if let Some(tb) = tabbed {
         said.splice(1..2, tb.notes);
+    } else if let Some(note) = left {
+        said.splice(1..2, [note]);
     }
     said.extend(corner_rest.map(|r| laws::sharp_note(r, k)));
     path.notes.extend(said);

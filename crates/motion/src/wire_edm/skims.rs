@@ -119,10 +119,10 @@ pub fn check_passes(rough: &WireParams, skims: &[WirePass]) -> Result<(), GenErr
 /// [`check_passes`]'s refusals, then any pass's own.
 pub fn wire_passes(loops: &[Loop], chains: &[Vec<Point2>], rough: &WireParams, skims: &[WirePass]) -> Result<Toolpath, GenError> {
     check_passes(rough, skims)?;
-    let mut path = cut_pass(loops, chains, rough, false)?;
+    let mut path = cut_pass(loops, chains, rough, false, None)?;
     for (i, s) in skims.iter().enumerate() {
         let p = s.params(rough);
-        let pass = cut_pass(loops, chains, &p, s.reverse)?;
+        let pass = cut_pass(loops, chains, &p, s.reverse, None)?;
         path.moves.extend(pass.moves);
         path.notes.push(format!(
             "wire EDM: skim {} - condition {} at {:.4} mm (wire radius {:.4} + spark gap {:.4}), cut {}",

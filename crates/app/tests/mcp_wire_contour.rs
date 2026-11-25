@@ -345,3 +345,34 @@ fn list_operation_types_and_skill_match_wire_contour_dto_and_tool_law() {
         json!({ "name": "W", "params": { "burnout_clearance": 1.0, "sharp_corners": true, "capture": true, "clearance": 2.0 } }),
     );
 }
+
+/// #3332: `edit_operation` sets the Wire Contour's exit pick beside its
+/// start pick, the cut generates and leaves at the pick, undo restores
+/// the picks, and `list_operation_types` says the kind takes an exit.
+#[test]
+fn edit_operation_sets_the_wire_contours_exit_pick() {
+    let mut c = wire_job("exit-pick");
+    c.ok("add_operation", wire_args("C110"));
+    let picks = |c: &mut Client| c.ok("get_job", json!({}))["operations"][0]["params"]["wire_contour"]["picks"].clone();
+    assert_eq!(picks(&mut c), json!({ "start": [[0.0, 0.0]] }));
+    let patch = json!({ "name": "W", "params": { "picks": { "start": [[0.0, 0.0]], "exit": [[15.0, 9.0]] } } });
+    let edited = c.ok("edit_operation", patch);
+    assert_eq!(edited["params"]["wire_contour"]["picks"], json!({ "start": [[0.0, 0.0]], "exit": [[15.0, 9.0]] }));
+    let g = c.ok("generate", json!({ "name": "W" }));
+    assert!(g["generated"].is_array(), "{g}");
+    let job = c.ok("get_job", json!({}));
+    assert_eq!(job["operations"][0]["status"], json!("ok"), "the exit pick generates: {job}");
+    // The generate and the edit are one undo step each.
+    c.ok("undo", json!({}));
+    c.ok("undo", json!({}));
+    assert_eq!(picks(&mut c), json!({ "start": [[0.0, 0.0]] }));
+    c.ok("redo", json!({}));
+    assert_eq!(picks(&mut c)["exit"], json!([[15.0, 9.0]]));
+    let kinds = c.ok("list_operation_types", json!({}));
+    let wire = kinds["kinds"]
+        .as_array()
+        .and_then(|k| k.iter().find(|k| k.to_string().contains("Wire Contour")))
+        .expect("the wire kind is listed")
+        .clone();
+    assert_eq!(wire["start_exit"]["exit"], json!(true), "{wire}");
+}

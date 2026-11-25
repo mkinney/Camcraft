@@ -31,7 +31,9 @@ pub enum PickCapability {
     /// The corner of the first raster row and the end of the last row.
     /// Snaps to a corner.
     Raster,
-    /// The wire's threading point (`WireContourOp.picks`): a start only.
+    /// The wire's threading point (`WireContourOp.picks`), and where the
+    /// cut leaves (#3332): an end of an open run, or a point of a closed
+    /// profile's path.
     Threading,
     /// The kind does not take a pick; the reason, said by name in the
     /// refusal and on the operation page.
@@ -49,10 +51,9 @@ impl PickCapability {
     /// Does this capability take a pick of `role`?
     #[must_use]
     pub fn takes(self, role: PickRole) -> bool {
-        match self {
-            Self::NotTaken(_) => false,
-            Self::Threading => role == PickRole::Start,
-            Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster => true,
+        match (self, role) {
+            (Self::NotTaken(_), _) => false,
+            (_, PickRole::Start | PickRole::Exit) => true,
         }
     }
 }

@@ -62,7 +62,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
         }
     }
     assert!(PickCapability::Ring.takes(PickRole::Start) && PickCapability::Ring.takes(PickRole::Exit));
-    assert!(PickCapability::Threading.takes(PickRole::Start) && !PickCapability::Threading.takes(PickRole::Exit));
+    // #3332: the wire's threading capability takes an exit too.
+    assert!(PickCapability::Threading.takes(PickRole::Start) && PickCapability::Threading.takes(PickRole::Exit));
     let probe = KindInfo::ALL.iter().find(|k| k.ty == OpType::Probe).map(KindInfo::pick);
     assert!(matches!(probe, Some(PickCapability::NotTaken(w)) if w.contains("cuts no path")), "{probe:?}");
 }

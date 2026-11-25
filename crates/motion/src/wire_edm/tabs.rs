@@ -115,7 +115,7 @@ struct Gap {
     hi: f64,
 }
 
-fn seg_seg(a: Point2, b: Point2, c: Point2, d: Point2) -> f64 {
+pub(super) fn seg_seg(a: Point2, b: Point2, c: Point2, d: Point2) -> f64 {
     let cross = |o: Point2, p: Point2, q: Point2| (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
     let (d1, d2, d3, d4) = (cross(c, d, a), cross(c, d, b), cross(a, b, c), cross(a, b, d));
     if ((d1 > 0.0) != (d2 > 0.0)) && ((d3 > 0.0) != (d4 > 0.0)) {
@@ -134,8 +134,16 @@ pub(super) struct Tabbed {
 
 /// Lay the tabs on the counter-clockwise wire ring and walk the main
 /// cut and the cut-off. `given` is the profile as given (the product's
-/// edge the leads must stay clear of).
-pub(super) fn tabbed(ring: &[Point2], given: &[Point2], start: Point2, p: &WireParams, t: &TabParams) -> Result<Tabbed, GenError> {
+/// edge the leads must stay clear of). `exit` is the stated exit pick
+/// (#3332): the stretch that holds its foot is cut last and left there.
+pub(super) fn tabbed(
+    ring: &[Point2],
+    given: &[Point2],
+    start: Point2,
+    p: &WireParams,
+    t: &TabParams,
+    exit: Option<Point2>,
+) -> Result<Tabbed, GenError> {
     let k = p.kerf_offset();
     let (count, width, cutoff_id) = door(t, k)?;
     let r = ArcRing::new(ring);
@@ -193,10 +201,30 @@ pub(super) fn tabbed(ring: &[Point2], given: &[Point2], start: Point2, p: &WireP
         }
     };
     // Each run: the stretch from one gap's end to the next gap's start.
-    let mut feet: Vec<(f64, f64, f64)> = Vec::with_capacity(n);
-    for i in 0..n {
-        let a = gaps[i].hi;
-        let b = if i + 1 == n { gaps[0].lo + r.len } else { gaps[i + 1].lo };
+    let span = |i: usize| (gaps[i].hi, if i + 1 == n { gaps[0].lo + r.len } else { gaps[i + 1].lo });
+    // #3332: the exit pick's foot, on the run that holds it (`last`).
+    let mut left = None;
+    if let Some(q) = exit {
+        let (e, foot) = super::exit::foot_at(ring, &r, q);
+        let held = (0..n).find_map(|i| [e, e + r.len].into_iter().find(|s| (span(i).0..=span(i).1).contains(s)).map(|s| (i, s)));
+        let Some((last, e)) = held else {
+            return Err(GenError::invalid_at(
+                format!(
+                    "wire contour: the exit point at X{:.3} Y{:.3} meets the wire path on a tab (X{:.3} Y{:.3}) - the main cut does not pass there; pick the exit on a stretch between the tabs",
+                    q.x, q.y, foot.x, foot.y
+                ),
+                Point3::new(foot.x, foot.y, p.plane_z),
+            ));
+        };
+        if super::exit::reach(given, foot, start) < k - PATH_TOL {
+            return Err(super::exit::blocked(q, foot, p));
+        }
+        left = Some((last, e, q, foot));
+    }
+    let first = left.map_or(0, |l| l.0 + 1);
+    let mut feet: Vec<(f64, f64, f64)> = vec![(0.0, 0.0, 0.0); n];
+    for i in (0..n).map(|j| (first + j) % n) {
+        let (a, b) = span(i);
         // The foot is the run's nearest point to the threading point,
         // kept a kerf offset clear of the gaps where the run allows.
         let (lo, hi) = if b - a > 2.0 * k { (a + k, b - k) } else { (0.5 * (a + b), 0.5 * (a + b)) };
@@ -218,8 +246,13 @@ pub(super) fn tabbed(ring: &[Point2], given: &[Point2], start: Point2, p: &WireP
         for q in std::iter::once(foot).chain(r.walk(f, b)).chain(r.walk(b, f)).chain(r.walk(f, a)).chain(r.walk(a, f)) {
             push(&mut main, q);
         }
+        if let Some((_, e, ..)) = left.filter(|l| l.0 == i) {
+            for q in r.walk(f, e) {
+                push(&mut main, q);
+            }
+        }
         push(&mut main, start);
-        feet.push((a, f, b));
+        feet[i] = (a, f, b);
     }
     // The cut-off: each tab reached along whichever run beside it has
     // its foot nearer, cut across on the main path's line, retraced.
@@ -238,7 +271,7 @@ pub(super) fn tabbed(ring: &[Point2], given: &[Point2], start: Point2, p: &WireP
         }
         push(&mut cutoff, start);
     }
-    let notes = vec![
+    let mut notes = vec![
         format!(
             "wire EDM: {count} tab(s) of {width:.3} mm left in the main cut (each a gap of {:.3} mm in the wire path at {}) - the slug is held; each stretch between tabs is entered by its own straight lead from the threading point and left back along its own kerf",
             2.0 * h,
@@ -248,6 +281,12 @@ pub(super) fn tabbed(ring: &[Point2], given: &[Point2], start: Point2, p: &WireP
             "wire EDM: the tab cut-off follows the main cut with condition {cutoff_id} - the wire travels in the kerf to each tab, cuts across it on the main path's line and retraces; it frees the slug"
         ),
     ];
+    notes.extend(left.map(|(.., q, foot)| {
+        format!(
+            "wire EDM: the exit point at X{:.3} Y{:.3} - the stretch that holds it is cut last, and the main cut leaves the path at X{:.3} Y{:.3} straight to the threading point, before the tab cut-off",
+            q.x, q.y, foot.x, foot.y
+        )
+    }));
     Ok(Tabbed { main, cutoff, notes })
 }
 

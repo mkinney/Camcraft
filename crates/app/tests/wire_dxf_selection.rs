@@ -272,6 +272,14 @@ fn selected_chain_requires_clear_stock_a_stated_start_and_slug_capture() {
             },
             "inside the box stock",
         ),
+        // #3332: a selected drawing profile takes no exit pick yet.
+        (
+            WireContourOp {
+                picks: camcraft_app::path_picks::PathPicks { exit: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(-4.0, 8.0))], ..wire_op().picks },
+                ..wire_op()
+            },
+            "exit point (X-4.000 Y8.000) is stated with a selected drawing profile",
+        ),
         (
             WireContourOp {
                 top_z: Height::fixed(10.0),

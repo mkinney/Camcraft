@@ -408,6 +408,10 @@ pub(super) fn generate_wire(
     if let Some(why) = skims_refusal(op) {
         return Err(GenError::Invalid(why));
     }
+    // #3332: an exit pick beside a cut that does not take one yet.
+    if let Some(why) = super::wire_exit::exit_refusal(op, !cond.skims.is_empty(), false) {
+        return Err(GenError::Invalid(why));
+    }
     let corner = corner_rule(op, &cond)?;
     // #537: two profiles paired into rulings - its own generator, read
     // from its own picks. A burnout (#540), tabs (#539) and an open run
@@ -465,7 +469,11 @@ pub(super) fn generate_wire(
             if let Some(why) = tabs_taper_refusal(op) {
                 return Err(GenError::Invalid(why));
             }
-            wire_contour_tapered(&loops, &chains, &p, &taper)?
+            // #3332: a stated exit pick sets where the cut leaves.
+            match super::wire_exit::exit_of(op) {
+                Some(exit) => crate::wire_edm::wire_contour_exit(&loops, &chains, &p, exit)?,
+                None => wire_contour_tapered(&loops, &chains, &p, &taper)?,
+            }
         }
     };
     Ok((path, Vec::new()))
