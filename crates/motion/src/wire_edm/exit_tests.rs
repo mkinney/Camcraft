@@ -142,4 +142,12 @@ fn a_tabbed_cut_leaves_at_the_exit_pick_before_the_cut_off() {
     assert!(path.notes.iter().any(|n| n.contains("exit point at X19.000 Y5.000") && n.contains("before the tab cut-off")), "{:?}", path.notes);
     let why = wire_contour_exit(&loops, &[], &p, Point2::new(0.3, 9.0)).unwrap_err().to_string();
     assert!(why.contains("exit point at X0.300 Y9.000") && why.contains("on a tab"), "{why}");
+    // A tabbed punch threaded above it: the lead-out from its far side
+    // would cut through the punch.
+    let at = vec![Point2::new(-10.0, 10.0), Point2::new(10.0, 10.0)];
+    let tabs = TabParams { count: Some(2), width: Some(2.0), at, cutoff: Some(("C110".into(), K)) };
+    let punch = WireParams { tabs: Some(tabs), ..params(WireSide::Punch, Some((0.0, 20.0))) };
+    wire_contour(&loops, &[], &punch).unwrap();
+    let why = wire_contour_exit(&loops, &[], &punch, Point2::new(0.0, -15.0)).unwrap_err().to_string();
+    assert!(why.contains("exit point at X0.000 Y-15.000") && why.contains("into the punch"), "{why}");
 }
