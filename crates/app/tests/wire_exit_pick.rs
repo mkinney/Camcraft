@@ -305,3 +305,30 @@ fn an_exit_cut_posts_the_golden_program_with_one_more_block() {
     assert!(h.undo(&world) && h.undo(&world));
     assert_eq!(post(&world), golden, "undo restores the previous program");
 }
+
+/// Each cut that does not take an exit pick yet refuses it by name, and
+/// names the cut. A cut that states no exit pick is never refused here.
+#[test]
+fn an_exit_pick_beside_a_cut_that_does_not_take_one_is_refused_by_name() {
+    use camcraft_app::operation::wire_exit::{exit_of, exit_refusal};
+    let plain = wire_op(WireSide::Punch, Some([-10.0, 25.0]));
+    let picked = with_exit(&plain, [-5.0, 40.0]);
+    assert_eq!(exit_of(&plain), None);
+    assert_eq!(exit_of(&picked).map(|q| (q.x, q.y)), Some((-5.0, 40.0)));
+    assert_eq!(exit_refusal(&picked, false, false), None, "a vertical one-pass cut takes the exit");
+    let skim = operation::WireSkim { condition: "S21".into(), reverse: false };
+    let cases = [
+        (WireContourOp { four_axis: Some(operation::WireFourAxis::default()), ..picked.clone() }, false, false, "a 4-axis cut"),
+        (WireContourOp { burnout: Some(0.5), ..picked.clone() }, false, false, "a no-core burnout"),
+        (WireContourOp { skims: vec![skim], ..picked.clone() }, false, false, "skim passes"),
+        (picked.clone(), true, false, "skim passes"),
+        (WireContourOp { taper_deg: -2.0, ..picked.clone() }, false, false, "a -2.000 degree taper"),
+        (picked.clone(), false, true, "a selected drawing profile"),
+    ];
+    for (op, skims, drawn, with) in cases {
+        let why = exit_refusal(&op, skims, drawn).expect("refused");
+        assert!(why.contains("an exit point (X-5.000 Y40.000) is stated with") && why.contains(with), "{why}");
+        let unpicked = WireContourOp { picks: plain.picks.clone(), ..op };
+        assert_eq!(exit_refusal(&unpicked, skims, drawn), None, "no exit pick, no refusal: {with}");
+    }
+}
