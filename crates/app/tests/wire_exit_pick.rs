@@ -7,7 +7,8 @@
 //! Gate map (#3332): covers app::operation (pick_kinds capability,
 //! wire_exit, wire_op::generate_wire, wire_verify), app::commands
 //! (operation edit and generate, undo and redo), app::project
-//! (wire_edm_dto legacy `start` load).
+//! (wire_edm_dto legacy `start` load), app::posting (post_script over
+//! the wire section).
 //! Provenance: our own tests over our own synthetic fixture (the
 //! invented wire-iso machine of #533, #290 D10).
 
@@ -265,4 +266,42 @@ fn a_closed_cut_leaves_at_the_exit_pick_and_an_impossible_pick_is_refused_by_nam
     edit(&world, &mut h, "Punch1", WireContourOp { picks: PathPicks { start: Vec::new(), exit: pick([-5.0, 40.0]) }, ..p0.clone() });
     let why = refusal(&world, "Punch1");
     assert!(why.contains("no start hole is stated"), "{why}");
+}
+
+/// The posted program of an exit cut: the shipped punch golden with one
+/// more block, the travel in the kerf to the exit, before the lead-out.
+/// Every other block is the golden's, byte for byte.
+#[test]
+fn an_exit_cut_posts_the_golden_program_with_one_more_block() {
+    const GOLDEN: &str = "tests/golden/nc/wire-iso/wire_slug_punch.nc";
+    let world = new_world();
+    let mut h = History::default();
+    let m = parse_mch(FIXTURE).expect("the fixture parses");
+    h.execute(&world, LoadMachine::new(&world, "wire-iso.mch".into(), Some(m)).expect("mount"));
+    h.execute(
+        &world,
+        camcraft_app::commands::AddTool::new(&world, "EDM-W025", camcraft_app::wire_tools::wire_tool(0.25)).expect("wire"),
+    );
+    h.execute(&world, ImportModel::from_mesh("slug", prism(&[(20.0, 10.0), (-20.0, 10.0), (-20.0, -10.0), (20.0, -10.0)])));
+    let op = WireContourOp { capture: true, ..wire_op(WireSide::Punch, Some([-30.0, 0.0])) };
+    let c = CreateOperation::new(&world, "Punch1", "EDM-W025", SrcRef::Entity("slug".into()), OpParams::WireContour(op.clone())).expect("op");
+    h.execute(&world, c);
+    generate(&world, &mut h, "Punch1");
+    let cps = camcraft_app::posting::builtin_post_text("Generic ISO Wire EDM").expect("registered");
+    let post = |w: &World| {
+        let out = std::env::temp_dir().join(format!("camcraft-3332-post-{}.nc", std::process::id()));
+        let posted = camcraft_app::posting::post_script(w, &out, cps).expect("the wire program posts");
+        let _ = std::fs::remove_file(&out);
+        posted.program
+    };
+    let golden = std::fs::read_to_string(GOLDEN).expect("golden present");
+    assert_eq!(post(&world), golden, "without an exit pick the program is the shipped golden");
+    edit(&world, &mut h, "Punch1", with_exit(&op, [-25.0, 8.0]));
+    generate(&world, &mut h, "Punch1");
+    let want = golden.replacen("G1 X-20.165 Y0.\nG1 X-30. Y0.\n", "G1 X-20.165 Y0.\nG1 X-20.165 Y8.\nG1 X-30. Y0.\n", 1);
+    assert_ne!(want, golden, "the golden ends its lap at the lead-in's foot");
+    assert_eq!(post(&world), want, "the exit cut posts one more block and no other change");
+    // Undo the generate and the edit: the shipped golden again.
+    assert!(h.undo(&world) && h.undo(&world));
+    assert_eq!(post(&world), golden, "undo restores the previous program");
 }
