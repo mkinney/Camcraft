@@ -120,7 +120,7 @@ pub(super) fn run_plain_with(
     // #2012: the regular ladder walks the stepdown of the approach's mode;
     // #2088's flat floors join it as before.
     let zs = cut_levels(facets, p, coarse_step(p))?;
-    ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, stock, avoid, method)
+    ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, stock, avoid, method, p.stock_to_leave)
 }
 
 /// 3D Pocket with "Do not touch" protected items (#2055), covering plain,
@@ -208,16 +208,16 @@ pub fn pocket3d_air_split(
     let zs = cut_levels_for(p.top_z, &p.links.approach, p.bottom_z, p.stepdown)?;
     let k = air_levels(&zs, air_above);
     if k == 0 || air_footprint.is_empty() {
-        return ladder(facets, footprint, p, &zs, None, None, home(p), false, sm_cut.as_ref(), None, None, AdaptiveMethod::Spiral);
+        return ladder(facets, footprint, p, &zs, None, None, home(p), false, sm_cut.as_ref(), None, None, AdaptiveMethod::Spiral, 0.0);
     }
-    let air = ladder(facets, air_footprint, p, &zs[..k], None, None, home(p), false, sm_air.as_ref(), None, None, AdaptiveMethod::Spiral)?;
+    let air = ladder(facets, air_footprint, p, &zs[..k], None, None, home(p), false, sm_air.as_ref(), None, None, AdaptiveMethod::Spiral, 0.0)?;
     if k == zs.len() {
         return Ok(air);
     }
     let start = air.moves.last().map_or_else(|| home(p), |m| m.to);
     let mut moves = air.moves;
     let mut notes = air.notes;
-    match ladder(facets, footprint, p, &zs[k..], None, None, start, false, sm_cut.as_ref(), None, None, AdaptiveMethod::Spiral) {
+    match ladder(facets, footprint, p, &zs[k..], None, None, start, false, sm_cut.as_ref(), None, None, AdaptiveMethod::Spiral, 0.0) {
         Ok(rest) => {
             moves.extend(rest.moves);
             notes.extend(rest.notes);
@@ -333,7 +333,7 @@ pub(super) fn run_rest_with(
     // #2012: the regular ladder walks the stepdown of the approach's mode;
     // #2088's flat floors join it as before.
     let zs = cut_levels(facets, p, coarse_step(p))?;
-    let coarse = ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, None, avoid, method)?;
+    let coarse = ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, None, avoid, method, p.stock_to_leave)?;
 
     // What the coarse ladder leaves standing, column by column: the
     // op-frame grid simulated from raw stock, or - when the program
@@ -363,7 +363,7 @@ pub(super) fn run_rest_with(
     // order (M8.1): the status line reads the substitutions as the
     // machine lived them.
     let mut notes = coarse.notes;
-    match ladder(facets, footprint, p, &zs_r, Some(&rest), None, start, shell, None, None, avoid, method) {
+    match ladder(facets, footprint, p, &zs_r, Some(&rest), None, start, shell, None, None, avoid, method, p.stock_to_leave) {
         Ok(rp) => {
             moves.extend(rp.moves);
             notes.extend(rp.notes);

@@ -30,7 +30,11 @@ use super::KindInfo;
 /// "drill, tap or boring bar".
 #[must_use]
 pub fn kinds_phrase(kinds: &[ToolKind]) -> String {
-    let words: Vec<String> = kinds.iter().map(ToString::to_string).collect();
+    // #3369: a form mill cuts no operation yet, so no refusal offers it
+    // beside a kind that does.
+    let read: Vec<&ToolKind> = kinds.iter().filter(|k| **k != ToolKind::FormMill).collect();
+    let shown = if read.is_empty() { kinds.iter().collect() } else { read };
+    let words: Vec<String> = shown.iter().map(ToString::to_string).collect();
     match words.split_last() {
         None => String::from("tool"),
         Some((last, [])) => last.clone(),
@@ -49,12 +53,13 @@ fn setup_words(world: &World) -> String {
 }
 
 /// The tool library, name-sorted, with each tool's kind. #3368: a flat
-/// or ball taper tip fits no operation yet, so it is not offered.
+/// or ball taper tip fits no operation yet, so it is not offered; nor
+/// is a form mill (#3369).
 fn library(world: &World) -> Vec<(String, ToolKind)> {
     model::named_entities(world)
         .into_iter()
         .filter_map(|(name, e)| model::tool_of(world, &e).map(|t| (name, t)))
-        .filter(|(_, t)| !camcraft_tools::taper::is_unread_tip(t))
+        .filter(|(_, t)| !camcraft_tools::taper::is_unread_tip(t) && t.kind != ToolKind::FormMill)
         .map(|(name, t)| (name, t.kind))
         .collect()
 }
@@ -165,6 +170,19 @@ pub fn tool_refusal(world: &World, info: &KindInfo, tool: &str) -> Option<String
 /// ([`tool_problem`]) both say it, so a tool edited to such a tip after
 /// its operations exist is refused too.
 fn unread_tip_refusal(def: &Tool, tool: &str, info: &KindInfo) -> Option<String> {
+    // #3369: no generator reads a form mill's outline yet. The 2D
+    // Chamfer names the edge form work that opens it (#896).
+    if def.kind == ToolKind::FormMill {
+        let opens = if info.ty == super::OpType::Chamfer2D {
+            " - the edge form work (#896) opens the 2D Chamfer to it"
+        } else {
+            ""
+        };
+        return Some(format!(
+            "'{tool}' is a form mill: a {} operation does not read its form outline yet{opens}",
+            info.label
+        ));
+    }
     camcraft_tools::taper::is_unread_tip(def).then(|| {
         format!(
             "'{tool}' has a {} tip: the tip form is not read by a {} operation yet - use a chamfer mill with a sharp tip",

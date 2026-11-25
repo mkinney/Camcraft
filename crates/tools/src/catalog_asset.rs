@@ -62,6 +62,7 @@ enum KindWord {
     Keyseat,
     Dovetail,
     Lollipop,
+    FormMill,
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -120,6 +121,9 @@ struct Def {
     tip_form: crate::taper::TaperTip,
     #[serde(default)]
     tip_diameter: f64,
+    /// #3369: a form mill's outline; a catalogue entry states its preset.
+    #[serde(default)]
+    form: Option<crate::form_mill::FormSpec>,
 }
 
 fn yes() -> bool {
@@ -152,6 +156,7 @@ impl Def {
                 KindWord::Keyseat => ToolKind::Keyseat,
                 KindWord::Dovetail => ToolKind::Dovetail,
                 KindWord::Lollipop => ToolKind::Lollipop,
+                KindWord::FormMill => ToolKind::FormMill,
             },
             diameter: self.diameter,
             corner_r: self.corner_r,
@@ -182,6 +187,7 @@ impl Def {
             turning: self.turning,
             tip_form: self.tip_form,
             tip_diameter: self.tip_diameter,
+            form: self.form,
         }
     }
 }
@@ -213,9 +219,11 @@ pub fn parse_catalog(text: &str) -> Result<Vec<(String, Tool)>, String> {
             return Err(format!("tool catalog: tool '{name}' appears twice"));
         }
         let def: Def = serde_json::from_value(row.definition).map_err(|e| format!("tool catalog: tool '{name}': {e}"))?;
-        let tool = def.into_tool();
-        if !tool.is_sane() {
-            return Err(format!("tool catalog: tool '{name}' is refused: its sizes must be finite and positive"));
+        let mut tool = def.into_tool();
+        // #3369: a preset form writes its own points.
+        crate::form_mill::fill(&mut tool);
+        if let Some(why) = tool.why_not_sane() {
+            return Err(format!("tool catalog: tool '{name}' is refused: {why}"));
         }
         out.push((name, tool));
     }

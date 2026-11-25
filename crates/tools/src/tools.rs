@@ -21,6 +21,7 @@ pub use crate::cutting::{ToolMaterial, WorkMaterial};
 pub use crate::turning_data::TurningData;
 pub use crate::thread_hand::ThreadHand;
 pub use crate::taper::TaperTip;
+pub use crate::form_mill::{FormPreset, FormSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolKind {
@@ -136,6 +137,11 @@ pub enum ToolKind {
     /// a narrower neck. `flute_len` is the height above the tip where
     /// the neck leaves the ball (from the ball's centre up).
     Lollipop,
+    /// Form mill (#3369, [`crate::form_mill`]): a router-style cutter
+    /// whose edge is the drawn outline in `form`, with an optional pilot
+    /// bearing at the tip. `diameter` and `flute_len` are the outline's
+    /// widest cut and its top. No operation cuts with it yet.
+    FormMill,
 }
 
 impl core::fmt::Display for ToolKind {
@@ -163,6 +169,7 @@ impl core::fmt::Display for ToolKind {
             ToolKind::Keyseat => "keyseat cutter",
             ToolKind::Dovetail => "dovetail cutter",
             ToolKind::Lollipop => "lollipop cutter",
+            ToolKind::FormMill => "form mill",
         };
         f.write_str(s)
     }
@@ -287,6 +294,9 @@ pub struct Tool {
     /// #3368: a flat tip's diameter in mm (the cone extended down to the
     /// tip face); 0 for a sharp tip.
     pub tip_diameter: f64,
+    /// #3369: a form mill's outline and pilot ([`crate::form_mill`]);
+    /// `None` on every other kind.
+    pub form: Option<FormSpec>,
 }
 
 impl Tool {
@@ -440,6 +450,12 @@ impl Tool {
             // A dovetail narrows upward and a lollipop is a ball
             // (#1444): the head draws its own flute top.
             ToolKind::Dovetail | ToolKind::Lollipop => neck_from = crate::undercut::head_outline(self, &mut p),
+            // #3369: a form mill draws its outline, arcs flattened outside.
+            ToolKind::FormMill => {
+                if !crate::form_mill::outline(self, &mut p) {
+                    add_pt(&mut p, 0.0, r);
+                }
+            }
             // The chamfer mill's cone is the same picture read the
             // other way in purpose - apex at the tip center opening
             // upward to the full radius - so it shares the drill's
@@ -538,6 +554,7 @@ pub fn probe_tool(ball_d: f64, stylus_len: f64) -> Tool {
         turning: None,
         tip_form: Default::default(),
         tip_diameter: 0.0,
+        form: None,
     }
 }
 
@@ -575,6 +592,7 @@ pub fn torch_tool(kerf: f64) -> Tool {
         turning: None,
         tip_form: Default::default(),
         tip_diameter: 0.0,
+        form: None,
     }
 }
 

@@ -97,6 +97,7 @@ pub(super) fn ladder(
     stock: Option<&Region>,
     avoid: Option<&AvoidSpec>,
     method: AdaptiveMethod,
+    axial_leave: f64,
 ) -> Result<Toolpath, GenError> {
     let r = p.tool_diameter * 0.5;
     let hop_z = p.retract_z.unwrap_or(p.clearance_z).min(p.clearance_z);
@@ -138,13 +139,10 @@ pub(super) fn ladder(
             prev_passes.clear();
         }
         // The level law, in two region ops: the footprint minus the part
-        // material standing above the plane - its cross-section and the
-        // shadow of anything hanging over it (a blind floor's underside,
-        // an overhang), so a level under a closed floor has no area
-        // there - then the cutter-center area by one erosion. The shadow
-        // is what keeps the superset law below true: target(z) only
-        // grows as z falls, so a center point at z is open from above.
-        let target = level_target(facets, footprint, z)?;
+        // material standing above `z - axial_leave` - its cross-section and
+        // the shadow of anything hanging over it - so tops, shallow slopes,
+        // and floors keep their axial stock allowance too.
+        let target = level_target(facets, footprint, z - axial_leave)?;
         let target = match rest {
             // The level law on rest terms: only columns the simulated
             // state still has standing above this plane. The islands

@@ -333,7 +333,8 @@ fn a_sharp_taper_keeps_its_profile_and_digest() {
         let (r, fl) = (t.diameter * 0.5, t.flute_len);
         let top = (r / tan).min(fl);
         let mut want = vec![SpunPoint::line(0.0, 0.0), SpunPoint::line(top, top * tan)];
-        if fl > top {
+        // #3938: a flute that ends on the cone adds the radial shoulder.
+        if fl > top || r - top * tan >= super::MIN_LEN {
             want.push(SpunPoint::line(fl, r));
         }
         assert_eq!(t.meridian().map(|m| m.points().to_vec()), Ok(want), "{t:?}");
@@ -341,6 +342,37 @@ fn a_sharp_taper_keeps_its_profile_and_digest() {
         assert!(crate::cutter_fit::same_shape(&t, &t.clone()));
         let flat = Tool { tip_form: crate::taper::TaperTip::Flat, tip_diameter: 1.0, ..t.clone() };
         assert!(!crate::cutter_fit::same_shape(&t, &flat));
+    }
+}
+
+/// #3938 (safety floor): every mill kind whose profile closes its flute
+/// at the full radius ends its meridian there too - a flute shorter than
+/// the cone (sharp taper, drill) or the corner (ball, bull) steps out by
+/// the radial shoulder #3929 gave the flat and ball tips: a face, no atom.
+#[test]
+fn a_short_flute_meridian_has_the_profile_shoulder() {
+    let tools = [
+        mill(ToolKind::Taper, 10.0, 0.0, 30.0, 5.0), // cone reaches r 18.7 mm up
+        mill(ToolKind::Drill, 8.0, 0.0, 118.0, 1.5), // point reaches r 2.4 mm up
+        mill(ToolKind::BallNose, 10.0, 5.0, 0.0, 3.0),
+        mill(ToolKind::BullNose, 10.0, 3.0, 0.0, 2.0),
+        mill(ToolKind::EndMill, 10.0, 0.0, 0.0, 0.5),
+        cutter(ToolKind::TSlot, 20.0, 5.0, 10.0, 10.0, 0.0),
+    ];
+    for t in tools {
+        let (r, fl) = (t.diameter * 0.5, t.flute_len);
+        let prof = t.profile().into_iter().filter(|q| q.0 == fl).fold(0.0, |m: f64, q| m.max(q.1));
+        assert_eq!(prof, r, "{t:?}: the profile's flute top");
+        let m = t.meridian().unwrap_or_else(|e| panic!("{t:?}: {e}"));
+        let last = m.points().last().map(|p| (p.z, p.r));
+        assert_eq!(last, Some((fl, prof)), "{t:?}: the meridian ends at {last:?}, the profile at r {prof}");
+        if matches!(t.kind, ToolKind::Drill | ToolKind::Taper) {
+            let tan = (t.tip_angle.to_radians() * 0.5).tan();
+            let cone = m.points().iter().rev().nth(1).map(|p| (p.z, p.r));
+            assert_eq!(cone, Some((fl, fl * tan)), "{t:?}: the cone still ends at the flute top");
+        }
+        let atoms = m.atoms(Bound::Outer, 1e-3).unwrap_or_else(|e| panic!("{t:?}: {e}"));
+        assert!(atoms.iter().all(|a| a.z1 - a.z0 > 0.0), "{t:?}: a face is no atom");
     }
 }
 

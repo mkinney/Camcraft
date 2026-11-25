@@ -223,6 +223,8 @@ pub(super) fn seed_kind(state: &mut State, before: usize) {
     super::tool_undercut_row::seed(&mut state.tool_ui);
     // #3368: only a chamfer mill states a tip; its form keeps sane numbers.
     super::tool_taper_tip_row::seed(&mut state.tool_ui);
+    // #3369: only a form mill states a form; a new one starts as a roundover.
+    super::tool_form_mill_row::seed(&mut state.tool_ui);
     // The torch (#670): no spindle, no corner - a kerf. The sinker
     // electrode (#541) and EDM wire (#2011) turn none either.
     if matches!(

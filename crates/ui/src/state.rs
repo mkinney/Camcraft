@@ -1261,6 +1261,8 @@ pub struct ToolUi {
     /// #3368: a chamfer mill's tip form and flat-tip diameter.
     pub tip_form: camcraft_app::tools::TaperTip,
     pub tip_diameter: f64,
+    /// #3369: a form mill's outline, pilot and preset numbers.
+    pub form: Option<camcraft_app::tools::FormSpec>,
 }
 
 impl Default for ToolUi {
@@ -1302,6 +1304,7 @@ impl ToolUi {
                 ToolKind::Keyseat => 19,
                 ToolKind::Dovetail => 20,
                 ToolKind::Lollipop => 21,
+                ToolKind::FormMill => 22,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -1333,6 +1336,7 @@ impl ToolUi {
             outline: t.outline.clone(),
             tip_form: t.tip_form,
             tip_diameter: t.tip_diameter,
+            form: t.form.clone(),
         }
     }
 
@@ -1362,6 +1366,7 @@ impl ToolUi {
             19 => ToolKind::Keyseat,
             20 => ToolKind::Dovetail,
             21 => ToolKind::Lollipop,
+            22 => ToolKind::FormMill,
             _ => ToolKind::EndMill,
         }
     }
@@ -1417,8 +1422,12 @@ impl ToolUi {
             outline: self.outline.clone(),
             tip_form: self.tip_form,
             tip_diameter: self.tip_diameter,
+            form: self.form.clone(),
         };
         tool.corner_r = tool.tip_corner_r();
+        // #3369: a form mill's preset writes its outline, diameter and
+        // flute length.
+        tool.settle_form();
         // #2015: the shown Unknown row, untouched, stays derived.
         camcraft_app::tool_cutting_rows::canonical(&mut tool);
         tool

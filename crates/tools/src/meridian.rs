@@ -192,6 +192,10 @@ impl Tool {
     /// by name.
     pub fn meridian(&self) -> Result<Meridian, MeridianError> {
         self.check_meridian_inputs()?;
+        // #3369: a form mill's meridian is its drawn outline.
+        if self.kind == ToolKind::FormMill {
+            return crate::form_mill::meridian(self);
+        }
         let (r, fl) = (self.diameter * 0.5, self.flute_len);
         let line = SpunPoint::line;
         // #3368: a flat or ball taper tip draws its own face and arc.
@@ -221,8 +225,14 @@ impl Tool {
                 let tan = (self.tip_angle.to_radians() * 0.5).tan();
                 if self.tip_angle > 0.0 && tan.is_finite() && tan > 0.0 {
                     let top = (r / tan).min(fl);
-                    let mut p = vec![line(0.0, 0.0), line(top, top * tan)];
-                    if fl > top {
+                    let top_r = top * tan;
+                    let mut p = vec![line(0.0, 0.0), line(top, top_r)];
+                    // #3938: a flute that ends on the cone steps out to
+                    // the full radius at its top, as `Tool::profile`
+                    // draws it - the straight side above the cone, or
+                    // the radial shoulder of a short flute (a face, no
+                    // atom). Under MIN_LEN the cone already meets r.
+                    if fl > top || r - top_r >= MIN_LEN {
                         p.push(line(fl, r));
                     }
                     p
@@ -270,6 +280,7 @@ impl Tool {
                 | ToolKind::Keyseat
                 | ToolKind::Dovetail
                 | ToolKind::Lollipop
+                | ToolKind::FormMill
         ) {
             return Err(MeridianError::NotAMill(self.kind));
         }
@@ -326,7 +337,8 @@ impl Tool {
 
 /// A rounded tip: the flat face to `r - cr`, the corner arc of radius
 /// `cr` (centre `cr` above the tip), the flute side to `fl`. A flute
-/// shorter than the corner ends the arc at `fl`, as the solid law does.
+/// shorter than the corner ends the arc at `fl`, as the solid law does,
+/// then steps out to `r` there.
 fn tip_arc(r: f64, cr: f64, fl: f64) -> Vec<SpunPoint> {
     let flat = r - cr;
     let mut p = vec![SpunPoint::line(0.0, 0.0)];
@@ -343,10 +355,13 @@ fn tip_arc(r: f64, cr: f64, fl: f64) -> Vec<SpunPoint> {
         }
     } else {
         let e = cr - fl;
-        p.push(SpunPoint::line(
-            fl,
-            flat + (cr * cr - e * e).max(0.0).sqrt(),
-        ));
+        let top_r = flat + (cr * cr - e * e).max(0.0).sqrt();
+        p.push(SpunPoint::line(fl, top_r));
+        // #3938: the radial shoulder to the full radius at the flute
+        // top, as `Tool::profile` draws it (a face, no atom).
+        if r - top_r >= MIN_LEN {
+            p.push(SpunPoint::line(fl, r));
+        }
     }
     p
 }

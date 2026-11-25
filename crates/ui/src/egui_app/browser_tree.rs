@@ -134,6 +134,7 @@ pub(crate) fn kind_name(k: ToolKind) -> &'static str {
         ToolKind::Keyseat => "keyseat cutter",
         ToolKind::Dovetail => "dovetail cutter",
         ToolKind::Lollipop => "lollipop cutter",
+        ToolKind::FormMill => "form mill",
     }
 }
 

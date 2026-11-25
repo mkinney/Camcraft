@@ -45,7 +45,9 @@ pub(crate) fn category_of(kind: ToolKind) -> ToolCategory {
         | ToolKind::TSlot
         | ToolKind::Keyseat
         | ToolKind::Dovetail
-        | ToolKind::Lollipop => ToolCategory::ThreadSlotForm,
+        | ToolKind::Lollipop
+        // #3369: the form mill joins the form cutters of this family.
+        | ToolKind::FormMill => ToolCategory::ThreadSlotForm,
         ToolKind::Drill => ToolCategory::Drills,
         ToolKind::Tap => ToolCategory::Taps,
         ToolKind::Bore => ToolCategory::BoringBars,

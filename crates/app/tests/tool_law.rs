@@ -8,7 +8,8 @@
 //! own generators' tool doors; no vendor material consulted.
 //!
 //! Gate map (M4.4): covers app::operation (kinds table, tool_law), tools::tools,
-//! app::operation::tool_gate (#3368: a flat or ball taper tip).
+//! app::operation::tool_gate (#3368: a flat or ball taper tip; #3369: the
+//! form mill).
 
 use camcraft_app::commands::{AddTool, History};
 use camcraft_app::operation::{tool_gate, tool_law, KindInfo, OpType, Section};
@@ -41,6 +42,7 @@ fn every_tool_kind() -> Vec<ToolKind> {
         ToolKind::Keyseat,
         ToolKind::Dovetail,
         ToolKind::Lollipop,
+        ToolKind::FormMill,
     ];
     for k in &all {
         match k {
@@ -65,7 +67,8 @@ fn every_tool_kind() -> Vec<ToolKind> {
             | ToolKind::TSlot
             | ToolKind::Keyseat
             | ToolKind::Dovetail
-            | ToolKind::Lollipop => {}
+            | ToolKind::Lollipop
+            | ToolKind::FormMill => {}
         }
     }
     all
@@ -202,5 +205,38 @@ fn every_operation_refuses_a_non_sharp_taper_by_name() {
         assert!(!tool_gate::fitting_tools(&world, row).iter().any(|n| n != "SHARP"), "{:?} offers only the sharp tip", row.ty);
         let hint = tool_gate::catalog_suggestion(&catalog(), &[ToolKind::Taper]).unwrap_or_default();
         assert!(!hint.contains("-F10") && !hint.contains("-R05"), "{hint}");
+    }
+}
+
+/// #3369: until a generator reads a form mill's outline, every operation
+/// that has it in its family refuses it by name - the tool door at
+/// creation, edit and re-tool - and the 2D Chamfer names the edge form
+/// work. No operation offers it, no refusal suggests it, and the catalog
+/// hint never names one.
+#[test]
+fn form_mill_is_refused_by_every_door() {
+    let world = camcraft_app::world::new_world();
+    let mut h = History::default();
+    for name in ["CM-0600-90", "FM-RO-R6"] {
+        let Some((_, t)) = catalog().into_iter().find(|(n, _)| *n == name) else {
+            panic!("the catalog has {name}");
+        };
+        let cmd = AddTool::new(&world, name, t).unwrap_or_else(|e| panic!("{name}: {e}"));
+        h.execute(&world, cmd);
+    }
+    let rows: Vec<&KindInfo> = KindInfo::ALL.iter().filter(|r| r.accepts(ToolKind::FormMill)).collect();
+    assert!(rows.iter().any(|r| r.ty == OpType::Chamfer2D), "the form mill is in the 2D Chamfer family");
+    for row in KindInfo::ALL {
+        assert!(tool_gate::tool_refusal(&world, row, "FM-RO-R6").is_some(), "{:?} took a form mill", row.ty);
+        assert!(!tool_gate::fitting_tools(&world, row).iter().any(|n| n == "FM-RO-R6"), "{:?} offers a form mill", row.ty);
+    }
+    for row in rows {
+        let why = tool_gate::tool_refusal(&world, row, "FM-RO-R6").unwrap_or_default();
+        assert!(why.contains("'FM-RO-R6' is a form mill"), "{:?}: {why}", row.ty);
+        assert!(why.contains(row.label), "{:?} names itself: {why}", row.ty);
+        assert_eq!(why.contains("edge form work (#896)"), row.ty == OpType::Chamfer2D, "{:?}: {why}", row.ty);
+        assert!(!tool_gate::kinds_phrase(row.tool_kinds).contains("form mill"), "{:?} suggests a form mill", row.ty);
+        let hint = tool_gate::catalog_suggestion(&catalog(), row.tool_kinds).unwrap_or_default();
+        assert!(!hint.contains("FM-"), "{hint}");
     }
 }

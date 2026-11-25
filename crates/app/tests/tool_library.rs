@@ -417,3 +417,45 @@ fn a_library_without_a_cutter_keeps_version_4_or_lower() {
     let err = parse_tool_library(r#"{"format":"camcraft-tools","version":7,"tools":[]}"#).expect_err("version 7");
     assert!(err.contains("version 7") && err.contains("1 to 6"), "{err}");
 }
+
+/// #3369: a form mill rides the library file and the project file with
+/// its outline, pilot and preset - the `form_mill` word, which an older
+/// build refuses by name, so no version step - and a number edit
+/// (`ChangeTool`) keeps the outline. The preset alone (a catalogue entry
+/// without points) reads as the points the preset writes.
+#[test]
+fn a_form_mill_round_trips_with_its_outline() {
+    use camcraft_app::commands::ChangeTool;
+    use camcraft_app::tool_library::TIP_FORM_VERSION;
+    let ro = cat("FM-RO-R6");
+    let form = ro.form.clone().expect("a catalogue form mill states its form");
+    assert!(form.points.len() >= 4 && form.pilot_len > 0.0, "{form:?}");
+    let (w, mut h) = world_with(&[("RO", ro.clone())]);
+    let text = export_tool_library(&w).expect("export");
+    assert!(text.contains("\"form_mill\"") && text.contains("\"roundover\"") && text.contains("\"pilot_len\""), "{text}");
+    let doc: Value = serde_json::from_str(&text).expect("json");
+    assert!(doc["version"].as_u64().is_some_and(|v| v < TIP_FORM_VERSION), "a form mill steps no version: {doc}");
+    let lib = parse_tool_library(&text).expect("the library reads back");
+    assert_eq!(lib[0].tool, ro, "the library file keeps the form mill exactly");
+    // The project file keeps it too, byte for byte.
+    let saved = project::save_text(&w).expect("saved");
+    let opened = new_world();
+    project::open(&opened, &saved).expect("this build reads its own form mill");
+    assert_eq!(tool_named(&opened, "RO"), Some(ro.clone()));
+    assert_eq!(project::save_text(&opened).expect("saved again"), saved, "byte for byte");
+    // A number edit keeps the drawn outline; one undo restores the tool.
+    let edited = Tool { shank_len: ro.shank_len + 5.0, rpm: 12000.0, ..ro.clone() };
+    h.execute(&w, ChangeTool::new(&w, "RO", edited.clone()).expect("a number edit"));
+    assert_eq!(tool_named(&w, "RO").and_then(|t| t.form), Some(form.clone()), "the outline stays");
+    assert!(h.undo(&w));
+    assert_eq!(tool_named(&w, "RO"), Some(ro.clone()));
+    // A diameter that leaves the outline is refused by name.
+    let off = Tool { diameter: 20.0, ..ro.clone() };
+    let why = ChangeTool::new(&w, "RO", off).err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(why.contains("diameter and flute length are its outline's"), "{why}");
+    // The preset without points reads as the points the preset writes.
+    let mut v: Value = serde_json::from_str(&text).expect("json");
+    v["tools"][0]["definition"]["form"]["points"] = json!([]);
+    let lib = parse_tool_library(&v.to_string()).expect("a preset without points reads");
+    assert_eq!(lib[0].tool.form, Some(form));
+}

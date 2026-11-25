@@ -115,6 +115,7 @@ fn drill_retract() -> String {
         thread_hand: Default::default(),
         tip_form: Default::default(),
         tip_diameter: 0.0,
+        form: None,
     };
     let hole = |x: f64, floor_z: f64| Hole {
         xy: Point2::new(x, 10.0),

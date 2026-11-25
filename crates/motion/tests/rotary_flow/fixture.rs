@@ -170,6 +170,7 @@ pub fn ball(d: f64) -> Tool {
         turning: None,
         tip_form: Default::default(),
         tip_diameter: 0.0,
+        form: None,
     }
 }
 

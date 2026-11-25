@@ -6799,6 +6799,7 @@ fn stub_tool() -> Tool {
         turning: None,
         tip_form: Default::default(),
         tip_diameter: 0.0,
+        form: None,
     }
 }
 

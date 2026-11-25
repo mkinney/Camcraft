@@ -200,6 +200,9 @@ icon_table! {
     ToolKeyseat => "tool-keyseat", "icon-tool-keyseat";
     ToolDovetail => "tool-dovetail", "icon-tool-dovetail";
     ToolLollipop => "tool-lollipop", "icon-tool-lollipop";
+    // #3369: a router bit - a cutter body with a concave form over a
+    // pilot bearing.
+    ToolFormMill => "tool-form-mill", "icon-tool-form-mill";
     // The operation page's section tabs (M1.4's named sections), one
     // per tab the page shows; drawn from what each section is.
     SecGeometry => "sec-geometry", "icon-sec-geometry";

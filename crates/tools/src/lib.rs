@@ -55,6 +55,8 @@ pub mod wire;
 pub mod tools;
 // #3368: a tapered mill's tip form (sharp, flat, ball) and its geometry.
 pub mod taper;
+// #3369: a form mill's outline, pilot bearing and router bit presets.
+pub mod form_mill;
 // #1186: the tool sanity law, said by name.
 pub mod tool_sanity;
 // #2566: machine controller tool tables (Tormach PathPilot CSV, Hurco WinMax TCM).

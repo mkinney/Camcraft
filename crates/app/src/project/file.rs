@@ -570,6 +570,11 @@ pub struct ToolDto {
     pub tip_form: camcraft_tools::taper::TaperTip,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub tip_diameter: f64,
+    /// #3369: a form mill's outline, pilot and preset. Only the
+    /// `form_mill` kind states it, and an older build refuses that word,
+    /// so no version step is needed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<camcraft_tools::form_mill::FormSpec>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -651,6 +656,10 @@ pub enum ToolKindDto {
     Keyseat,
     Dovetail,
     Lollipop,
+    /// The form mill (#3369): an additive word - an older build refuses
+    /// it by name, so it never reads the outline as another tool. The
+    /// outline rides the `form` key.
+    FormMill,
 }
 
 impl ToolDto {
@@ -679,6 +688,7 @@ impl ToolDto {
                 ToolKind::Keyseat => ToolKindDto::Keyseat,
                 ToolKind::Dovetail => ToolKindDto::Dovetail,
                 ToolKind::Lollipop => ToolKindDto::Lollipop,
+                ToolKind::FormMill => ToolKindDto::FormMill,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -717,6 +727,7 @@ impl ToolDto {
             outline: t.outline.clone(),
             tip_form: t.tip_form,
             tip_diameter: t.tip_diameter,
+            form: t.form.clone(),
         }
     }
 
@@ -726,6 +737,9 @@ impl ToolDto {
     pub(super) fn to_tool(&self) -> Tool {
         let mut tool = self.tool_as_written();
         camcraft_tools::cutting_rows::canonical(&mut tool);
+        // #3369: a preset form that states no points (a catalogue entry)
+        // reads as the points its preset writes.
+        camcraft_tools::form_mill::fill(&mut tool);
         tool
     }
 
@@ -754,6 +768,7 @@ impl ToolDto {
                 ToolKindDto::Keyseat => ToolKind::Keyseat,
                 ToolKindDto::Dovetail => ToolKind::Dovetail,
                 ToolKindDto::Lollipop => ToolKind::Lollipop,
+                ToolKindDto::FormMill => ToolKind::FormMill,
             },
             diameter: self.diameter,
             corner_r: self.corner_r,
@@ -792,6 +807,7 @@ impl ToolDto {
             outline: self.outline.clone(),
             tip_form: self.tip_form,
             tip_diameter: self.tip_diameter,
+            form: self.form.clone(),
         }
     }
 }

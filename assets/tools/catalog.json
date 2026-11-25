@@ -1639,6 +1639,174 @@
         "feed": 2500.0,
         "center_cutting": false
       }
+    },
+    {
+      "name": "FM-RO-R6",
+      "definition": {
+        "kind": "form_mill",
+        "diameter": 25.0,
+        "corner_r": 0.0,
+        "flute_len": 18.0,
+        "shank_d": 12.0,
+        "shank_len": 32.0,
+        "holder_d": 32.0,
+        "holder_len": 25.0,
+        "material_group": "wood",
+        "rpm": 16000.0,
+        "feed": 1500.0,
+        "tool_material": "carbide",
+        "flutes": 2,
+        "center_cutting": false,
+        "form": {
+          "preset": {
+            "kind": "roundover",
+            "radius": 6.0,
+            "pilot_radius": 6.5,
+            "height": 13.0
+          },
+          "pilot_len": 5.0
+        }
+      }
+    },
+    {
+      "name": "FM-RO-R0250IN",
+      "definition": {
+        "kind": "form_mill",
+        "diameter": 25.4,
+        "corner_r": 0.0,
+        "flute_len": 17.4625,
+        "shank_d": 12.7,
+        "shank_len": 32.0,
+        "holder_d": 32.0,
+        "holder_len": 25.0,
+        "material_group": "wood",
+        "rpm": 16000.0,
+        "feed": 1500.0,
+        "tool_material": "carbide",
+        "flutes": 2,
+        "center_cutting": false,
+        "form": {
+          "preset": {
+            "kind": "roundover",
+            "radius": 6.35,
+            "pilot_radius": 6.35,
+            "height": 12.7
+          },
+          "pilot_len": 4.7625
+        }
+      }
+    },
+    {
+      "name": "FM-CV-R6",
+      "definition": {
+        "kind": "form_mill",
+        "diameter": 25.0,
+        "corner_r": 0.0,
+        "flute_len": 18.0,
+        "shank_d": 12.0,
+        "shank_len": 32.0,
+        "holder_d": 32.0,
+        "holder_len": 25.0,
+        "material_group": "wood",
+        "rpm": 16000.0,
+        "feed": 1500.0,
+        "tool_material": "carbide",
+        "flutes": 2,
+        "center_cutting": false,
+        "form": {
+          "preset": {
+            "kind": "cove",
+            "radius": 6.0,
+            "pilot_radius": 6.5,
+            "height": 13.0
+          },
+          "pilot_len": 5.0
+        }
+      }
+    },
+    {
+      "name": "FM-CV-R0250IN",
+      "definition": {
+        "kind": "form_mill",
+        "diameter": 25.4,
+        "corner_r": 0.0,
+        "flute_len": 17.4625,
+        "shank_d": 12.7,
+        "shank_len": 32.0,
+        "holder_d": 32.0,
+        "holder_len": 25.0,
+        "material_group": "wood",
+        "rpm": 16000.0,
+        "feed": 1500.0,
+        "tool_material": "carbide",
+        "flutes": 2,
+        "center_cutting": false,
+        "form": {
+          "preset": {
+            "kind": "cove",
+            "radius": 6.35,
+            "pilot_radius": 6.35,
+            "height": 12.7
+          },
+          "pilot_len": 4.7625
+        }
+      }
+    },
+    {
+      "name": "FM-VG-90-12",
+      "definition": {
+        "kind": "form_mill",
+        "diameter": 12.0,
+        "corner_r": 0.0,
+        "flute_len": 6.0,
+        "shank_d": 8.0,
+        "shank_len": 32.0,
+        "holder_d": 32.0,
+        "holder_len": 25.0,
+        "material_group": "wood",
+        "rpm": 18000.0,
+        "feed": 1500.0,
+        "tool_material": "carbide",
+        "flutes": 2,
+        "center_cutting": true,
+        "form": {
+          "preset": {
+            "kind": "v_groove",
+            "angle": 90.0,
+            "tip_radius": 0.0,
+            "diameter": 12.0,
+            "height": 6.0
+          }
+        }
+      }
+    },
+    {
+      "name": "FM-VG-90-0500IN",
+      "definition": {
+        "kind": "form_mill",
+        "diameter": 12.7,
+        "corner_r": 0.0,
+        "flute_len": 6.35,
+        "shank_d": 6.35,
+        "shank_len": 25.0,
+        "holder_d": 32.0,
+        "holder_len": 25.0,
+        "material_group": "wood",
+        "rpm": 18000.0,
+        "feed": 1500.0,
+        "tool_material": "carbide",
+        "flutes": 2,
+        "center_cutting": true,
+        "form": {
+          "preset": {
+            "kind": "v_groove",
+            "angle": 90.0,
+            "tip_radius": 0.0,
+            "diameter": 12.7,
+            "height": 6.35
+          }
+        }
+      }
     }
   ]
 }

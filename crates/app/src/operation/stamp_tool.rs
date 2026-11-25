@@ -46,6 +46,8 @@ pub(super) fn write(world: &World, tool_name: &str, params: &OpParams, h: &mut s
         crate::tools::ToolKind::Keyseat => 19,
         crate::tools::ToolKind::Dovetail => 20,
         crate::tools::ToolKind::Lollipop => 21,
+        // #3369: the form mill appends.
+        crate::tools::ToolKind::FormMill => 22,
     });
     for v in [
         tool.diameter,
@@ -125,6 +127,16 @@ pub(super) fn write(world: &World, tool_name: &str, params: &OpParams, h: &mut s
         crate::tools::ToolKind::ThreadMill | crate::tools::ToolKind::ThreadMillSingle => {
             w(h, tool.tip_angle);
             w(h, tool.pitch_min);
+        }
+        // #3369: a form mill IS its outline - every point, arc and the
+        // pilot's length, so a redrawn form is a different cutter.
+        crate::tools::ToolKind::FormMill => {
+            if let Some(form) = &tool.form {
+                w(h, form.pilot_len);
+                for p in &form.points {
+                    p.iter().for_each(|v| w(h, *v));
+                }
+            }
         }
         _ => {}
     }

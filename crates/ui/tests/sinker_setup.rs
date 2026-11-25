@@ -57,6 +57,7 @@ fn electrode() -> Tool {
         outline: Vec::new(),
         tip_form: Default::default(),
         tip_diameter: 0.0,
+        form: None,
     }
 }
 

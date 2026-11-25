@@ -102,6 +102,10 @@ impl Tool {
         if let Some(why) = crate::taper::refusal(self) {
             return Some(why);
         }
+        // #3369: a form mill's outline, and no outline on another kind.
+        if let Some(why) = crate::form_mill::refusal(self) {
+            return Some(why);
+        }
         self.kind_rule()
     }
 
@@ -175,7 +179,8 @@ impl Tool {
             | ToolKind::Form
             | ToolKind::Taper
             | ToolKind::Probe
-            | ToolKind::Torch => None,
+            | ToolKind::Torch
+            | ToolKind::FormMill => None,
         }
     }
 

@@ -35,8 +35,10 @@ pub const CENTERLINE: &[ToolKind] = &[
 ];
 
 /// Cone-on-the-edge kinds (2D Chamfer, Deburr): the generatrix lies on
-/// the break, read off `tip_angle` - the chamfer mill and nothing else.
-pub const CONE: &[ToolKind] = &[ToolKind::Taper];
+/// the break, read off `tip_angle` - the chamfer mill. #3369: the form
+/// mill is in the family for the edge form work, and every door refuses
+/// it by name until a generator reads its outline (`tool_gate`).
+pub const CONE: &[ToolKind] = &[ToolKind::Taper, ToolKind::FormMill];
 
 /// The helical thread mill (#894): the multi-form and single-form
 /// thread-mill kinds and nothing else. A Tap is a rigid tap - one

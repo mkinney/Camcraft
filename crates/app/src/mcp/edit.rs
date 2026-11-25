@@ -250,7 +250,7 @@ pub(super) fn add_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, S
             if d.get("holder").is_some_and(|h| !h.is_null()) {
                 return Err("bad tool definition: its \"holder\" reference is not read by add_tool - name the library holder in add_tool's own \"holder\" (set_tool_holder sets the gauge length and projection)".into());
             }
-            (None, project::tool_from_json(d).map_err(|e| format!("bad tool definition: {e}"))?)
+            (None, project::tool_from_json(d).map(super::tool_edit::settled).map_err(|e| format!("bad tool definition: {e}"))?)
         }
         _ => return Err("give exactly one of \"catalog\" or \"definition\"".into()),
     };
