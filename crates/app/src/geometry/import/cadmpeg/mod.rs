@@ -69,10 +69,11 @@ impl Settings {
 /// Convert `input` to STEP and import it within `budget` facets. The STEP
 /// text passes each guard of the STEP importer, as a STEP file from disk
 /// does; a closed shell that meshes open is kept and named
-/// (`Graded::open`).
-pub fn load_open_within(input: &Path, budget: usize, settings: &Settings) -> Result<Graded, CommandError> {
+/// (`Graded::open`). `units` is the caller's length unit for converted
+/// STEP text that states none (#1874): it is refused, never guessed.
+pub fn load_open_within(input: &Path, budget: usize, settings: &Settings, units: Option<crate::units::Unit>) -> Result<Graded, CommandError> {
     let step = to_step(input, settings)?;
-    Ok(super::parse_model_open_within(&step, Format::Step, budget)?)
+    Ok(super::parse_model_open_in(&step, Format::Step, budget, units)?)
 }
 
 /// The STEP text that cadmpeg makes from `input`, or a named refusal.

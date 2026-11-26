@@ -1,7 +1,7 @@
 //! Provenance: original operation header controls from our own UI design.
 
 use egui::Ui;
-use camcraft_app::{model, schema::Operation};
+use camcraft_app::schema::Operation;
 use crate::state::{CommandKind, State};
 use super::super::fields::combo_owned;
 
@@ -52,22 +52,17 @@ pub(super) fn header_rows(ui: &mut Ui, state: &mut State, target: &str, live: Op
         coolant_row(ui, state, target, live);
     }
 
-    // Source: the stock, one of the user's parts, or a placed DXF sketch
-    // in this operation's setup - never a work offset, setup or fixture.
-    let mut models: Vec<String> = model::model_entities(&state.world)
-        .into_iter()
-        .filter(|(_, e)| !model::is_fixture(&state.world, e))
-        .map(|(n, _)| n)
-        .collect();
-    let setup = live.and_then(|o| o.setup.as_deref());
-    for s in camcraft_app::sketch::placed_in(&state.world, setup) {
-        if !models.contains(&s) {
-            models.push(s);
-        }
-    }
+    // Source: the stock, one of the user's parts, or (for 2D milling,
+    // plasma and wire EDM via `sketch_model::admits`) a placed DXF
+    // profile in this operation's setup - never a work offset, setup or
+    // fixture (user review 2026-11-06, #1863, #1864).
+    let op_setup = match live {
+        Some(o) => o.setup.clone(),
+        None => camcraft_app::setup::active(&state.world),
+    };
+    let mut src_items = super::super::op_source::source_items(&state.world, op_setup.as_deref(), &state.op_ui.params);
+    let models: Vec<String> = src_items.iter().skip(1).cloned().collect();
     ui.label("Source");
-    let mut src_items: Vec<String> = vec!["Stock".to_owned()];
-    src_items.extend(models.iter().cloned());
     let mut s_idx: usize = if state.op_ui.src_kind == 2 {
         src_items.push("Selection".to_owned());
         src_items.len() - 1

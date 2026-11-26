@@ -1,5 +1,5 @@
 //! Provenance: original closed D50 drilled-bar regression for #2601.
-//! Gate map: covers camcraft_app::operation::material, camcraft_app::operation::generate.
+//! Gate map: covers camcraft_app::operation::material, camcraft_app::operation::cross_reach.
 
 mod cross_support;
 mod punched_bar;
@@ -7,7 +7,7 @@ mod punched_bar;
 use cross_support::*;
 
 #[test]
-fn mill_detection_preserves_opposite_blind_radial_holes_and_refuses_generation() {
+fn mill_detection_names_opposite_blind_radial_holes_and_stores_none() {
     let expected: Vec<_> = [-1.0, 1.0]
         .into_iter()
         .map(|side| CrossHole {
@@ -32,27 +32,16 @@ fn mill_detection_preserves_opposite_blind_radial_holes_and_refuses_generation()
         ),
     );
     let source = SrcRef::Entity("bar".into());
-    let detected = operation::detect_holes(&world, "D", &cross_params(vec![], None), None, &source)
-        .expect("the mill must report radial holes instead of dropping them");
-    let OpParams::Drill { holes, cross, .. } = &detected.params else {
-        panic!("Drill")
-    };
-    assert!(holes.is_empty(), "{holes:?}");
+    // The recognizer keeps each opposite blind hole with its own depth.
+    let cross = operation::cross_holes_of(&world, None, &source).expect("radial holes read");
     assert_eq!(cross.len(), 2, "{cross:?}");
-    for hole in expected {
-        assert!(cross.contains(&hole), "missing {hole:?}: {cross:?}");
+    for hole in &expected {
+        assert!(cross.contains(hole), "missing {hole:?}: {cross:?}");
     }
-    let op = Operation {
-        tool: "DR-0400".into(),
-        src: source,
-        params: detected.params,
-        stamp: None,
-        setup: None,
-        area: Default::default(),
-        coolant: Default::default(),
-        after: Default::default(),
-        suppressed: false,
-    };
-    let error = operation::generate(&world, &op, "").expect_err("a plain mill has no turret");
-    assert!(error.to_string().contains("live-tooling"), "{error}");
+    // #3448: a plain mill has no turret, so Detect holes names both
+    // holes and stores nothing, instead of a cross list Generate refuses.
+    let error = operation::detect_holes(&world, "D", &cross_params(vec![], None), None, &source)
+        .expect_err("a plain mill has no turret");
+    assert_eq!(error.matches("radial hole at").count(), 2, "{error}");
+    assert!(error.contains("no turret"), "{error}");
 }

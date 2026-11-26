@@ -36,6 +36,15 @@ still starts with an empty project. This does not forward files to an
 already running window. On macOS, passing the path to the binary works;
 `open -a` file events are not supported by this startup argument path.
 
+`camcraft-ui --read-only job.camproj` opens the project read-only. Use it
+for a shipped example, a released job or a reference copy on a shared
+folder. You can make changes. Save does not write over the opened file:
+it opens Save As. Choose a different path to write your own copy and
+continue editing it. Choosing the opened file in Save As is refused.
+The title bar says **(read-only)** until you save to a different file.
+A model file is imported as usual, because an import makes a new
+project. An agent gets the same result with the MCP tool `open_project` and `read_only: true`.
+
 ## Help and version
 
 There are three commands, `script`, `process` and `mcp`. There is no
@@ -161,6 +170,12 @@ lines
 $ echo $?
 0
 ```
+
+`cam.save()` with no path saves over the file that `cam.load` opened. It
+refuses, and names the file, when that file on disk changed after the load
+or the last save. For example, a second CamCraft window, a `git pull` or a
+colleague in a shared folder wrote it. Save to a different path, or replace
+the file with `cam.save(null, { overwrite: true })`.
 
 ## Exit codes
 

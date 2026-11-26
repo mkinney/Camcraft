@@ -28,6 +28,8 @@ pub struct SlotUndercutDto {
     pub feed: f64,
     pub plunge_feed: f64,
     pub climb: bool,
+    #[serde(default, skip_serializing_if = "PathPicksDto::is_empty")]
+    pub picks: PathPicksDto,
 }
 
 impl SlotUndercutDto {
@@ -47,6 +49,7 @@ impl SlotUndercutDto {
             feed: p.feed,
             plunge_feed: p.plunge_feed,
             climb: p.climb,
+            picks: PathPicksDto::from_picks(&p.picks),
         }
     }
 
@@ -66,6 +69,7 @@ impl SlotUndercutDto {
             feed: self.feed,
             plunge_feed: self.plunge_feed,
             climb: self.climb,
+            picks: self.picks.to_picks(),
         })
     }
 }

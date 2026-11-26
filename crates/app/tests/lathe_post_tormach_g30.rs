@@ -50,6 +50,7 @@ fn turning_world() -> (World, History) {
         stock_to_leave: 0.25,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     let finish = OpParams::ProfileFinish {
         tolerance: 0.05,
@@ -58,6 +59,7 @@ fn turning_world() -> (World, History) {
         bottom_z: Height::fixed(2.0),
         feed: 120.0,
         plunge_feed: 60.0,
+        picks: Default::default(),
     };
     create(&world, &mut history, "R1", "TN-1600-0R8", rough);
     create(&world, &mut history, "S1", "TN-1600-0R8", finish);
@@ -85,6 +87,7 @@ fn drill_world() -> (World, History) {
         plunge_feed: 80.0,
         holes: vec![hole],
         cross: vec![],
+        picks: Default::default(),
     };
     create(&world, &mut history, "AX1", "DR-0400", params);
     (world, history)

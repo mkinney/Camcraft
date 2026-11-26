@@ -59,6 +59,13 @@ pub(super) fn take_drop(ui: &Ui, state: &mut State) {
     if files.is_empty() {
         return;
     }
+    // #1863: one `.dxf` is a profile for the active setup's stock.
+    if let [file] = files.as_slice()
+        && super::dxf_drop::is_dxf(file.path())
+    {
+        super::dxf_drop::take(state, file);
+        return;
+    }
     #[cfg(not(target_arch = "wasm32"))]
     if files.len() != 1 || files[0].path().is_file() {
         let paths: Vec<PathBuf> = files.iter().map(|f| f.path().to_path_buf()).collect();

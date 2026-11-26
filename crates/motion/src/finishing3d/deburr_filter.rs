@@ -61,7 +61,7 @@ impl Bore {
 }
 
 /// The edge verdicts of one ride and the tally its notes speak.
-pub(super) struct EdgeFilter {
+pub(crate) struct EdgeFilter {
     include: Vec<(usize, Point3, Point3)>,
     hit: Vec<bool>,
     exclude: Vec<(usize, Point3, Point3)>,
@@ -77,7 +77,7 @@ impl EdgeFilter {
     /// Validate the filter numbers and read the holes. `weld` is the
     /// mesh's own weld scale: a chain point stands on a mesh vertex to
     /// a thousand of them.
-    pub(super) fn new(facets: &[Triangle], p: &DeburrParams, edges: &DeburrEdges<'_>, weld: f64) -> Result<Self, GenError> {
+    pub(crate) fn new(facets: &[Triangle], p: &DeburrParams, edges: &DeburrEdges<'_>, weld: f64) -> Result<Self, GenError> {
         if !(p.min_edge_angle_deg.is_finite() && (0.0..180.0).contains(&p.min_edge_angle_deg)) {
             return Err(GenError::Invalid(format!(
                 "deburr minimum edge angle must be 0 or more and less than 180 deg, not {}",
@@ -130,7 +130,7 @@ impl EdgeFilter {
 
     /// Does the ride keep the exposed edge e0-e1? `bend_cos` is the
     /// dot of a crease's two unit normals; a rim has none.
-    pub(super) fn keeps(&mut self, e0: Point3, e1: Point3, bend_cos: Option<f64>) -> bool {
+    pub(crate) fn keeps(&mut self, e0: Point3, e1: Point3, bend_cos: Option<f64>) -> bool {
         let manual = !self.hit.is_empty();
         if manual {
             let Some(chain) = on_chain(&self.include, e0, e1, self.tol) else {
@@ -158,7 +158,7 @@ impl EdgeFilter {
 
     /// The refusal of a ride that kept nothing, by the filter's name
     /// when a pick or a filter emptied it; `None` is the kernel's own.
-    pub(super) fn empty(&self) -> Option<GenError> {
+    pub(crate) fn empty(&self) -> Option<GenError> {
         if !self.hit.is_empty() {
             return Some(GenError::Empty(
                 "deburr: the picked edges hold no exposed edge inside the programmed window - a picked edge must be an open mesh's rim or a convex crease".into(),
@@ -173,7 +173,7 @@ impl EdgeFilter {
     }
 
     /// What the filters skipped, spoken once each.
-    pub(super) fn notes(&self) -> Vec<String> {
+    pub(crate) fn notes(&self) -> Vec<String> {
         let mut out = Vec::new();
         let missed = self.hit.iter().filter(|h| !**h).count();
         if missed > 0 {

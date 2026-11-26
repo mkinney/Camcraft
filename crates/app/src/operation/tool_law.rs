@@ -35,8 +35,10 @@ pub const CENTERLINE: &[ToolKind] = &[
 ];
 
 /// Cone-on-the-edge kinds (2D Chamfer, Deburr): the generatrix lies on
-/// the break, read off `tip_angle` - the chamfer mill and nothing else.
-pub const CONE: &[ToolKind] = &[ToolKind::Taper];
+/// the break, read off `tip_angle` - the chamfer mill. #3369: the form
+/// mill is in the family for the edge form work, and every door refuses
+/// it by name until a generator reads its outline (`tool_gate`).
+pub const CONE: &[ToolKind] = &[ToolKind::Taper, ToolKind::FormMill];
 
 /// The helical thread mill (#894): the multi-form and single-form
 /// thread-mill kinds and nothing else. A Tap is a rigid tap - one
@@ -103,6 +105,10 @@ pub const PROBE: &[ToolKind] = &[ToolKind::Probe];
 /// The plasma torch (#670): the plasma operations mount nothing else,
 /// and no cutting kind mounts a torch.
 pub const TORCH: &[ToolKind] = &[ToolKind::Torch];
+
+/// The waterjet nozzle (#1883): the waterjet operations mount nothing
+/// else, and no cutting kind mounts a nozzle.
+pub const NOZZLE: &[ToolKind] = &[ToolKind::Waterjet];
 
 /// No library tool (#532): a wire EDM kind mounts none - the wire's
 /// diameter and spark gap are the machine's condition (#531), and a

@@ -1,5 +1,5 @@
 {
-  "general": { "model": "Sienci AltMill 2x4", "vendor": "Camcraft", "kind": "mill" },
+  "general": { "model": "Sienci AltMill 2x4", "vendor": "Camcraft", "kind": "router" },
   "kinematics": { "default": {
     "units": { "length": "mm", "angle": "degrees" },
     "parts": [

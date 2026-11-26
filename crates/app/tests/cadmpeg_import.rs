@@ -115,7 +115,7 @@ mod stub {
 
     /// The refusal text of a run that must not import.
     fn refusal(bench: &Bench, settings: &Settings) -> String {
-        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, settings).expect_err("must refuse");
+        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, settings, None).expect_err("must refuse");
         assert_eq!(bench.left_behind(), 0, "a refusal leaves no folder: {err}");
         err.to_string()
     }
@@ -124,7 +124,7 @@ mod stub {
     fn a_converted_part_imports_through_the_step_importer() {
         let bench = Bench::new("ok");
         let direct = camcraft_app::geometry::import::load_model(&model("box.step")).expect("box.step");
-        let graded = cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings()).expect("imports");
+        let graded = cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings(), None).expect("imports");
         assert_eq!(graded.mesh.len(), direct.len(), "the same mesh as the STEP file itself");
         assert!(graded.step_source.is_some(), "the converted STEP text is kept");
         assert_eq!(bench.left_behind(), 0, "the private folder is removed after success");
@@ -144,7 +144,7 @@ mod stub {
         let mut settings = bench.settings();
         settings.path = None;
         settings.search_path = Some(std::env::join_paths([bench.root.join("nowhere"), bench.root.join("bin")]).expect("join"));
-        cadmpeg::load_open_within(&bench.input(), 1_000_000, &settings).expect("found on the search path");
+        cadmpeg::load_open_within(&bench.input(), 1_000_000, &settings, None).expect("found on the search path");
     }
 
     #[test]
@@ -153,7 +153,7 @@ mod stub {
         let mut settings = bench.settings();
         settings.path = None;
         settings.search_path = Some(bench.root.join("nowhere").into_os_string());
-        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, &settings).expect_err("no program");
+        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, &settings, None).expect_err("no program");
         assert!(matches!(err, CommandError::Needs(_)), "{err:?}");
         let text = err.to_string();
         assert!(text.contains("cadmpeg") && text.contains(".sldprt"), "{text}");
@@ -168,19 +168,19 @@ mod stub {
     fn an_old_version_is_refused_by_number() {
         let bench = Bench::new("old");
         bench.put("version", "cadmpeg 0.6.11\n");
-        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings()).expect_err("too old");
+        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings(), None).expect_err("too old");
         assert!(matches!(err, CommandError::Needs(_)), "{err:?}");
         let text = err.to_string();
         assert!(text.contains("0.6.11") && text.contains("0.6.12"), "{text}");
         assert_eq!(bench.calls(), "--version\n\n", "an old program converts nothing");
         // A newer one passes; a pre-release of the minimum does not.
         bench.put("version", "cadmpeg 0.10.0\n");
-        cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings()).expect("0.10.0 is newer than 0.6.12");
+        cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings(), None).expect("0.10.0 is newer than 0.6.12");
         bench.put("version", "cadmpeg 0.6.12-rc.1\n");
         assert!(refusal(&bench, &bench.settings()).contains("0.6.12-rc.1"));
         // Text that states no version is an unusable program.
         bench.put("version", "hello\n");
-        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings()).expect_err("no version");
+        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings(), None).expect_err("no version");
         assert!(matches!(err, CommandError::Invalid(_)), "{err:?}");
     }
 
@@ -270,7 +270,7 @@ mod stub {
     fn garbage_output_is_refused_by_the_step_importer() {
         let bench = Bench::new("garbage");
         bench.put("convert.step", "this is not STEP\n");
-        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings()).expect_err("garbage");
+        let err = cadmpeg::load_open_within(&bench.input(), 1_000_000, &bench.settings(), None).expect_err("garbage");
         assert!(matches!(err, CommandError::Import(ImportError::Step(_))), "{err:?}");
         assert_eq!(bench.left_behind(), 0);
     }

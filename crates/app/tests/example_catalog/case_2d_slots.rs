@@ -81,7 +81,9 @@ fn slots_case_posts_a_slot_and_a_trochoidal_slot_to_the_same_floor() {
     assert_eq!(floor(&slot), 6.0, "the Slot cuts to the slot floor (Z6)");
     assert_eq!(floor(&trochoid), 6.0, "the Trochoidal slot cuts to the slot floor (Z6)");
     assert_eq!(slot.cut_levels, [9.0, 6.0], "the Slot cuts two levels with a 3 mm stepdown");
-    assert_eq!(slot.arcs, 0, "the Slot is rows of straight moves");
+    // #2906: rows of straight moves, then a wall lap at each level whose
+    // two round ends are four arcs (split at the row ends -2, 0 and 2).
+    assert_eq!(slot.arcs, 8, "the Slot is rows of straight moves and a wall lap");
     assert!(
         trochoid.cut_levels.contains(&6.3),
         "each loop of the Trochoidal slot comes back 0.3 mm above the floor: {:?}",

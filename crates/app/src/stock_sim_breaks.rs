@@ -19,7 +19,17 @@ use crate::operation::OpParams;
 #[must_use]
 pub fn declared_width(params: &OpParams) -> Option<f64> {
     match params {
-        OpParams::Chamfer2D { width, .. } | OpParams::Deburr { width, .. } => Some(*width),
+        OpParams::Chamfer2D { width, .. } => Some(*width),
+        // #1890: a Deburr `width` is the chord; its records are held to
+        // the largest setback the size law gives any edge.
+        OpParams::Deburr { width, sizing, .. } => Some(sizing.max_setback(*width)),
+        // #1894: the tilted ride declares framed caps whose width is the
+        // chord - the width itself under Constant Width, and at most
+        // `2 d tan(75 deg)` on the flattest wedge Constant Depth sizes.
+        OpParams::MultiAxisDeburr { width, sizing, .. } => Some(match sizing.mode {
+            crate::finishing3d::BreakMode::ConstantWidth => *width,
+            crate::finishing3d::BreakMode::ConstantDepth => 2.0 * sizing.depth * (75f64).to_radians().tan(),
+        }),
         _ => None,
     }
 }
@@ -38,7 +48,7 @@ pub fn declared_width(params: &OpParams) -> Option<f64> {
 #[must_use]
 pub fn breaks_stock_edge(world: &flecs_ecs::prelude::World, op: &crate::schema::Operation) -> bool {
     let chamfer = matches!(op.params, OpParams::Chamfer2D { .. });
-    if !chamfer && !matches!(op.params, OpParams::Deburr { .. }) {
+    if !chamfer && !matches!(op.params, OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }) {
         return false;
     }
     let stock = crate::setup::stock_entity_name(world, op.setup.as_deref());
@@ -154,7 +164,7 @@ pub(crate) fn program_breaks(
             tracing::warn!(
                 op = %p.name,
                 dropped = p.breaks.len() - kept.len(),
-                "2D Chamfer break whose cone tip stands inside the part, not on a wall - credit dropped, judged against the model (#2435)"
+                "2D Chamfer break lies inside the part, not on a wall - credit dropped, judged against the model (#2435)"
             );
         }
         out.extend(kept);

@@ -11,7 +11,7 @@ use camcraft_app::operation::Height;
 use egui::accesskit::Role;
 
 fn helix_pocket() -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { pass_start: Default::default(),
         rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
@@ -32,6 +32,7 @@ fn helix_pocket() -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        picks: Default::default(),
     }
 }
 

@@ -51,7 +51,7 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 <!-- catalog:examples:start -->
 **Example cases**
 
-No catalog case yet.
+- [3d/rough-finish](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/3d/rough-finish)
 <!-- catalog:examples:end -->
 
 {{ <icon name="op-pocket3d" /> }} ![View of roughing passes at successive levels around a 3D model.](../../../operation-paths.svg#Pocket3D)
@@ -102,6 +102,16 @@ ladder at half the step for what the levels leave standing. **Feed
 optimization** slows heavier bites below the programmed feed (never
 above it).
 
+When **3D Adaptive** falls back to Offset rings, it now raises an
+**Adaptive fell back to Offset rings** warning with the area count.
+Read the operation's warnings and path notes: the notes name each area
+and why the adaptive planner could not cut it. For example, an offset
+shell keeps Offset rings because the adaptive plan's lifted returns are
+proved on a plane. The fallback warning is advisory: **the post is not
+held**, because the rings still undergo verification. A collision or
+gouge warning still blocks posting. To change the plan, inspect the named
+area and adjust its strategy or parameters, then regenerate.
+
 **Common refusals:** "nothing to cut: the model fills the pocket at every
 level"; "nothing left to cut - the operations ahead in the program already
 machined this area"; "helix radius must be positive and at most the tool
@@ -127,7 +137,7 @@ so a deep job can refuse even where there appears to be side clearance.
 <!-- catalog:examples:start -->
 **Example cases**
 
-No catalog case yet.
+- [3d/rough-finish](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/3d/rough-finish)
 <!-- catalog:examples:end -->
 
 {{ <icon name="op-finish3d" /> }} ![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
@@ -139,6 +149,15 @@ ground. Use it after a 3D Pocket has roughed the part.
 **Picks:** none needed; the path covers the whole model. With Boundary
 settings, the whole-model path is clipped to the area, and it leaves and
 re-enters through the clearance plane.
+
+**Do not touch** on **Geometry > Boundary > Boundaries** also protects
+model faces or edge chains on 3D Finish. Choose **Pick protected**, pick
+the items, choose **Done**, set **Clearance**, then **Apply**. CamCraft
+restricts the finishing area so the full tool assembly (flutes, shank and
+holder) stays clear from the cut depths up to the clearance plane.
+Clearance adds to positive **Stock to leave**. The final check includes cuts,
+entries, lifts and rapid links; an unsafe path is refused and cannot post.
+Protected items stay highlighted while the operation is selected.
 
 | Tab | Setting | Default |
 |---|---|---|
@@ -152,6 +171,14 @@ re-enters through the clearance plane.
 | Passes | Ramp angle (when ramping) | 45° |
 | Passes | Steep stepover (Steep and shallow only) | Auto |
 | Passes | Reference ball (Pencil only) | None: every concave corner |
+
+For patterns that add wall rings after the shallow passes, **Passes >
+Steep flanks** defaults to **Waterlines**. Select **Leave uncut**
+(`waterlines: false`) to skip the rings on flanks steeper than 45°.
+The operation warns that the steep flanks remain uncut. Check the
+remaining stock before the next operation. Generation refuses the
+operation if there is no shallow cut. Waterline, Blend and Morph
+require the rings.
 
 **Gap link** (`gap_link`) chooses how 3D Finish crosses a gap between
 surface runs. **Jump**, the default, keeps the retract hop. **Straight**
@@ -223,21 +250,50 @@ stated width and angle on picked edges.
 With a whole model, or picks containing no edge chain, Deburr finds the
 edges automatically. Face picks name the model; they do not limit the
 ride to that face. Boundary settings are refused: there is no area to
-bound. It has no Passes or Lead in / Lead out tab.
+bound. Sizing and pass count live on Geometry; there is no separate
+Passes or Lead in / Lead out tab.
 
 | Tab | Setting | Default |
 |---|---|---|
-| Geometry | Break width | 0.5 |
+| Geometry | Break mode | Constant width (or Constant depth) |
+| Geometry | Break width | 0.5; shown in Constant width mode |
+| Geometry | Break depth | 0.25; shown in Constant depth mode |
+| Geometry | Break profile | Chamfer (Round is refused with the current chamfer mill) |
+| Geometry | Number of passes | 1 (1 to 100) |
 | Geometry | Minimum edge angle | 40 degrees for a new operation |
 | Geometry | Skip round holes | off; optional minimum and maximum hole diameter |
 | Geometry | Unreachable edges | Skip with note (or Refuse) |
 | Heights | Window Top Z / Window Bottom Z | model top / model bottom |
 | Feeds | Feed / Plunge feed | 1200 / 300 |
 
-The depth is not set: the tip stands width / tan(half the cone angle)
-below the edge, so the tool's own cone angle decides it. The window is the
-pair of planes the tip rides between; an edge running outside it is
-clipped along its own line, not dropped whole.
+On **Geometry**, **Constant width** holds the chamfer's **chord width**
+across the edge. **Constant depth** holds the perpendicular depth from
+the original edge to the chamfer face. Neither is a direct tool-tip Z
+offset: CamCraft finds the cone's contacts with both adjoining faces.
+An open rim uses an orthogonal virtual second face. A face without a
+valid cone contact is refused rather than assigned an approximate cut.
+
+For example, a 0.5 mm chord on a 90-degree edge has a perpendicular
+break depth of 0.25 mm. Set **Number of passes** to 2 to approach that
+break in two equal size steps, from shallow to full size. Each pass
+retracts to clearance before entering again. **Constant width** skips
+wedges sharper than 30 degrees; **Constant depth** skips wedges flatter
+than 150 degrees. The path notes report these skipped edges.
+
+The **Window Top Z / Window Bottom Z** planes limit the tool tip, not
+the edge itself. An edge running outside the window is clipped along its
+own line. Every pass must fit: "a pass leaves the tip window" means widen
+the window or use fewer passes. **Round** remains unavailable with a
+sharp-cone chamfer mill: "a Round break profile needs a ball-tipped
+cutter"; choose **Chamfer**.
+
+**Breaking file change:** project format version 76 stores the new break
+sizing. Loading a version 75 or earlier Deburr multiplies its old width
+by sqrt(2), converting the old setback to chord width on a 90-degree
+edge, and selects one Constant width Chamfer pass. For example, an old
+0.5 mm width becomes about 0.7071 mm. Older builds cannot read the newer
+project format; keep an older copy if needed and regenerate the Deburr
+to check its actual face contacts before posting.
 
 On Geometry, **Exclude the picked edges** adds picked edge chains to the
 excluded list. Excluded edges stay sharp, including when they are also

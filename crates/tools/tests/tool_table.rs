@@ -177,6 +177,9 @@ fn hurco_export_roundtrips_and_escapes_xml_without_control_state() {
         cutting: vec![],
         outline: vec![],
         turning: None,
+        tip_form: Default::default(),
+        tip_diameter: 0.0,
+        form: None,
     };
     tool.catalog.vendor = Some("A & B <Carbide>".into());
     let text = export_controller_table(

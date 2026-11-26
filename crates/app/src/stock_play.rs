@@ -35,7 +35,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::geometry::Triangle;
-use crate::stock_sim::{Planned, SimOp, Stock};
+use crate::stock_sim::{Planned, Stock};
 use crate::stock_view::{build_stock, build_target, display_inputs_of, FieldView, DEFAULT_TEXELS};
 
 /// Snapshots kept at most - the backward seek's memory bound.
@@ -178,6 +178,8 @@ pub struct FieldPlay {
     ghost: HashSet<[i32; 3]>,
     /// Moves cut since the build: the replay law's yardstick (#2181).
     moves_cut: usize,
+    /// The layer mode (#2629, S3b): the twin-able ops' cut, off the field.
+    layer: Option<cut::LayerMode>,
 }
 
 impl FieldPlay {
@@ -251,6 +253,7 @@ impl FieldPlay {
             partial_bricks: HashSet::new(),
             ghost: HashSet::new(),
             moves_cut: 0,
+            layer: None,
         })
     }
 
@@ -392,42 +395,14 @@ impl FieldPlay {
             set
         })
     }
-
-    /// Subtract global moves `[from, to)` from the shown stock.
-    fn cut(&mut self, from: usize, to: usize) -> Result<(), String> {
-        for op in &self.ops {
-            let end = op.start.saturating_add(op.moves.len());
-            let (a, b) = (from.max(op.start), to.min(end));
-            if a >= b {
-                continue;
-            }
-            let moves = op.moves.get(a - op.start..b - op.start).ok_or("playback: a move range fell outside its op")?;
-            let sim = SimOp { moves, radius: op.radius, ball: op.ball, cone: op.cone, corner: op.corner };
-            // A rotary slice is chorded about the fitted axis, turning
-            // from the pose the program held before it (M13.1).
-            let cut = match (&op.rotary, &op.lathe, &op.undercut) {
-                (_, _, Some((cutter, neck_len))) => self.cur.simulate_undercut(moves, cutter, *neck_len),
-                (_, Some(l), None) => self.cur.simulate_lathe_profile(moves, &l.profile, &l.axis),
-                (Some(ax), None, None) => {
-                    let tol = crate::stock_sim::rotary_pose_tol(self.cur.cell());
-                    crate::stock_sim::simulate_rotary_slice(&mut self.cur, &sim, &op.moves, a - op.start, ax, tol).map(|_| ())
-                }
-                (None, None, None) => if op.drill {
-                    self.cur.simulate_drill_display(std::slice::from_ref(&sim))
-                } else {
-                    self.cur.simulate_display(std::slice::from_ref(&sim))
-                },
-            };
-            cut.map_err(|e| format!("playback could not cut {}: {e}", op.name))?;
-            self.moves_cut = self.moves_cut.saturating_add(b - a);
-        }
-        Ok(())
-    }
 }
 
 #[path = "stock_play_head.rs"]
 mod head;
 pub use head::{progress, settle_frac, Progress};
+
+#[path = "stock_play_cut.rs"]
+mod cut;
 
 #[path = "stock_play_precalc.rs"]
 mod precalc;

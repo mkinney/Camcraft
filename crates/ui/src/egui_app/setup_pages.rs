@@ -51,6 +51,7 @@ pub(super) fn page(ui: &mut Ui, state: &mut State, name: &str, page: SetupPage) 
                 if ctx.is_some() {
                     ui.separator();
                 }
+                super::agie_inspection::section(ui, state, ctx);
                 pages::post_section(ui, state);
                 ui.separator();
                 super::setup_post_page::options_ownership(ui, state, ctx);

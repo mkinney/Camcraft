@@ -33,7 +33,7 @@ fn verdict(kind: MoveKind, z: f64, tolerance: f64, excess: f64) -> Vec<Warning> 
     let m = Move { rotary: None, kind, from: Point3::new(-1.0, 0.0, z), to: Point3::new(1.0, 0.0, z), feed: (kind != MoveKind::Rapid).then_some(300.0), arc: None, axis: Some([0.0, 0.0, 1.0]) };
     let path = Toolpath { moves: vec![m], cycles: Vec::new(), notes: Vec::new(), comps: Vec::new(), threads: Vec::new(), probes: Vec::new(), breaks: Vec::new(), plasma: None };
     let mut warns = Vec::new();
-    rotary_into(&mut warns, &path, &bar(6.0), Some(&bar(10.0)), &cutter(), (tolerance, excess));
+    rotary_into(&mut warns, &path, &bar(6.0), Some(&bar(10.0)), &cutter(), (tolerance, excess), None);
     warns
 }
 

@@ -37,7 +37,8 @@ pub struct TraceBlock {
 /// The finished program plus the evidence a reviewer needs.
 #[derive(Clone, Debug)]
 pub struct PostOutput {
-    /// The G-code, one line per entry, newline-terminated.
+    /// The G-code, one line per entry, each ended by the script's
+    /// `lineEnding` (`\n`, or `\r\n` for `"crlf"`, #1882).
     pub program: String,
     /// Program line -> stream record, the viewer's sync map (the
     /// record's index doubles as the move index for motion records).
@@ -141,7 +142,12 @@ pub fn run_program_with(
     // #374: an inverted machine axis - the one place the stream is
     // mirrored into the controller's frame, or refused by name.
     let records = super::invert::apply(records, mch, &s)?;
+    // #3477: a section that opens upright after a tilted section, on a
+    // script that does not declare the return - refused by name below.
+    let upright = super::upright_after_tilt::refusal(&mut s, &records)?;
     s.set_machine(&machine::flatten(mch))?;
+    // #1882: the cut XY box, published before `onOpen`.
+    s.eval_src(&format!("programBounds = {};", super::program_bounds::bounds(&records)))?;
     // #542: whether the manifest's `serves` (#1266) names a sinker EDM -
     // the one script that may voice a sinker section (below).
     let serves_sinker = s
@@ -162,6 +168,9 @@ pub fn run_program_with(
     for note in &id.notes {
         s.call("onComment", &json!(note).to_string())?;
     }
+    // #1882: chords for a control without G2/G3, read after `onOpen` so
+    // a declared option may choose them.
+    let chord_tol = super::program_bounds::linearize_tolerance(&mut s)?;
     let head = s.out_len()?;
 
     let mut warnings = Vec::new();
@@ -178,6 +187,8 @@ pub fn run_program_with(
     let mut unguarded: Vec<String> = Vec::new();
     // #671: the plasma header in force and the lit contour.
     let mut torch = super::cnc_torch::TorchLaw::default();
+    // #1882: the waterjet header in force and the open contour.
+    let mut jet = super::cnc_jet::JetLaw::default();
 
     for (i, r) in records.iter().enumerate() {
         let before = s.out_len()?;
@@ -322,9 +333,15 @@ pub fn run_program_with(
                 tool_macros.call(&mut s, *number, name)?;
             }
             Record::Section { begin } => {
+                // #1882: `onSection` reads this section's properties, not the
+                // last record's (a header the previous ENDSECTION cleared).
+                if *begin {
+                    s.set_properties(&merged(&base, &BTreeMap::new(), pos))?;
+                }
                 s.call(if *begin { "onSection" } else { "onSectionEnd" }, "")?;
                 if !*begin {
                     torch.section_end(&mut base, &mut warnings);
+                    jet.section_end(&mut base, &mut warnings);
                 }
             }
             Record::Plasma(p) => {
@@ -347,27 +364,52 @@ pub fn run_program_with(
             Record::Move(m) => {
                 if m.kind == MoveKind::Rapid {
                     torch.rapid(&base, &mut warnings);
+                    jet.rapid(&base, &mut warnings);
                 }
-                let p = m.props();
-                s.set_properties(&merged(&base, &p, pos))?;
-                s.set_current(pos.0, pos.1, pos.2)?;
-                let cmd = p.get("command").cloned().unwrap_or(Value::Null);
-                if is_false(&s.call("onCommand", &cmd.to_string())?) {
-                    swallowed += 1;
-                    swallow = true;
-                } else {
-                    let hook = if m.center.is_some() {
+                // #1882: under `linearizeArcs` an arc posts as its chords.
+                let pieces = match (chord_tol, m.center) {
+                    (Some(t), Some(_)) => super::program_bounds::arc_pieces(pos, m, t)?,
+                    _ => vec![m.clone()],
+                };
+                let mut at = pos;
+                for (k, piece) in pieces.iter().enumerate() {
+                    let mut p = piece.props();
+                    // A chord must retain the complete move's Z change for
+                    // posts that refuse a non-planar cut before writing XY.
+                    p.insert("OriginalZChange".into(), json!(m.z - pos.2));
+                    s.set_properties(&merged(&base, &p, at))?;
+                    s.set_current(at.0, at.1, at.2)?;
+                    let cmd = p.get("command").cloned().unwrap_or(Value::Null);
+                    if k == 0 && is_false(&s.call("onCommand", &cmd.to_string())?) {
+                        swallowed += 1;
+                        swallow = true;
+                        break;
+                    }
+                    let hook = if piece.center.is_some() {
                         "onCircular"
-                    } else if m.kind == MoveKind::Rapid {
+                    } else if piece.kind == MoveKind::Rapid {
                         "onRapid"
-                    } else if m.kind == MoveKind::Plunge && s.hook_exists("onPlunge") {
+                    } else if piece.kind == MoveKind::Plunge && s.hook_exists("onPlunge") {
                         "onPlunge"
                     } else {
                         "onLinear"
                     };
                     s.call(hook, "")?;
+                    at = (piece.x, piece.y, piece.z);
                 }
                 pos = (m.x, m.y, m.z);
+            }
+            Record::Waterjet(w) => {
+                jet.header(&s, &base, &mut warnings);
+                base.extend(w.props());
+                s.set_properties(&merged(&base, &BTreeMap::new(), pos))?;
+            }
+            Record::Jet(j) => {
+                if jet.jet(j, &base, &mut warnings) {
+                    s.set_properties(&merged(&base, &j.props(), pos))?;
+                    s.set_current(pos.0, pos.1, pos.2)?;
+                    super::cnc_jet::fire(&mut s, j)?;
+                }
             }
             Record::Cycle(c) => {
                 if c.kind == crate::cl::CycleKind::FloatingTap && !s.voices_floating_tapping() {
@@ -581,6 +623,7 @@ pub fn run_program_with(
     }
 
     torch.close(&mut base, &mut warnings);
+    jet.close(&mut base, &mut warnings);
     let before = s.out_len()?;
     s.call("onClose", "")?;
     let after = s.out_len()?;
@@ -591,15 +634,17 @@ pub fn run_program_with(
         blocks.push(TraceBlock { record: None, label: "end".into(), first: before, last: after });
     }
 
+    let eol = super::line_ending::read(&mut s)?;
     let (out, msgs) = s.drain()?;
     warnings.extend(msgs);
+    warnings.extend(upright);
     if fail_on_warning && !warnings.is_empty() {
         return Err(PostError::Refused(warnings.join("; ")));
     }
     let mut program = String::new();
     for l in &out {
         program.push_str(l);
-        program.push('\n');
+        program.push_str(eol);
     }
     Ok(PostOutput {
         program,

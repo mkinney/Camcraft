@@ -166,10 +166,13 @@ These points explain the numbers:
 - **The clearance is a radius.** Rotary Parallel reads **Clearance Z** as a
   distance from the bar's axis. 0.875 in is 1/2 in outside the bar's skin.
   The tool goes out to this radius before A turns between two passes.
-- **Top and bottom keep the whole bar.** **Bottom Z** is a floor in the
-  frame of the bar as it lies. At -0.375 the pass goes all the way round.
+- **Top and bottom keep the whole bar.** **Bottom Z** is the lowest point
+  where the tool touches the bar as it lies. At -0.375 the passes go all
+  the way round the bar (issue
+  [#2970](https://github.com/NeoTech/Camcraft/issues/2970)). A Bottom Z
+  above the axis keeps the cut to the upper arc of the bar.
 - **The tolerance and the stepover are coarse.** They keep the program
-  short (3125 lines) for a first run. They do not give a good surface.
+  short (2866 lines) for a first run. They do not give a good surface.
 
 These points distinguish the other continuous operations:
 
@@ -222,6 +225,13 @@ of the model. Half of the ball goes past it, and there it cuts no deeper
 than the surface of the model. Where the stock ends with the model, or
 goes on by one tool diameter or less, the end face is cut to the
 centreline as at the free end.
+
+The operation has a second note. It says that the passes go all the way
+round the bar, so the machine must turn the part through a full turn of A:
+
+```text
+Rotary Parallel: the passes go all the way round the bar - the machine must turn the part on a rotary axis through the whole turn; set Bottom above the axis to cut only the upper arc
+```
 
 CamCraft knows only the stock that you set. Make the stock as long as the
 bar that is out of the jaws. If the stock ends where the model ends,
@@ -318,39 +328,40 @@ trajectory relative to the part between the rounded XYZ and A words.
 Rounding makes a move slower, not faster.
 
 ```gcode
-G1 X0.0625 Y0 Z-0.0219 A174.937 F147.722
-G1 X0.0625 Y0 Z-0.022 A176.25 F274.181
-G1 X0.0625 Y0 Z-0.0221 A178.689 F147.601
-G1 X0.0625 Y0 Z-0.022 A180 F274.599
+G1 X0.0625 Y0 Z-0.032 A187.5 F153.977
+G1 X0.0625 Y0 Z-0.0321 A186.086 F254.596
+G1 X0.0625 Y0 Z-0.0322 A183.75 F154.109
 G94
-G1 A182.441 F360
-G1 A183.75 F360
-G93 G1 X0.0625 Y0 Z-0.0218 A186.193 F147.359
-G1 X0.0625 Y0 Z-0.0217 A187.5 F275.439
+G1 A182.334 F360
+G1 A180 F360
+G1 A178.581 F360
+G1 A176.25 F360
+G93 G1 X0.0625 Y0 Z-0.0321 A174.829 F253.342
+G1 X0.0625 Y0 Z-0.032 A172.5 F154.572
 ```
 
 - These moves are on the free end face, where the path is short and the
-  turn of A is large. The A rate sets the time: from A176.25 to A178.689
-  is 2.439 degrees, and 2.439 x 147.601 is 360 degrees per minute.
+  turn of A is large. The A rate sets the time: from A186.086 to A183.75
+  is 2.336 degrees, and 2.336 x 154.109 is 360 degrees per minute.
 - `G94` is on its own line before a move that is not a `G93` feed.
-- `G1 A182.441 F360` turns A only. It stays in `G94`, and its F word is
+- `G1 A182.334 F360` turns A only. It stays in `G94`, and its F word is
   degrees per minute: in the simulator `G1 A180 F360` took 30 seconds
   (Hub reading 4).
 - `G93` is on the next move that turns A with X, Y or Z.
 
 ### A counts on
 
-The same excerpt goes through 180 degrees: A178.689, A180, A182.441. The
-post does not write A-177.559 for the angle after 180. In the simulator,
+The same excerpt goes through 180 degrees: A182.334, A180, A178.581. The
+post does not write A-177.666 for the angle before 180. In the simulator,
 from A350 the move `G1 A10 F360` turned A back through 340 degrees and
 stopped at 10 (Hub reading 1): PathPilot reads A as a plain number of
 degrees. It does not roll over at 360 and it does not take the short way.
 So each A word is the angle nearest to the last one, and the count goes on
 past 180 and past 360.
 
-![The A word of each line of the program: it stays between -85.708 and 264.23 degrees; the chart scale is not a machine limit, and the lines in G93 are marked below.](../../../guide-pictures/first-continuous-4axis-a-count.svg)
+![The A word of each line of the program: it stays between -85.708 and 265.687 degrees; the chart scale is not a machine limit, and the lines in G93 are marked below.](../../../guide-pictures/first-continuous-4axis-a-count.svg)
 
-In this program A stays between -85.708 and 264.23 degrees. A program
+In this program A stays between -85.708 and 265.687 degrees. A program
 that turns past a limit in a custom machine file is refused. The shipped
 file has no such A limit. The post does not write an unwind inside an
 operation.
@@ -358,10 +369,10 @@ operation.
 ### The end of the operation
 
 ```gcode
-G1 X0.0375 Y0 Z0.3278 A143.19 F385.026
-G1 X0.0435 Y0 Z0.3222 A144.336 F314.136
+G1 X0 Y0 Z0.3399 A265.687 F2603.14
+G1 X0.0031 Y0 Z0.3399 A265.686 F2444.083
 G94
-G0 X0.0435 Y0 Z0.875
+G0 X0.0031 Y0 Z0.875
 M9
 M5
 G53 G0 Z0
@@ -370,7 +381,7 @@ M30
 
 `G94` comes back before the last rapid, so no operation ends in `G93`.
 The program ends with Z at the top of travel and A at its last angle,
-144.336. The next operation of a longer program lifts Z and states its own
+265.686. The next operation of a longer program lifts Z and states its own
 first A between -180 and 180.
 
 ## What the post refuses
@@ -415,9 +426,10 @@ Check these points, and record the result on issue
 
 - The program loads with no error on a `G93` or `G94` line, and runs to
   `M30`.
-- At line 1469 the A position is 180. On the next lines it goes up to
-  182.441 and 183.75. It does not go back through 0.
-- The A position stays between -85.708 and 264.23.
+- At line 2685 the A position is 180. On the lines before it, A is
+  183.75 and 182.334. On the next lines it goes down to 178.581 and
+  176.25. It does not go through 0.
+- The A position stays between -85.708 and 265.687.
 - Line 254, `G93 G1 X-0.0005 Y0 Z0.3399 A8.194 F7.347`, takes about 8
   seconds.
 - After the program, the control is in `G94`.
@@ -445,7 +457,7 @@ above. Then take the bar out, and do these steps in order.
    between two passes is at Z0.875.
 5. **Air-cut the whole program.** Keep the chuck empty and the overrides
    low, with a hand on feed hold. Watch the A position go through 180 near
-   line 1469 without a turn back.
+   line 2685 without a jump.
 6. **Cut only after a good air cut.** If one step above was not as
    described, stop: do not put a bar in the chuck for this program.
 

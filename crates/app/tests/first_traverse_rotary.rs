@@ -79,6 +79,8 @@ fn rotary_parallel(clearance: f64) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
+        picks: Default::default(),
     }
 }
 
@@ -162,6 +164,7 @@ fn contour5d_beside_a_clamp(top: f64) -> (World, OpStatus, Vec<Warning>) {
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
         shank_avoid: false,
+        picks: Default::default(),
     };
     let (status, warns) = generate(&world, &mut h, BALL, "dome", p);
     (world, status, warns)
@@ -206,6 +209,7 @@ fn a_cross_drill_on_a_mill_is_refused_before_any_traverse() {
         plunge_feed: 80.0,
         holes: vec![],
         cross: vec![hole()],
+        picks: Default::default(),
     };
     h.execute(&world, CreateOperation::new(&world, "OP", "DR-0400", SrcRef::Entity("B".into()), p).expect("create"));
     let err = GenerateOperation::new(&world, "OP").err().map(|e| format!("{e:?}")).unwrap_or_default();

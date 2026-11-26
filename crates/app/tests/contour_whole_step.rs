@@ -144,10 +144,11 @@ fn contour_params(top_z: Height, stepdown: f64, tab_width: f64, tab_height: f64)
         tab_height,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
         chain_overrides: Vec::new(),
+        picks: Default::default(),
     }
 }
 

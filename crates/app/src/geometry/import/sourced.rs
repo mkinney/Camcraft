@@ -14,7 +14,7 @@ use std::path::Path;
 
 use camcraft_geometry::solidcraft::Sha256;
 
-use super::{format_from_path, gate, mesh_outward, parse_model_open_within, stl, Format, Graded, ImportError, MAX_FILE_BYTES};
+use super::{format_from_path, gate, mesh_outward, parse_model_open_in, stl, Format, Graded, ImportError, MAX_FILE_BYTES};
 
 /// A file that hashes every byte it hands out. A rewind to the start
 /// hashes from the start again (the ASCII STL path reads the head twice);
@@ -46,8 +46,9 @@ impl Seek for Hashing {
 }
 
 /// [`super::load_model_open_within`], with the SHA-256 of the bytes the
-/// parse used, as lowercase hex.
-pub fn load_model_open_sourced(path: &Path, budget: usize) -> Result<(Graded, String), ImportError> {
+/// parse used, as lowercase hex. `units` is the caller's length unit for a
+/// STEP file that states none (#1874).
+pub fn load_model_open_sourced(path: &Path, budget: usize, units: Option<crate::units::Unit>) -> Result<(Graded, String), ImportError> {
     let format = format_from_path(path)?;
     let file = File::open(path)?;
     let size = file.metadata()?.len();
@@ -70,5 +71,5 @@ pub fn load_model_open_sourced(path: &Path, budget: usize) -> Result<(Graded, St
         return Err(ImportError::TooLarge);
     }
     let digest = camcraft_geometry::solidcraft::sha256_hex(&data);
-    Ok((parse_model_open_within(&data, format, budget)?, digest))
+    Ok((parse_model_open_in(&data, format, budget, units)?, digest))
 }

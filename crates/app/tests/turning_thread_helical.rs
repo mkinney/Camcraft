@@ -113,6 +113,7 @@ fn a_helical_thread_is_refused_by_name_before_the_slice() {
         plunge_feed: 40.0,
         infeed_plan: Default::default(),
         hand: camcraft_app::cl::ThreadHand::Right,
+        picks: Default::default(),
     };
     let create = CreateOperation::new(&world, "M16", "TD-1732-60", SrcRef::Entity("shaft".into()), params);
     history.execute(&world, create.expect("create"));

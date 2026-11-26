@@ -238,7 +238,7 @@ fn face_world() -> (flecs_ecs::prelude::World, History) {
     history.execute(&world, AddTool::new(&world, "EM-0600-4FL", tool).expect("catalog tool"));
     let params = OpParams::Face {
         holes: Default::default(),
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
@@ -248,6 +248,7 @@ fn face_world() -> (flecs_ecs::prelude::World, History) {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     };
     let cmd = CreateOperation::new(&world, "Face1", "EM-0600-4FL", SrcRef::Stock, params);
     history.execute(&world, cmd.expect("create"));

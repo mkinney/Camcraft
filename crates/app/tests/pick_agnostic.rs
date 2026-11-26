@@ -35,7 +35,7 @@ use camcraft_app::world::new_world;
 use flecs_ecs::prelude::World;
 
 fn pocket(strategy: PocketStrategy, top: f64, bottom: f64) -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,
@@ -55,11 +55,13 @@ fn pocket(strategy: PocketStrategy, top: f64, bottom: f64) -> OpParams {
         blend_turns: false,
         tilt: None,
         corner_relief: Default::default(),
+        picks: Default::default(),
     }
 }
 
 fn adaptive2d(top: f64, bottom: f64) -> OpParams {
     OpParams::Adaptive2D {
+        rest: None,
         blend_radius: None, blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,
@@ -79,6 +81,8 @@ fn adaptive2d(top: f64, bottom: f64) -> OpParams {
         troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         tilt: None,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
+        picks: Default::default(),
     }
 }
 
@@ -103,7 +107,7 @@ fn user_part() -> (World, String) {
     world_with(ImportModel::new(&path).expect("the user's STEP imports"), -7.0, 27.0)
 }
 
-fn generate(world: &World, name: &str, picks: &[FeatureSel], params: &OpParams) -> Result<(Toolpath, usize), String> {
+fn generate(world: &World, name: &str, picks: &[FeatureSel], params: &OpParams) -> Result<(Toolpath, Vec<camcraft_app::verify::Warning>), String> {
     let op = Operation {
         tool: "EM-1000-4FL".into(),
         src: SrcRef::Selection(picks.iter().map(|f| GeoSel { entity: name.to_owned(), feature: f.clone() }).collect()),
@@ -115,7 +119,7 @@ fn generate(world: &World, name: &str, picks: &[FeatureSel], params: &OpParams) 
         after: Default::default(),
         suppressed: false,
     };
-    operation::generate(world, &op, "").map(|(t, w)| (t, w.len())).map_err(|e| e.to_string())
+    operation::generate(world, &op, "").map_err(|e| e.to_string())
 }
 
 /// (max radius about the centroid, mean z, centroid x, centroid y).
@@ -175,7 +179,7 @@ fn bore_picks(world: &World, name: &str) -> Vec<(String, FeatureSel)> {
     picks_of(world, name, |r, _, cx, cy| (r - 12.5).abs() < 0.01 && cx.hypot(cy) < 0.01)
 }
 
-/// Assert every spelling cuts the first spelling's bytes, silent.
+/// Assert every spelling cuts the first spelling's bytes, with only fallback warnings.
 fn all_identical(world: &World, name: &str, picks: &[(String, FeatureSel)], params: &OpParams) {
     identical_spellings(world, name, &spellings(picks), params);
 }
@@ -185,7 +189,12 @@ fn identical_spellings(world: &World, name: &str, spelled: &[(String, Vec<Featur
     for (label, sel) in spelled {
         let (label, sel) = (label.clone(), sel.clone());
         let (t, warns) = generate(world, name, &sel, params).unwrap_or_else(|e| panic!("{label}: {e}"));
-        assert_eq!(warns, 0, "{label} must verify silent (depth-aware): {:?}", t.notes);
+        let areas = camcraft_app::machining2d::rings_fallbacks(&t.notes);
+        assert_eq!(warns.len(), usize::from(areas > 0), "{label}: only the fallback is reported: {warns:?}");
+        assert!(warns.iter().all(|w| {
+            matches!(w, camcraft_app::verify::Warning::StrategyFallback { areas: n, .. } if *n == areas)
+                && !w.blocks_post()
+        }), "{label}: unexpected warnings: {warns:?}");
         assert!(t.is_chained() && t.all_finite() && !t.moves.is_empty());
         let cl = common::gen_to_cltext(&t);
         match &first {
@@ -263,7 +272,7 @@ fn the_chosen_strategy_runs_on_the_round_region_never_a_substitute() {
     // The depth-aware verifier is silent on it (M11.4 C round 2: the
     // HSM spiral never crosses itself, never leaves the floor's area).
     let (a, warns) = generate(&world, &name, std::slice::from_ref(&floor), &hp).expect("generates");
-    assert_eq!(warns, 0, "the user's bore under HSM verifies clean: {:?}", a.notes);
+    assert!(warns.is_empty(), "the user's bore under HSM verifies clean: {warns:?} {:?}", a.notes);
     assert!(
         !a.notes.iter().any(|n| n.contains("Offset rings cut this pocket instead")),
         "the HSM plan runs on the user's bore: {:?}",

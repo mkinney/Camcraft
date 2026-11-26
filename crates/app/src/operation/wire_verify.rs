@@ -8,7 +8,6 @@
 
 use flecs_ecs::prelude::*;
 
-use crate::geo2d::Point2;
 use crate::geometry::{slice, Triangle};
 use crate::model;
 use crate::verify::wire::{judge, CutSide, WireFinding, WireJob, WireSection, WireVerdict};
@@ -80,7 +79,7 @@ pub fn wire_verdict(world: &World, e: &Entity) -> Option<Result<WireVerdict, Str
         // A closed cut with no start hole never generates; said by the
         // law's own name, not as a missing path. An open run (#1109,
         // left / right) states none: it is threaded outside the stock.
-        if w.start.is_none() && !w.side.is_open_side() {
+        if w.picks.first(crate::path_picks::PickRole::Start).is_none() && !w.side.is_open_side() {
             return Ok(WireVerdict { findings: vec![WireFinding::NoStart], ..WireVerdict::default() });
         }
         let cache = model::toolpath_of(world, e).ok_or("the wire laws have no toolpath to judge - generate it first")?;
@@ -89,10 +88,14 @@ pub fn wire_verdict(world: &World, e: &Entity) -> Option<Result<WireVerdict, Str
             return Err("the wire laws judge the kerf against the part, and this cut is taken from the stock - cut it from the part model".into());
         }
         let hs = super::resolve_params(world, setup, Some(&op.src), &op.params)?;
-        let sections = if super::wire_sketch::selected(&op.src, &op.params) {
+        let selected = super::wire_sketch::selected(&op.src, &op.params);
+        // #3215: a vertical cut of a model whose arcs were read back from
+        // the facets is judged under the chord the fit was bounded by.
+        let facet_arcs = !selected && w.four_axis.is_none() && w.taper_deg == 0.0 && cache.path.moves.iter().any(|m| m.arc.is_some());
+        let sections = if selected {
             let name = model::name_of(world, e).ok_or("the selected wire operation has no name")?;
             let sketch = super::wire_sketch::resolve(world, &op, &name, &hs)?;
-            let part = crate::geo2d::Region::new(vec![sketch.straight_ring(w)?]).map_err(|e| e.to_string())?;
+            let part = crate::geo2d::Region::new(vec![sketch.verify_ring(w)?]).map_err(|e| e.to_string())?;
             let stock = sketch.stock_region()?;
             sketch.check_path(&cache.path, cond.wire_diameter * 0.5 + cond.gap)?;
             let (lo, hi) = (sketch.stock.min.z, sketch.stock.max.z);
@@ -107,7 +110,7 @@ pub fn wire_verdict(world: &World, e: &Entity) -> Option<Result<WireVerdict, Str
             WireSide::Punch => CutSide::Punch,
             WireSide::Left | WireSide::Right => CutSide::Open,
         };
-        let start = w.start.map(|[x, y]| Point2::new(x, y));
+        let start = w.picks.first(crate::path_picks::PickRole::Start).map(|p| p.xy);
         let cutoff_from = cutoff_from(w, &cache.path)?;
         Ok(judge(&WireJob {
             path: &cache.path,
@@ -123,10 +126,48 @@ pub fn wire_verdict(world: &World, e: &Entity) -> Option<Result<WireVerdict, Str
             taper: w.taper_deg != 0.0 || w.four_axis.is_some(),
 
             burnout: w.burnout.is_some(),
-            // #1170: the 4-axis cut's stated verify tolerance.
-            verify_tol: w.four_axis.as_ref().map_or(0.0, |f| f.verify_tolerance),
+            // #1170: the 4-axis cut's stated verify tolerance; #3210: a
+            // constant taper's is the model's chord tolerance.
+            verify_tol: match &w.four_axis {
+                Some(f) => f.verify_tolerance,
+                None if facet_arcs => arc_chord(world, setup, &op.src)?,
+                None => taper_chord(world, &op.src, w),
+            },
+            taper_chord: w.four_axis.is_none() && (w.taper_deg != 0.0 || facet_arcs),
         }))
     })())
+}
+
+/// The verify tolerance of a constant-taper cut (#3210): the coarsest
+/// chord its source models were meshed at - the importer's promise, or
+/// the coarser chord a reduced-fidelity model records. The generator
+/// lays the wire from one height's section, and the facets at the other
+/// heights stand off the true wall by up to that chord. 0 for a cut
+/// that states no taper.
+fn taper_chord(world: &World, src: &SrcRef, w: &super::types::WireContourOp) -> f64 {
+    if w.taper_deg == 0.0 {
+        return 0.0;
+    }
+    let names: Vec<&str> = match src {
+        SrcRef::Entity(name) => vec![name.as_str()],
+        SrcRef::Selection(items) => items.iter().map(|g| g.entity.as_str()).collect(),
+        SrcRef::Stock => Vec::new(),
+    };
+    let cap = crate::geometry::import::step::CHORD_CAP;
+    names
+        .into_iter()
+        .filter_map(|n| model::find_by_name(world, n))
+        .filter_map(|e| crate::model_fidelity::chord_of(world, &e))
+        .fold(cap, f64::max)
+}
+
+/// The tolerance a model's read-back arcs are judged under (#3215): the
+/// chord the generator bounded each arc's sagitta by (the importer's
+/// promise plus the model's excess, read as generation reads it,
+/// `judged_material`) plus the fit's vertex tolerance.
+fn arc_chord(world: &World, setup: Option<&str>, src: &SrcRef) -> Result<f64, String> {
+    let m = super::material::judged_material(world, setup, src).map_err(|e| e.to_string())?;
+    Ok(crate::geometry::import::step::CHORD_CAP + m.excess + crate::wire_edm::MODEL_ARC_FIT_TOL)
 }
 
 fn model_sections(world: &World, op: &crate::schema::Operation, hs: &super::ResolvedHeights) -> Result<Vec<WireSection>, String> {
@@ -167,10 +208,26 @@ fn model_sections(world: &World, op: &crate::schema::Operation, hs: &super::Reso
 /// (generated before the tabs were set, or not a tabbed path).
 pub fn cutoff_from(w: &super::types::WireContourOp, path: &crate::cl::Toolpath) -> Result<Option<usize>, String> {
     let Some(t) = &w.tabs else { return Ok(None) };
-    let (Some(n), Some([x, y])) = (t.count, w.start) else {
+    let (Some(n), Some(pick)) = (t.count, w.picks.first(crate::path_picks::PickRole::Start)) else {
         return Err("the tabs are not fully stated - the tab count and the start hole place the cut-off".into());
     };
-    crate::wire_edm::cutoff_split(path, Point2::new(x, y), n as usize).map(Some).ok_or_else(|| {
+    crate::wire_edm::cutoff_split(path, pick.xy, n as usize).map(Some).ok_or_else(|| {
         format!("the path does not hold the tab cut-off its {n} tab(s) state - regenerate it")
     })
+}
+
+/// The leftover a stated sharp inside corner keeps (#3207), as the
+/// generator said it on the op's cached path: a note on the verify
+/// line, never a refusal. `None` when the op states no sharp corners
+/// or its path keeps no rest.
+#[must_use]
+pub fn sharp_corner_said(world: &World, e: &Entity) -> Option<String> {
+    let op = model::operation_of(world, e)?;
+    let OpParams::WireContour(w) = &op.params else { return None };
+    if !w.sharp_corners {
+        return None;
+    }
+    let cache = model::toolpath_of(world, e)?;
+    let note = cache.path.notes.iter().find(|n| n.starts_with(crate::wire_edm::SHARP_NOTE))?;
+    Some(note.trim_start_matches("wire EDM: ").to_owned())
 }

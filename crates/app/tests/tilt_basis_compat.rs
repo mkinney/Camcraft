@@ -260,7 +260,7 @@ fn saved_basis_contract_requires_a_version_that_legacy_readers_refuse() {
     );
     // The version guard also refuses future basis contracts in this reader.
     let mut future = saved;
-    future["version"] = (project::PROJECT_VERSION + 1).into();
+    future["version"] = (project::NEWEST_PROJECT_VERSION + 1).into();
     let error = project::open(&camcraft_app::world::new_world(), &future.to_string()).unwrap_err();
     assert!(matches!(
         error,

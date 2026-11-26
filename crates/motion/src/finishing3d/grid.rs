@@ -93,6 +93,10 @@ fn cell(v: f64, o: f64, s: f64, n: usize) -> usize {
     t.clamp(0.0, hi) as usize
 }
 
+/// `(x0, y0, s, nx, ny, cell lists)` of a grid (tests, #2620).
+#[cfg(test)]
+pub(super) type GridDump = (f64, f64, f64, usize, usize, Vec<Vec<u32>>);
+
 impl SupSet {
     /// The facets with a grid sized from their own boxes.
     pub(super) fn new(sups: Vec<Sup>) -> Self {
@@ -117,6 +121,15 @@ impl SupSet {
     #[cfg(test)]
     pub(super) fn has_grid(&self) -> bool {
         self.grid.is_some()
+    }
+
+    /// The grid as plain values: `(x0, y0, s, nx, ny, cell lists)` (tests:
+    /// the recorded fixture that camcraft-gpu's parity test reads, #2620).
+    #[cfg(test)]
+    pub(super) fn grid_dump(&self) -> Option<GridDump> {
+        let g = self.grid.as_ref()?;
+        let lists = g.start.windows(2).map(|w| g.idx.get(w[0]..w[1]).unwrap_or(&[]).to_vec()).collect();
+        Some((g.x0, g.y0, g.s, g.nx, g.ny, lists))
     }
 
     /// Every facet whose padded box can hold `(x, y)`, plus some that

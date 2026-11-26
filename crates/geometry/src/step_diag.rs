@@ -192,15 +192,25 @@ fn unterminated(
 /// instance and nothing else. `head` holds no `;` outside a string or a
 /// comment ([`locate`] cut it there), so the frame around it cannot be
 /// closed early from inside.
+///
+/// The parser holds a text's counts to a density of that text's own length
+/// (solidcore fa67b3f5, #3767): a dense but legal record, alone in this
+/// short frame, can pass that density. That is no syntax fault of the
+/// record; the parse of the whole file judges the counts.
 #[cfg(not(target_arch = "wasm32"))]
 fn record_parses(head: &str) -> bool {
+    use camcraft_kernel::p21::{Error, parse};
     const OPEN: &str = "ISO-10303-21;\nDATA;\n";
     const CLOSE: &str = ";\nENDSEC;\nEND-ISO-10303-21;\n";
     let mut probe = String::with_capacity(OPEN.len() + head.len() + CLOSE.len());
     probe.push_str(OPEN);
     probe.push_str(head);
     probe.push_str(CLOSE);
-    camcraft_kernel::p21::parse(&probe).is_ok_and(|ex| ex.entities.len() == 1 && ex.duplicates.is_empty())
+    match parse(&probe) {
+        Ok(ex) => ex.entities.len() == 1 && ex.duplicates.is_empty(),
+        Err(Error::TooManyParams { .. } | Error::TooManyRecords { .. } | Error::TooManyEntities { .. }) => true,
+        Err(_) => false,
+    }
 }
 
 /// The browser build has no solidcore: every record passes here, and the

@@ -67,6 +67,9 @@ impl SetToolNumber {
                 tool_numbers::RANGE_TEXT
             )));
         }
+        if let Some(tool) = model::tool_of(world, &entity) {
+            crate::tool_reservations::for_tool(world, name, tool.kind, n).map_err(CommandError::Invalid)?;
+        }
         let taken = model::named_entities(world).into_iter().find(|(other, e)| {
             other != name
                 && model::tool_number_of(world, e) == Some(n)

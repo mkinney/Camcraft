@@ -17,7 +17,7 @@ Opening the project does not require a model file at its original path.
 |---|---|---|
 | 1 | `Groove rough` | Two blade positions cover the 6 mm groove. A 0.25 mm radial allowance remains. |
 | 2 | `Groove finish` | Two plunges remove the allowance and reach the 22 mm floor diameter. |
-| 3 | `Part off` | Radial pecks of 0.5 mm reach the axis with the blade centered at Z15. |
+| 3 | `Part off` | Radial pecks of 0.5 mm reach the axis with the whole kerf below the part's end face at Z15. |
 
 ## What to inspect
 
@@ -29,7 +29,7 @@ Inspect these features in `groove-part-off.nc`:
 - `G18`, `G99`, and `T0101` select the lathe plane, feed for each revolution, and grooving blade.
 - X words specify diameters. The rough groove plunges reach `X22.5`, then the finish plunges reach `X22.`.
 - Groove plunges use posted Z35 and Z38. The blade centers are Z36.5 and Z39.5. Orientation 2 places the control point at the blade's low Z edge.
-- The part-off blade center is Z15. Its kerf spans Z13.5 to Z16.5. Orientation 2 posts its low edge at Z13.5.
+- The part-off plane Z15 is the part's end face. The kerf spans Z12 to Z15, in the bar below the part, and the blade center is Z13.5. Orientation 2 posts its low edge at Z12.
 - The part-off pecks reach `X0.`. Successive pecks decrease the diameter by 1 mm.
 - Rapid moves at `X30.1` clear the 30 mm stock diameter.
 

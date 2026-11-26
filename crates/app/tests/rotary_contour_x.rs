@@ -91,6 +91,8 @@ fn world(stock_diameter: f64) -> World {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
+        picks: Default::default(),
     };
     history.execute(
         &world,

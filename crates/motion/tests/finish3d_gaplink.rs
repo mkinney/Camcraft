@@ -91,6 +91,7 @@ fn fp(gap_link: GapLink, retract_z: Option<f64>, clearance_z: f64) -> Finish3DPa
         entry_ramp: false,
         steep_stepover: None,
         pencil_reference: None,
+        waterlines: true,
     }
 }
 

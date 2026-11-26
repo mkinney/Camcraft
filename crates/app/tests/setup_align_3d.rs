@@ -103,6 +103,7 @@ fn document(aligned: bool, tool_name: &str) -> (World, History) {
 
 fn rough(strategy: PocketStrategy) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         stepover: 1.5,
         stock_to_leave: 0.0,
@@ -122,12 +123,15 @@ fn rough(strategy: PocketStrategy) -> OpParams {
         feed_opt: false,
         shell: true,
         method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
+        picks: Default::default(),
     }
 }
 
 fn finish() -> OpParams {
     OpParams::Finish3D {
         pattern: FinishPattern::Waterline,
+        direction_angle: 0.0,
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
         stepover: None,
         tolerance: 0.1,
         clearance_z: Height::fixed(16.0),
@@ -145,6 +149,8 @@ fn finish() -> OpParams {
         pencil_reference: None,
         fill_openings: None,
         gap_link: camcraft_app::finishing3d::GapLink::Jump,
+        waterlines: true,
+        picks: Default::default(),
     }
 }
 

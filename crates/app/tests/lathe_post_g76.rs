@@ -123,6 +123,7 @@ fn thread_world_hand(hand: ThreadHand) -> (World, History) {
         plunge_feed: 40.0,
         infeed_plan: Default::default(),
         hand,
+        picks: Default::default(),
     };
     let cmd = CreateOperation::new(&world, "TH1", "TD-1732-60", SrcRef::Entity("bar".into()), params);
     history.execute(&world, cmd.expect("create"));

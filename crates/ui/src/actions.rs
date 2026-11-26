@@ -58,6 +58,11 @@ pub(crate) fn resolve_unsaved(state: &mut State, choice: crate::unsaved::Unsaved
     state.pending.push_back(CommandKind::ResolveUnsaved(choice));
 }
 
+/// The overwrite prompt's answer (#3608): its effect goes through the queue.
+pub(crate) fn resolve_overwrite(state: &mut State, choice: crate::save_guard::OverwriteChoice) {
+    state.resolve_overwrite(choice);
+}
+
 pub(crate) fn undo(state: &mut State) {
     state.pending.push_back(CommandKind::Undo);
 }
@@ -183,13 +188,13 @@ fn walk_whole_program(state: &mut State) {
 /// thread, and until its first publication the sheet stands.
 fn follow_playhead(state: &mut State, judged: bool) -> Result<(), String> {
     use camcraft_app::stock_play::{progress, PlaySeed};
-    use camcraft_app::stock_play_worker::PlayWorker;
     use camcraft_app::stock_view::DEFAULT_TEXELS;
     if state.field_play.is_none() {
         let seed = PlaySeed::gather(&state.world, judged, DEFAULT_TEXELS)?;
         // #2181: the removal is calculated once before playback, then
         // replayed from keyframes (the transport row shows the progress).
-        state.field_play = Some(PlayWorker::spawn_precalc(seed, camcraft_app::stock_play::PRECALC_BUDGET)?);
+        // #3336: on the GPU layer when the eye can show it (`play_layer`).
+        state.field_play = Some(crate::play_layer::spawn(state, seed)?);
     }
     let sc = crate::egui_app::shell::cached_script(state);
     let t = state.sim.as_ref().map_or(0.0, |s| s.t);
@@ -328,8 +333,11 @@ pub(crate) fn target(state: &mut State, t: UiTarget) {
     // A retarget ends the blank new-tool form (#2397).
     state.new_tool_form = false;
     if let UiTarget::Tool(name) = &t {
+        // #3892: the empty name is the tool library. Every door (the
+        // ribbon's Tools cell, the View menu, the gate route) opens its
+        // window and keeps the Properties subject.
         if name.is_empty() {
-            state.layout_request = Some(LayoutRequest::ToolLibrary);
+            state.open_tool_library();
             return;
         }
         if state.tool_shape_editor.is_some() {
@@ -423,6 +431,8 @@ pub(crate) fn add_operation(state: &mut State, kind: usize) {
         .and_then(|e| camcraft_app::model::tool_of(&state.world, &e))
     {
         camcraft_app::operation::seed_helix_for_tool(&mut params, t.diameter);
+        // #3475: a new Slot is at least as wide as its tool.
+        camcraft_app::operation::seed_slot_for_tool(&mut params, t.diameter);
         // #890: and its feed, from the tool's row for the document material.
         camcraft_app::cutting_rows::seed_feed_for_tool(&state.world, &mut params, &t);
     }

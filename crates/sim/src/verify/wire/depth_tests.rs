@@ -40,6 +40,7 @@ fn judged(side: CutSide, w: f64, start: Point2, half: impl Fn(f64) -> f64) -> Wi
         capture: true,
         taper: false,
         verify_tol: 0.0,
+        taper_chord: false,
     })
 }
 

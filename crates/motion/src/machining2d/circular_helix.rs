@@ -21,8 +21,11 @@
 
 use crate::cl::{ArcPlane, Move, MoveKind, Toolpath, lattice};
 use crate::entry::disc_clears;
-use crate::geo2d::{Point2, Region};
+use crate::geo2d::Point2;
+use crate::ring_zig::MIN_ARC_CHORD;
 use crate::verify::crossed_pairs;
+
+use super::levels::Cert;
 
 /// An orbit this near the helix radius is a helix orbit.
 const TOUCH: f64 = 1e-6;
@@ -148,11 +151,36 @@ impl Descents {
     }
 }
 
+/// An internally tangent orbit in a Circular ring's disk. Test the actual
+/// near and far points of the two posted half-turns after lattice rounding.
+pub(super) fn tangent_center(axis: Point2, radius: f64, q: Point2, r: f64) -> Option<Point2> {
+    let dx = q.x - axis.x;
+    let dy = q.y - axis.y;
+    let d = dx.hypot(dy);
+    if d <= 0.0 || r <= 0.0 || r > radius {
+        return None;
+    }
+    let c = Point2::new(lattice(q.x - r * dx / d), lattice(q.y - r * dy / d));
+    let far = Point2::new(lattice(2.0 * c.x - q.x), lattice(2.0 * c.y - q.y));
+    let near = Point2::new(lattice(q.x), lattice(q.y));
+    // The first and last half-turn meet q. Intermediate half-turns meet
+    // the lattice-snapped near point. Either chord can round shut at post.
+    if ![q, near].iter().all(|p| (p.x - far.x).hypot(p.y - far.y) >= MIN_ARC_CHORD) {
+        return None;
+    }
+    let orbit = [q, near, far].iter().map(|p| (p.x - c.x).hypot(p.y - c.y)).fold(0.0, f64::max);
+    ((c.x - axis.x).hypot(c.y - axis.y) + orbit <= radius + 1e-10).then_some(c)
+}
+
 /// The center the descent places a helix of radius `r` at for a pass
 /// that starts at `q`: the first of the eight compass offsets whose
 /// disc the room holds (`descent::plan_helix`'s first try). `None`
 /// when no offset fits - the descent then looks elsewhere.
-fn predicted_center(room: &Region, q: Point2, r: f64) -> Option<Point2> {
+fn predicted_center(cert: &Cert, q: Point2, r: f64) -> Option<Point2> {
+    if let Cert::RingDisk { center, radius, .. } = cert {
+        return tangent_center(*center, *radius, q, r);
+    }
+    let room = cert.room();
     (0..8).find_map(|k| {
         let (sn, cs) = (f64::from(k) * std::f64::consts::FRAC_PI_4).sin_cos();
         let c = Point2::new(lattice(q.x + r * cs), lattice(q.y + r * sn));
@@ -169,7 +197,7 @@ fn predicted_center(room: &Region, q: Point2, r: f64) -> Option<Point2> {
 pub(super) fn ring_phase(
     n: usize,
     vertex: impl Fn(usize) -> Point2,
-    room: &Region,
+    room: &Cert,
     helix_r: f64,
     flown: &Descents,
 ) -> usize {

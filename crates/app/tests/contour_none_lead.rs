@@ -5,7 +5,9 @@
 //! from a linear lead to None through the command history, the way the
 //! Lead in / Lead out page applies its draft, and generated on the
 //! user's own part (`testdata/models/Milling-test.step`). Linear and Arc
-//! leads, and the Arc entry with a lead, keep their shapes.
+//! leads, and the Arc entry with a lead, keep their shapes. #3247: a tool
+//! that is not centre-cutting is refused there, and the refusal names the
+//! lead-in, not the Arc entry that is already set.
 //!
 //! Gate map: covers app::commands (EditOperationParams,
 //! GenerateOperation) over camcraft_motion::machining2d::contour.
@@ -16,12 +18,13 @@ use camcraft_app::geometry::Point3;
 use camcraft_app::links::{Approach, Links};
 use camcraft_app::machining2d::{Lead, Side};
 use camcraft_app::machining3d::Entry3D;
-use camcraft_app::operation::{Height, HeightReference, OpParams, SrcRef};
-use camcraft_app::schema::Location;
+use camcraft_app::operation::{self, Height, HeightReference, OpParams, SrcRef};
+use camcraft_app::schema::{Location, Operation};
 use camcraft_app::stock::StockShape;
-use camcraft_app::tools::catalog;
+use camcraft_app::tools::{catalog, Tool};
 use camcraft_app::world::new_world;
 use camcraft_app::{model, posting};
+use camcraft_motion::approach::CENTER_CUT_REFUSAL;
 use flecs_ecs::prelude::World;
 
 const TOOL: &str = "EM-1000-4FL";
@@ -49,9 +52,10 @@ fn contour(lead: Lead, lead_out: Option<Lead>, entry: Entry3D) -> OpParams {
         entry,
         helix_radius: 1.0,
         blend_turns: false,
+        blend_radius: None,
         tilt: None,
         links: Links { approach, ..Links::PLANAR },
-        chain_overrides: Vec::new(),
+        chain_overrides: Vec::new(), picks: Default::default(),
     }
 }
 
@@ -163,4 +167,41 @@ fn arc_entry_with_a_linear_lead_still_descends_on_its_arc() {
     let (_, from, to) = first_xy_cut(&t);
     assert!(from.z > to.z, "the wall arc descends while it travels: {from:?} -> {to:?}");
     assert!(!t.notes.iter().any(|n| n.contains("arc stands down")), "{:?}", t.notes);
+}
+
+/// #3247: the part and stock of `job`, with a tool that is not
+/// centre-cutting, generated straight through `operation::generate`.
+fn refusal_for(lead: Lead) -> String {
+    let world = new_world();
+    let mut h = History::default();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/Milling-test.step");
+    let imp = ImportModel::new(&path).expect("the user's STEP imports");
+    let name = imp.name.clone();
+    h.execute(&world, imp);
+    let loc = Location { pos: Point3::new(0.0, 0.0, -7.0), ..Default::default() };
+    h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 70.0, dy: 70.0, dz: 27.0 }, loc).expect("stock"));
+    let em = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
+    h.execute(&world, AddTool::new(&world, "NC", Tool { center_cutting: false, ..em }).expect("tool"));
+    let params = contour(lead, Some(Lead::None), Entry3D::Arc);
+    let op = Operation {
+        tool: "NC".into(),
+        src: SrcRef::Entity(name),
+        params,
+        stamp: None,
+        setup: None,
+        area: Default::default(),
+        coolant: Default::default(),
+        after: Default::default(),
+        suppressed: false,
+    };
+    operation::generate(&world, &op, "Op1").map(|_| String::new()).unwrap_or_else(|e| e.to_string())
+}
+
+#[test]
+fn arc_entry_with_no_lead_in_refuses_a_non_centre_cutting_tool_and_names_the_lead_in() {
+    let msg = refusal_for(Lead::None);
+    assert!(msg.contains(CENTER_CUT_REFUSAL), "the refusal stands: {msg}");
+    assert!(msg.contains("the Arc entry does not run when the lead-in is None"), "{msg}");
+    assert!(msg.contains("set a Linear or Arc lead-in, or use a centre-cutting tool"), "{msg}");
+    assert!(!msg.contains("pick the Arc entry"), "the Arc entry is already set: {msg}");
 }

@@ -28,6 +28,12 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+#[path = "posting_agie.rs"]
+pub mod agie;
+
+#[path = "posting_waterjet.rs"]
+mod waterjet;
+
 #[path = "posting_files.rs"]
 mod files;
 pub use files::{
@@ -54,9 +60,11 @@ pub const PLASMA_POSTS: &[&str] = &["Tormach PathPilot Plasma"];
 
 /// The registry entries that speak WIRE EDM (#533): RS-274 motion with
 /// the control's own codes from the machine file, and (#617) the Sodick
-/// dialect with its manual's words. They serve wire EDMs only, and no
-/// cutting post serves one. The first is the default for a wire EDM.
-pub const WIRE_POSTS: &[&str] = &["Generic ISO Wire EDM", "Sodick Wire EDM (Mark 21)"];
+/// dialect with its manual's words, and (#2700) the G-EDM dialect for
+/// G-RBLv3 controllers. They serve wire EDMs only, and no cutting post
+/// serves one. The first is the default for a wire EDM.
+pub const WIRE_POSTS: &[&str] =
+    &["Generic ISO Wire EDM", "Sodick Wire EDM (Mark 21)", agie::POST, "G-EDM Wire EDM"];
 
 /// The registry entries that speak SINKER EDM (#542): RS-274 motion
 /// with the control's own codes from the machine file, each declaring
@@ -306,7 +314,7 @@ pub fn script_of(post: &PostRef) -> Result<(String, String), String> {
         }
         PostRef::Named(name) => Ok((format!("{name} (built-in)"), builtin_post_text(&name)?.to_owned())),
         PostRef::File(path) => {
-            let text = std::fs::read_to_string(&path)
+            let text = crate::session_files::read_post(&path)
                 .map_err(|e| format!("post script {path}: {e}"))?;
             Ok((path, text))
         }
@@ -316,6 +324,10 @@ pub fn script_of(post: &PostRef) -> Result<(String, String), String> {
 /// What a successful post says back.
 #[derive(Debug)]
 pub struct Posted {
+    /// The controller files published together for a native multi-file post.
+    pub bundle_files: Vec<std::path::PathBuf>,
+    /// Required checks on the posted native job before the controller generates its steps.
+    pub controller_review: Option<String>,
     pub ops: usize,
     pub lines: usize,
     /// The exact program that was written - the M1.7d viewer shows the
@@ -344,7 +356,7 @@ pub struct Posted {
 mod sim_clause_impl;
 #[path = "posting_plasma.rs"]
 mod plasma_clause_impl;
-pub use plasma_clause_impl::{plasma_clause, PlasmaClause, PLASMA_VERDICT};
+pub use plasma_clause_impl::{plasma_clause, GateWarning, PlasmaClause, PLASMA_VERDICT};
 #[path = "posting_wire.rs"]
 mod wire;
 pub use wire::{wire_clause, WireClause, WIRE_VERDICT};
@@ -433,6 +445,7 @@ pub(crate) fn json_map_to_overrides(val: &Value) -> Result<BTreeMap<String, Opti
 
 /// Resolve a built-in post name or `.cps` file path to its [`PostRef`] and script text (#258, #2190).
 pub fn resolve_cps(cps: &str) -> Result<(PostRef, String), String> {
+    let cps = agie::current_name(cps);
     if BUILTINS.iter().any(|(n, _)| *n == cps) {
         return Ok((PostRef::Named(cps.to_owned()), builtin_post_text(cps)?.to_owned()));
     }
@@ -440,7 +453,7 @@ pub fn resolve_cps(cps: &str) -> Result<(PostRef, String), String> {
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("cps"))
     {
-        let text = std::fs::read_to_string(cps)
+        let text = crate::session_files::read_post(cps)
             .map_err(|e| format!("cannot read post script {cps}: {e}"))?;
         return Ok((PostRef::File(cps.to_owned()), text));
     }
@@ -513,6 +526,8 @@ pub fn parse_cli_post_options(
 mod serves;
 #[path = "posting_edm.rs"]
 mod edm_params;
+#[path = "posting_stock_shape.rs"]
+mod stock_shape;
 #[path = "posting_nose.rs"]
 pub mod nose;
 #[path = "posting_index_swing.rs"]
@@ -534,11 +549,13 @@ pub use per_op::{
 pub use sim_clause_impl::{sim_clause, SimClause, NOT_JUDGED};
 
 /// The verification gate's whole answer: the blocking problems, and
-/// the stock sim's visible not-judged line (see [`sim_clause`]).
+/// the stock sim's visible not-judged line (see [`sim_clause`]), and
+/// (#3456) the program laws' non-blocking findings, one per op.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct GateReport {
     pub problems: Vec<String>,
     pub not_judged: Option<String>,
+    pub warnings: Vec<GateWarning>,
 }
 
 /// Post every operation of the document, in tree order, to one NC
@@ -606,6 +623,9 @@ fn post_script_as(
     extra: Option<&BTreeMap<String, OptionValue>>,
 ) -> Result<Posted, String> {
     let started = crate::clock::Instant::now();
+    if post.is_some_and(agie::is_native) {
+        return agie::post(world, out_path, extra);
+    }
     let posted = post_script_body_with(world, cps, label, post, extra)
         .and_then(|p| write_program(out_path, p));
     match &posted {
@@ -629,6 +649,9 @@ fn post_script_as(
 /// one-file post refuses it.
 pub fn post_setup_unwritten(world: &World) -> Result<Posted, String> {
     let post = mounts::single(world, true)?.post;
+    if agie::is_native(&post) {
+        return Err("Native wire EDM jobs require a job directory on the desktop or CLI".into());
+    }
     let (label, cps) = script_of(&post)?;
     let posted = post_script_body_with(world, &cps, Some(&label), Some(&post), None);
     match &posted {
@@ -712,6 +735,8 @@ fn post_script_body_with(
     let lines = out.program.lines().count();
     let line_pos = viewer_map(&records, &out);
     Ok(Posted {
+        bundle_files: Vec::new(),
+        controller_review: None,
         ops,
         lines,
         program: out.program,
@@ -900,6 +925,7 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     // a mesh that cannot carry one.
     problems.extend(crate::model_fidelity::gate_problems(world));
     problems.extend(review_problems(world));
+    problems.extend(waterjet::problems(world));
 
     let sim = sim_clause(world);
     problems.extend(sim.problem);
@@ -991,7 +1017,7 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
         (Some(s), Some(w)) => Some(format!("{s}; {w}")),
         (s, w) => s.or(w),
     };
-    GateReport { problems, not_judged }
+    GateReport { problems, not_judged, warnings: plasma.warnings }
 }
 
 /// The gate's fixture walk: one problem string per operation with a
@@ -1304,6 +1330,8 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
         let mut records = post::dump(&posted, &d);
         // #542: a sinker burn's condition and pickup ride the section.
         edm_params::insert(&op.params, &tool, &mut records);
+        // #2769: what the stock box bounds, for a post's blank definition.
+        stock_shape::insert(world, setup, &mut records);
         // #988: a left-hand-cut thread mill turns M4.
         if let OpParams::Thread { passes, .. } = &op.params
             && passes.spindle_reverse
@@ -1359,6 +1387,7 @@ impl HeightRefs for OpParams {
         match self {
             OpParams::Probe { clearance_z, .. } => vec![clearance_z],
             OpParams::PlasmaProfile(p) => vec![&p.clearance_z, &p.top_z, &p.bottom_z],
+            OpParams::WaterjetProfile(p) => vec![&p.clearance_z, &p.top_z, &p.bottom_z],
             OpParams::WireContour(p) => vec![&p.top_z, &p.bottom_z],
             OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(crate::operation::SinkerSideBurnOp { burn: p, .. }) => vec![&p.clearance_z, &p.top_z, &p.floor_z],
             OpParams::SlotUndercut(p) => {
@@ -1430,6 +1459,13 @@ impl HeightRefs for OpParams {
             // circular ladder is the pocket family's shape - vault or
             // flat floors, both read top and bottom (M2.4 B).
             | OpParams::Engrave {
+                clearance_z,
+                retract_z,
+                top_z,
+                bottom_z,
+                ..
+            }
+            | OpParams::VCarve {
                 clearance_z,
                 retract_z,
                 top_z,
@@ -1534,6 +1570,17 @@ impl HeightRefs for OpParams {
                 v.extend(retract_z.iter());
                 v
             }
+            // The flow band's two radii (#2826): the same walk, minus
+            // the window the picks replaced.
+            OpParams::RotaryFlow {
+                clearance_z,
+                retract_z,
+                ..
+            } => {
+                let mut v = vec![clearance_z];
+                v.extend(retract_z.iter());
+                v
+            }
             // The chamfer ride resolves three: its floor is DERIVED
             // from width and angle, so there is no bottom plane to
             // reference - the top plane is the only height the ride
@@ -1553,6 +1600,12 @@ impl HeightRefs for OpParams {
             // between runs itself, and the window's two planes clip
             // the loci (M2.5 E B).
             OpParams::Deburr {
+                clearance_z,
+                top_z,
+                bottom_z,
+                ..
+            }
+            | OpParams::MultiAxisDeburr {
                 clearance_z,
                 top_z,
                 bottom_z,

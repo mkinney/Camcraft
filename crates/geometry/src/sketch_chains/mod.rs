@@ -14,6 +14,8 @@
 //! repaired. Nesting is read over all closed chains passed in, whatever their layers: filter the
 //! primitives first to nest a subset. This module has no file I/O and no application state.
 
+mod clearance;
+pub use clearance::ChainClearance;
 mod connect;
 mod crossing;
 mod curve;

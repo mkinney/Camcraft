@@ -22,7 +22,8 @@ with a tool.
 
 Every kind checks its tool. Face, Contour, Pocket, Adaptive, Offset, Slot,
 Trochoidal slot, Circular and Bore cut with a flat end mill or bull-nose;
-Trace and Engrave take any mill or a taper tool; Slot Undercut takes a
+Trace and Engrave take any mill or a taper tool; V-Carve takes a chamfer
+mill (V-bit) only; Slot Undercut takes a
 T-slot, keyseat, dovetail or lollipop cutter only. A wrong tool is refused by
 name ("'<tool>' is a <kind>; a <operation> operation cuts with a ..."),
 and a document with no suitable tool is told to add one to the tool
@@ -35,6 +36,15 @@ faces and edges regardless of the toolbar's pick mode. Its open boundary
 can hold separate chains that keep the area between them. Crossing,
 touching or ambiguous chains are refused; Contour still rides one open
 boundary chain. Include and Exclude boundaries must remain closed.
+
+On **Geometry > Boundary > Tool**, **Inside boundary offset** moves the
+picked edge or face loop before tool containment: a positive value grows
+the area outward and a negative value shrinks it. **Outside boundary
+offset** moves only the stock-side limit of an open boundary; the picked
+edge stays put. For example, Outside boundary offset -2 mm pulls the air
+passes 2 mm inward without moving the part-side edge. A closed area has
+no outer side, so that setting has no effect there. Crossing or ambiguous
+boundaries still refuse; correct the picks rather than adding an offset.
 
 Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
 
@@ -53,6 +63,7 @@ profile has no model top or bottom: use stock or fixed height references.
 **Example cases**
 
 - [2d/first-part](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/first-part)
+- [probing/probe-face](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/probing/probe-face)
 <!-- catalog:examples:end -->
 
 {{ <icon name="op-face" /> }} ![Top view of parallel facing passes across the stock top.](../../../operation-paths.svg#Face)
@@ -70,6 +81,20 @@ bound it to a smaller area.
 | Heights | Stage down to Cut Z (Top Z, Stepdown) | off: one level |
 | Passes | Stepover (Y spacing) | 3 |
 | Passes | Holes | Lift over (or Cut across air, lift over islands; Cut straight through) |
+| Passes | Pass starts at | Auto, not used: the rows run edge to edge, so there is no inside or outside order |
+
+On **Passes**, turn on **Arc turns at row ends** to round the turns
+between facing rows. With **Arc radius = half the row spacing**, the
+turn is a semicircle where it fits. To set a smaller **Arc radius**,
+clear that checkbox. Where there is room, CamCraft joins two quarter
+arcs with a straight move outside the facing area.
+
+**Do not touch** is on **Geometry > Boundary > Boundaries**. Choose
+**Pick protected**, pick model faces or edge chains, then choose **Done**
+and **Apply**. **Clearance** adds space around the full tool assembly
+(flutes, shank and holder). Facing rows stop short of protected items;
+the material there stays unfaced. CamCraft refuses a cut with no safe
+facing room. Protected items stay highlighted while the operation is selected.
 
 **Common refusals:** "staged facing needs a positive stepdown";
 "staged top below the finished height"; "clearance plane not above the
@@ -130,6 +155,11 @@ CamCraft refuses an open run whose air side changes or whose offset cuts
 the kept part. A part-source run with no part material beside it keeps a
 centreline ride and the path notes say so.
 
+On **Passes**, turn on **Arc turns at corners** to round corners that
+turn toward air. Corners that turn toward the part stay sharp, and the
+path notes identify them. **Arc radius = tool radius** is the automatic
+setting. Clear it to enter an **Arc radius**.
+
 An inside **Ramp** entry descends along the lead and ring at the entry
 angle. An unset entry angle means 3 degrees, independently of the link
 angle. If there is too little room for that ramp, the path reports its
@@ -175,6 +205,7 @@ for an include or exclude boundary.
 | Passes | Stepover | 3 |
 | Passes | Stock to leave | 0 |
 | Passes | Optimal load (% of D) | about 14.6 (used by Adaptive and Offset rings) |
+| Passes | Pass starts at | Auto (Inside, Outside); used by Waterline and Offset rings |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Helix, radius 1 (Plunge, Ramp, Arc) |
 
@@ -200,6 +231,19 @@ for an include or exclude boundary.
 
 </div>
 
+**Pass starts at** (Passes tab) sets where each level of rings starts.
+It is the same option as on 2D Offset:
+
+- **Auto** cuts the rings from the middle of the area outward. This is
+  the order that 2D Pocket always cut.
+- **Outside** starts at the outer edge of the area and works in. With an
+  Outside containment, the outer edge is the stock edge.
+- **Inside** starts at the island or part wall and works out.
+
+Only the ring strategies (Waterline, Offset rings) have a ring order.
+Zigzag rows and rest machining keep their own order. When you set Inside
+or Outside on them, the path notes say that the option is not used.
+
 **Common refusals:** "pocket is narrower than the tool"; "stepover leaves
 bands the tool cannot reach"; a pick that "projects to a line from above
 and bounds no area".
@@ -224,6 +268,26 @@ A stated radius must be at least 0.01 mm and no larger than the tool
 radius. The path notes report corner material left by the rounding.
 Adaptive's Trochoidal method refuses this option because its loops
 already supply the arc motion.
+
+**Rest machining** on **Passes** lets a smaller tool cut what earlier
+roughing left. Enable it, choose **Rest stock from > Previous operations**,
+then **Apply**. CamCraft reads the stock left by earlier operations of this
+setup at every cut depth; it hides the entered previous-tool dimensions.
+**Rest allowance** grows the rest area to overlap the earlier cut.
+For example, rough a pocket with a 12 mm cutter, then place a 6 mm Pocket
+after it to clear the remaining corners. Generate the program in order.
+If earlier operations cleared nothing at those depths, the whole pocket
+is cut; if nothing remains, generation reports "no rest material".
+
+Rest supports Waterline, Offset rings and Zigzag; Auto uses Waterline.
+The old Pocket Adaptive strategy is refused. Missing or stale earlier
+toolpaths are refused by name: "generate the program in order" or
+"regenerate the program in order". An earlier suppressed operation with
+a recorded cut also refuses; unsuppress it or choose **Entered tool**,
+which trusts the dimensions you type instead of reading previous cuts.
+Previous-operations rest is refused on a tilted Pocket; clear the tilt or
+use Entered tool. Pre-drilled entry and rest cannot be combined; turn
+off one of them.
 
 ## 2D Adaptive
 
@@ -267,7 +331,32 @@ A microlift above clearance is refused.
 Choose Retract when the return must rise higher. These controls do not
 apply to Spiral.
 
-**Common refusals:** as Pocket.
+**Pass starts at** (Passes tab) sets where each level starts. It is the
+same option as on 2D Offset:
+
+- **Auto** is the plan that 2D Adaptive always cut.
+- **Outside** starts at the outer edge of the area and works in. Where
+  the area reaches past the stock edge with room for an entry in air,
+  the adaptive plan cuts the band from the air inward and ends on the
+  part wall. Where it does not (for example an Outside containment that
+  stops where the tool touches the stock, or a closed pocket), Offset
+  rings cut the area from its outer edge in, and the operation's notes
+  say so.
+- **Inside** starts in the middle of a pocket without islands and grows
+  out to its wall (the adaptive plan). An area with islands or a part in
+  it is cut with Offset rings from the island or part wall out, and the
+  notes say so.
+
+The Trochoidal method has no ring order: it refuses Inside and Outside.
+
+**Do not touch** (Geometry tab, **Boundaries**): as 2D Offset, with both
+methods. 2D Adaptive plans one area for all levels, so its keep-out covers
+each level from the floor up to the clearance height. Beside a protected
+item that is lower than the top of the cut, it leaves more stock than
+2D Offset, which keeps out level by level.
+
+**Common refusals:** as Pocket. With **Method = Trochoidal**, a **Pass
+starts at** other than Auto.
 
 ## 2D Offset
 
@@ -285,6 +374,46 @@ wanted rather than a constant load.
 
 **Picks:** as Pocket. **Settings:** Stepover 3, Stepdown 5, Stock to leave
 0, Entry Helix radius 1.
+
+**Known issue in 0.26.0:** **Inside** and **Outside** on 2D Offset can
+produce ramped linear cuts and lifts instead of the intended level rings.
+Inspect these paths before posting; use **Auto** if this affects the job.
+The report is [#3741](https://github.com/NeoTech/Camcraft/issues/3741),
+with follow-ups [#3744](https://github.com/NeoTech/Camcraft/issues/3744),
+[#3745](https://github.com/NeoTech/Camcraft/issues/3745),
+[#3746](https://github.com/NeoTech/Camcraft/issues/3746),
+[#3747](https://github.com/NeoTech/Camcraft/issues/3747) and
+[#3748](https://github.com/NeoTech/Camcraft/issues/3748).
+This release note applies until a build with the fixes ships.
+
+**Pass starts at** (Passes tab) sets where each level starts:
+
+- **Auto** cuts the rings from the middle of the area outward. This is
+  the order that 2D Offset always cut.
+- **Outside** starts at the outer edge of the area and works in. Each
+  ring follows the outer edge, one stepover in from the ring before, and
+  ends where it meets the part. The part wall comes last. With an
+  Outside containment, the outer edge is the stock edge: each level
+  starts outside the stock and ends on the part wall. Use it to stop
+  full-width slots in the stock.
+- **Inside** starts at the part or island wall and works out. Each ring
+  follows the walls, and the outer edge comes last.
+- Some cuts still take the full tool width. The toolpath then shows a
+  **Pass start** warning that names the case:
+  - **Outside** on a closed pocket: the first ring runs along the pocket
+    wall.
+  - **Inside** on an Outside containment: the first ring runs along the
+    part wall.
+  - **Inside** round an island: the first ring runs along the island wall.
+  - A place narrower than the tool plus one stepover, or stock that the
+    start edge does not reach.
+- Material inside a hole (the bore of a hollow boss, the stock inside a
+  ring-shaped part) starts from its own edge. With **Inside** it has no
+  hole to start from, so it is cut from the middle outward, as **Auto**
+  cuts it, and a note says so.
+- If the rings from the start side would leave material standing, that
+  area is cut in the **Auto** order instead, and a **Pass start** warning
+  says how much area the rings would have left.
 
 **Do not touch** (Geometry tab, **Boundaries**): pick faces or edge chains
 to protect from every cut, plunge, ramp, helix, keep-down and rapid link
@@ -323,8 +452,22 @@ typed in or seeded from suitable picked slot geometry;
 | Geometry | Slot width | 4 |
 | Geometry | Extend past A / Extend past B | 0 / 0 |
 | Passes | Stepover / Stock to leave | 3 / 0 |
+| Passes | Pass starts at | Auto (fixed) |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
+
+Slot cuts one continuous pass at each depth. It follows the centreline
+when the cutting width equals the tool diameter. A wider cut joins the
+rows and finishes with a lap along the walls.
+
+On **Passes**, turn on **Arc turns at row ends** to round the corners
+where the slot rows join. **Arc radius = tool radius** is the automatic
+setting. Clear it to enter an **Arc radius**. A single-row slot has no
+turn to round. On wider slots, read the path notes for material left by
+rounding.
+
+On Face, 2D Contour and Slot, arc turns are off by default. An explicit
+radius must be at least 0.01 mm and at most the tool radius.
 
 The A and B fields sit in their own **Manual** section on the Geometry tab;
 Slot width and the extension rows stay outside it. While the Geometry tab
@@ -367,7 +510,13 @@ when a full-width slotting cut would overload the tool.
 | Passes | Max engagement | 90 deg |
 | Passes | Return | Microlift, height 0.3 (or Retract) |
 | Passes | Smoothing radius | 1 |
+| Passes | Pass starts at | Auto (fixed) |
 | Feeds | Return feed | 2 x the cutting feed |
+
+At each depth, the tool opens an entry bore and cuts overlapping loops
+along the slot. A Microlift return retraces the arc it just cut at a
+slightly higher Z. The cut advances in this sequence so each loop starts
+from material cleared by the preceding cut.
 
 **Common refusals:** "the channel ... is too narrow for a ... tool to loop
 in - cut it as a plain Slot"; "a loop width of ... leaves the channel";
@@ -382,7 +531,7 @@ use the Retract return to hop higher".
 No catalog case yet.
 <!-- catalog:examples:end -->
 
-{{ <icon name="op-slot-undercut" /> }}
+{{ <icon name="op-slot-undercut" /> }} ![Section view of the cutter going down outside the wall, feeding sideways under the roof and back out.](../../../operation-paths.svg#SlotUndercut)
 
 **For:** the part of a slot that is wider below than at its mouth: a
 T-slot, a keyseat, a dovetail, a round undercut groove. The cutter's head
@@ -457,6 +606,19 @@ so any mill or a taper tool may be used.
 Stepdown 5 on Heights, feeds on Feeds. It has no Passes tab. **Common refusal:** "empty trace
 region" when nothing usable is picked.
 
+To mark stock without a 3D part, place a sketch on the stock and pick the
+profile, individual chains or a layer. Trace and Engrave follow open and
+closed chains and keep circular arcs. The tool lifts between separate
+strokes. Verification checks the mark against the stock and can block
+posting if the cut is unsafe.
+
+**Do not touch** on **Geometry > Boundary > Boundaries** protects model
+faces or edge chains. Choose **Pick protected**, finish picking, and
+**Apply**. Trace splits the cutting runs around protected items and
+checks entries, lifts and rapid links against the full tool assembly.
+**Clearance** adds standoff; a completely blocked cut is refused by name.
+Do not put the same item in the machining and protected selections.
+
 ## Engrave
 
 <!-- catalog:examples:start -->
@@ -472,6 +634,62 @@ markings with a V-bit. Choose Engrave when the job is marking, Trace when
 it is a functional groove; the path is the same.
 
 **Picks and settings:** as Trace.
+
+**Do not touch** on **Geometry > Boundary > Boundaries** also applies
+to Engrave. Pick protected model faces or edge chains and set **Clearance**
+as on Trace. The path leaves gaps around them and keeps the flutes,
+shank and holder clear, including on entries, lifts and rapid links.
+A cut with no safe room is refused. Choose **Apply** to commit the picks.
+
+## V-Carve
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
+{{ <icon name="op-v-carve" /> }} ![Top view of the V-bit tip following the centre line of a picked outline.](../../../operation-paths.svg#VCarve)
+
+**For:** carving letters, logos and other closed shapes with the cone of a
+V-bit. The tip follows the centre line of each picked outline and goes as
+deep as the shape is wide at that place, so the cone touches the two walls
+together. Choose it over Engrave when the shape has width, not only a
+stroke.
+
+The centre line is the **medial axis**: centres of circles that fit inside
+the outline and touch its walls. Their local radius and the V-bit's
+included angle set the tip depth below Top Z. For example, a 90-degree
+V-bit in a straight 2 mm wide stroke needs about 1 mm depth (the path
+keeps a small wall allowance); a narrower stroke rises toward the
+surface. **Bottom Z** on **Heights** caps that depth.
+If Bottom Z is only 0.5 mm below Top Z, this stroke keeps an uncleared
+floor unless **Flat clearing** on **Passes** is enabled. Pick closed
+outlines and a V-bit; the tool and missing-height refusals below name what
+must be corrected.
+
+**Tool:** a chamfer mill (V-bit). Its tip angle sets the cone, and its
+flute must cover the deepest cut.
+
+**Picks:** closed outlines. The V-bit cuts inside them.
+
+| Tab | Setting | Default |
+|---|---|---|
+| Heights | Top Z | the model top (the start depth) |
+| Heights | Bottom Z | 2 under Top Z (the maximum depth of the tip) |
+| Heights | Stepdown | 5 |
+| Passes | Flat clearing | off |
+| Passes | Floor stepover | 0.25 (shown only with flat clearing on) |
+
+Where the shape is wider than the cone at the maximum depth, the tip stops
+at Bottom Z. Flat clearing then cuts that floor flat at the floor
+stepover; with it off, the wide places keep the material that the cone
+does not reach.
+
+**Common refusals:** "V-Carve cuts with the cone of a V-bit - it needs a
+chamfer mill (V-bit)"; "the cone of ... has ... mm of flute, short of the
+... mm maximum depth of this V-Carve"; "V-Carve needs Top of Part Z: set
+the height".
 
 ## 2D Chamfer
 
@@ -489,6 +707,12 @@ stated width on 2D edges.
 
 **Picks:** the edges or faces whose top edge gets the chamfer. Needs a
 taper (chamfer) tool whose cone matches the angle.
+
+To chamfer only part of an edge loop, pick one or more open chains.
+Connected picks make one run. Separate chains get separate runs.
+The cutter enters and leaves each run on the air side. Each run needs
+a model wall at the chamfer depth. Leave area-shaping **Boundary**
+settings off for open chains.
 
 | Tab | Setting | Default |
 |---|---|---|
@@ -528,6 +752,14 @@ when the circle is a dimension, not a model face.
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
 
+Between its rings, Circular climbs vertically to the **Clearance** plane
+set on **Heights**, crosses there, and enters the next ring. It does not
+make a diagonal link through the uncut core. This applies to flat and
+**Vault** floors. For example, with Top Z 0 and Clearance Z 10 mm, the
+transfer between rings crosses at Z 10 even when the rings cut below
+Z 0. A "clearance plane below the first cut level" is refused; raise
+Clearance before generating.
+
 **Common refusals:** "circle radius must be positive"; "stepover must stay
 within the cutter radius - the last ring could leave an uncut core".
 
@@ -563,6 +795,7 @@ needs a positive pitch to time its helix against"; "infeed must sit between
 <!-- catalog:examples:start -->
 **Example cases**
 
+- [2d/drill-overfeed](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/drill-overfeed)
 - [2d/first-part](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/first-part)
 - [2d/hole-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/hole-work)
 <!-- catalog:examples:end -->
@@ -621,8 +854,15 @@ Drill boring cycle when there is no boring bar of the right size.
 |---|---|---|
 | Heights | Stepdown | 5 |
 | Heights | Bottom Z | each hole's own floor |
+| Passes | Pass starts at | Auto |
 | Passes | Stock to leave | 0 |
 | Passes | Tolerance | 0.01 |
+
+**Pass starts at** sets the order of the rings at each level. **Auto**
+cuts from the centre out and ends on the wall. A hole has no inner wall,
+so **Inside** is the same order. **Outside** cuts the wall ring first and
+then works in to the centre. Each level still starts with the dive at the
+centre.
 
 **Common refusals:** "boring needs at least one hole"; "clearance plane
 below a hole entry".

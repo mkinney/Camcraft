@@ -42,6 +42,7 @@ fn part() -> camcraft_app::geometry::Mesh {
 
 fn rough(strategy: PocketStrategy, method: AdaptiveMethod) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         stepover: 2.0,
         stock_to_leave: 0.0,
@@ -61,6 +62,7 @@ fn rough(strategy: PocketStrategy, method: AdaptiveMethod) -> OpParams {
         feed_opt: false,
         shell: false,
         method,
+        picks: Default::default(),
     }
 }
 

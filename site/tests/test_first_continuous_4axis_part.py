@@ -58,18 +58,18 @@ UI_STRINGS = {
     "Y origin": UI + "wcs_page.rs",
     "Z origin": UI + "wcs_page.rs",
     "New tool…": UI + "tool_library.rs",
-    "Type": UI + "tool_settings.rs",
-    "Ball nose": UI + "tool_settings.rs",
-    "Name": UI + "tool_settings.rs",
-    "Diameter": UI + "tool_settings.rs",
-    "Flute length": UI + "tool_settings.rs",
-    "Shank diameter": UI + "tool_settings.rs",
-    "Spindle rpm": UI + "tool_settings.rs",
+    "Type": UI + "tool_settings_grid.rs",
+    "Ball nose": UI + "tool_settings_grid.rs",
+    "Name": UI + "tool_settings_grid.rs",
+    "Diameter": UI + "tool_settings_grid.rs",
+    "Flute length": UI + "tool_settings_grid.rs",
+    "Shank diameter": UI + "tool_settings_grid.rs",
+    "Spindle rpm": UI + "tool_settings_grid.rs",
     "Add tool": UI + "tool_settings.rs",
     "Rotary Parallel": "crates/app/src/operation/kinds.rs",
     "Multi-axis": "crates/app/src/operation/kinds.rs",
-    "Tool": UI + "op_page.rs",
-    "Source": UI + "op_page.rs",
+    "Tool": UI + "op_page/header.rs",
+    "Source": UI + "op_page/header.rs",
     "Rename": UI + "op_page.rs",
     "Apply name": UI + "op_page.rs",
     "Generate": UI + "op_page.rs",
@@ -196,11 +196,12 @@ class FirstContinuousFourAxisProgram(unittest.TestCase):
     def test_continuous_a_claims_match_the_shipped_machine(self):
         text = flat(page())
         reference = flat((GUIDE / "multi-axis/continuous-4-axis.md").read_text())
-        decision = flat((ROOT / "docs/decisions/1904-continuous-4axis-walkthrough.md").read_text())
         self.assertIn("travel is unstated in both the shipped file and this example project", text)
         self.assertIn("former -360..360 travel refusal no longer applies", text)
         self.assertIn("former -360..360 travel refusal no longer applies", reference)
-        self.assertIn("shipped file now states no A travel limit", decision)
+        # #3271: no check reads docs/decisions/: the cut moves each file
+        # into RECOMMENDED.md. The shipped A axis has no travel: the
+        # project test above reads it from the saved machine.
         self.assertIn("chart scale is not a machine limit", text)
         index = flat((GUIDE / "multi-axis/_index.md").read_text())
         self.assertIn("A about X, no stated A travel limit, `nose_to_axis` 10.6", index)
@@ -293,15 +294,17 @@ class FirstContinuousFourAxisProgram(unittest.TestCase):
         self.assertIn("Line 254, `G93 G1 X-0.0005 Y0 Z0.3399 A8.194 F7.347`", text)
         self.assertEqual(next(i for i, l in enumerate(lines, 1) if "G93" in l.split()), 254,
                          "line 254 is the first G93 line")
-        self.assertTrue(lines[1469 - 1].endswith(" A180 F274.599"))
-        self.assertEqual(lines[1469:1472], ["G94", "G1 A182.441 F360", "G1 A183.75 F360"])
-        self.assertIn("At line 1469 the A position is 180", text)
+        self.assertEqual(lines[2685 - 1], "G1 A180 F360")
+        self.assertEqual(lines[2682 - 1:2687], ["G1 X0.0625 Y0 Z-0.0322 A183.75 F154.109", "G94",
+                                                "G1 A182.334 F360", "G1 A180 F360",
+                                                "G1 A178.581 F360", "G1 A176.25 F360"])
+        self.assertIn("At line 2685 the A position is 180", text)
         words = a_words()
-        self.assertEqual((min(words), max(words)), (-85.708, 264.23))
-        self.assertEqual(text.count("between -85.708 and 264.23"), 3)
+        self.assertEqual((min(words), max(words)), (-85.708, 265.687))
+        self.assertEqual(text.count("between -85.708 and 265.687"), 3)
         self.assertEqual(words[0], 44.604)
-        self.assertEqual(words[-1], 144.336)
-        self.assertIn("A at its last angle, 144.336", text)
+        self.assertEqual(words[-1], 265.686)
+        self.assertIn("A at its last angle, 265.686", text)
         # The end-face facts (#2343): the free end face is cut to the
         # centreline; the chuck-side end face is left.
         def word(line, letter):
@@ -315,11 +318,13 @@ class FirstContinuousFourAxisProgram(unittest.TestCase):
         at_end = [word(l, "Z") for l in feeds if word(l, "X") == -1.25 and word(l, "Z") is not None]
         self.assertGreater(min(at_end), 0.339, "at X-1.25 the tool stays at the radius of the model")
         notes = entities("operation")["Journal"]["cache"]["notes"]
-        self.assertEqual(len(notes), 1)
-        self.assertIn(notes[0], page())
+        # The held end's note and, since #2970, the full-turn note.
+        self.assertEqual(len(notes), 2)
+        for note in notes:
+            self.assertIn(note, page())
         # The two timings the page works out.
         self.assertAlmostEqual(60 / 7.347, 8.2, places=1)
-        self.assertAlmostEqual((178.689 - 176.25) * 147.601, 360.0, delta=0.5)
+        self.assertAlmostEqual((186.086 - 183.75) * 154.109, 360.0, delta=0.5)
 
     def test_g93_and_g94_are_as_the_page_says(self):
         self.assertIn("The path length bound includes the curved trajectory relative to the part "

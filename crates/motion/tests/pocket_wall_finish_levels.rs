@@ -200,6 +200,7 @@ fn slab_with_boss() -> Vec<Triangle> {
 
 fn params_3d(strategy: PocketStrategy) -> Pocket3DParams {
     Pocket3DParams {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         tool_diameter: 8.0,
         stepover: 3.0,

@@ -155,6 +155,11 @@ fn view_menu(ui: &mut Ui, state: &mut State) {
     ui.add_enabled(mounted, egui::Checkbox::new(&mut state.show_work_envelope, "Show work envelope"))
         .on_hover_text(tip)
         .on_disabled_hover_text("Mount a machine on the active setup to show its work envelope.");
+    // #2632: the operator-side arrow of the envelope. View state too.
+    let envelope_on = mounted && state.show_work_envelope;
+    ui.add_enabled(envelope_on, egui::Checkbox::new(&mut state.show_operator_side, crate::operator_side::SWITCH))
+        .on_hover_text(crate::operator_side::TIP)
+        .on_disabled_hover_text(crate::operator_side::TIP_OFF);
     // The display mode moved to the viewport's Display menu (#2818).
     // Projection is view state the same way (#434): orthographic keeps
     // a side view straight - parallel edges, no converging - which is
@@ -172,7 +177,7 @@ fn ctx(name: &str) -> Option<&str> {
 
 pub(super) fn eye(state: &mut State, leaf: &Leaf) {
     match leaf {
-        Leaf::Model(n) => State::toggle_visibility(&mut state.hidden_models, n),
+        Leaf::Model(n) | Leaf::Sketch(_, n) => State::toggle_visibility(&mut state.hidden_models, n),
         Leaf::Stock(s) => {
             let name = setup::stock_entity_name(&state.world, ctx(s));
             State::toggle_visibility(&mut state.hidden_stocks, &name);
@@ -220,6 +225,13 @@ pub(super) fn click(state: &mut State, leaf: Leaf) {
         Leaf::SetupOps(s) => focus(state, &s),
         Leaf::Model(n) => {
             actions::target(state, UiTarget::Model(n.clone()));
+            state.pending.push_back(CommandKind::Select(Some(n)));
+        }
+        // #1863: a profile opens its Stock page (its placement lives
+        // there) and is selected, so Del deletes it (undoable).
+        Leaf::Sketch(s, n) => {
+            focus(state, &s);
+            actions::target(state, UiTarget::Stock);
             state.pending.push_back(CommandKind::Select(Some(n)));
         }
         // Target only: no Select, so browsing tools never arms Del.

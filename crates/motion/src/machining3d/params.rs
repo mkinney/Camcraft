@@ -2,7 +2,7 @@
 
 
 use crate::machining2d::{
-    GenError, PocketStrategy,
+    GenError, PassStart, PocketStrategy,
 };
 use crate::links::Links;
 use crate::stock_sim::StockError;
@@ -60,6 +60,11 @@ pub struct Pocket3DParams {
     /// the ladder every earlier 3-D rough posted (its pass links have
     /// always stayed down where proved).
     pub links: Links,
+    /// Pass starts at (#3361, the shared type of #3316): the side each
+    /// level's rings start on under Waterline and Offset rings. Auto is
+    /// the core-first order every earlier 3-D rough cut, byte for byte.
+    /// The start and exit points of #1448 go beside this field.
+    pub pass_start: PassStart,
 }
 
 impl Pocket3DParams {

@@ -157,7 +157,7 @@ fn a_flipped_face_is_named_in_the_import_result_and_the_mcp_answer() {
     let bad = reversed_box();
     let graded = within(Duration::from_secs(90), move || import::parse_model_graded(bad.as_bytes(), Format::Step))
         .expect("a reversed face imports");
-    assert_eq!(graded.notes.len(), 1, "{:?}", graded.notes);
+    assert_eq!(graded.notes.len(), 2, "the flip and the unit (#1874): {:?}", graded.notes);
     assert!(graded.notes[0].contains("1 face(s) wound against their neighbours were flipped: face #32 ("), "{:?}", graded.notes);
     let dir = std::env::temp_dir().join(format!("camcraft-closed-shell-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
@@ -166,9 +166,9 @@ fn a_flipped_face_is_named_in_the_import_result_and_the_mcp_answer() {
     std::fs::copy(model("box.step"), &good_path).expect("copy");
     let said = mcp_import(&bad_path);
     let notes = said["notes"].as_array().cloned().unwrap_or_default();
-    assert_eq!(notes.len(), 1, "{said}");
+    assert_eq!(notes.len(), 2, "the flip and the unit (#1874): {said}");
     assert!(notes[0].as_str().unwrap_or_default().contains("flipped: face #32 ("), "{said}");
     let quiet = mcp_import(&good_path);
-    assert!(quiet.get("notes").is_none(), "nothing changed, nothing said: {quiet}");
+    assert_eq!(quiet["notes"], serde_json::json!(["length unit: mm (stated by the file)"]), "nothing changed, only the unit said: {quiet}");
     let _ = std::fs::remove_dir_all(&dir);
 }

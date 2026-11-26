@@ -132,6 +132,7 @@ pub fn fixture(name: &str) -> (World, PostOptions) {
             let p = OpParams::Facing {
                 tolerance: 0.05, clearance_z: h(25.0), top_z: h(16.0), bottom_z: h(14.0),
                 stepdown: 0.5, feed: 150.0, plunge_feed: 80.0,
+                picks: Default::default(),
             };
             create(&w, &mut hi, "F1", "TN-1600-0R8", p);
             (w, plain)
@@ -142,10 +143,12 @@ pub fn fixture(name: &str) -> (World, PostOptions) {
             let rough = OpParams::ProfileRough {
                 tolerance: 0.05, clearance_z: h(25.0), top_z: h(16.0), bottom_z: h(-16.0),
                 stepdown: 0.8, stock_to_leave: 0.25, feed: 150.0, plunge_feed: 80.0,
+                picks: Default::default(),
             };
             let finish = OpParams::ProfileFinish {
                 tolerance: 0.05, clearance_z: h(25.0), top_z: h(16.0), bottom_z: h(2.0),
                 feed: 120.0, plunge_feed: 60.0,
+                picks: Default::default(),
             };
             create(&w, &mut hi, "R1", "TN-1600-0R8", rough);
             create(&w, &mut hi, "S1", "TN-1600-0R8", finish);
@@ -157,11 +160,13 @@ pub fn fixture(name: &str) -> (World, PostOptions) {
             let groove = OpParams::GrooveFinish {
                 tolerance: 0.05, clearance_z: h(20.0), top_z: h(-3.6), bottom_z: h(-6.8),
                 feed: 150.0, plunge_feed: 60.0,
+                picks: Default::default(),
             };
             let part = OpParams::Part {
                 tolerance: 0.05, clearance_z: h(20.0), top_z: h(28.0), bottom_z: h(-10.0), stepdown: 0.5,
                 feed: 150.0, plunge_feed: 60.0, bar_load: true, bar_advance: 30.0, bar_unload: true,
-                bar_transfer: false, inspect_tol: 0.0,
+                bar_transfer: false, inspect_tol: 0.0, kerf: Default::default(),
+                picks: Default::default(),
             };
             create(&w, &mut hi, "G1", "GT-0200", groove);
             create(&w, &mut hi, "P1", "GT-0300", part);
@@ -176,6 +181,7 @@ pub fn fixture(name: &str) -> (World, PostOptions) {
                 break_through_from: Default::default(),
                 clearance_z: h(30.0), retract_z: None, top_z: h(20.0), bottom_z: None, cycle: CycleChoice::Auto,
                 peck: 0.0, dwell: 0.0, feed: 120.0, plunge_feed: 80.0, holes: vec![hole], cross: vec![],
+                picks: Default::default(),
             };
             create(&w, &mut hi, "AX1", "DR-0400", p);
             (w, plain)
@@ -224,6 +230,7 @@ fn thread(g76: bool, dips: bool) -> (World, PostOptions) {
     let p = OpParams::Threading {
         tolerance: 0.05, clearance_z: h(end + 10.0), top_z: h(top_z), bottom_z: h(7.7), pitch, depth,
         infeed: 0.4, feed: 120.0, plunge_feed: 40.0, hand: ThreadHand::Right, infeed_plan,
+        picks: Default::default(),
     };
     create(&w, &mut hi, "TH1", "TD-1732-60", p);
     let threading = if g76 { ThreadingOutput::G76Cycle } else { ThreadingOutput::G32Passes };

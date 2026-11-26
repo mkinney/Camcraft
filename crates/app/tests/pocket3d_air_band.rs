@@ -52,6 +52,7 @@ fn add_steel(world: &World, h: &mut History, gap: f64) {
 
 fn pocket3d(strategy: PocketStrategy, entry: Entry3D) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         stepover: 4.0,
         stock_to_leave: 0.0,
@@ -71,6 +72,7 @@ fn pocket3d(strategy: PocketStrategy, entry: Entry3D) -> OpParams {
         feed_opt: false,
         shell: false,
         method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
+        picks: Default::default(),
     }
 }
 

@@ -115,6 +115,9 @@ function onParameter(name, value) {
       return;
     case "OperationKind":
     case "RetractPlane": case "TopOfStock":
+    // #2769: the stock's shape describes the box already stated; this
+    // post's BLK FORM reads StockZBottom, not these.
+    case "StockShape": case "StockShapeBottom": case "StockShapeDiameter":
       return;
     case "SectionMode":
       if (value === "3-axis") return;
@@ -274,6 +277,12 @@ function onLinear() {
   block("L " + xyz(p.X, p.Y, p.Z) + " R0 F" + rate(p.FeedRate, machine.feedRateMax, "feed"));
 }
 function onCircular() {
+  // #3442: an arc whose written ends coincide is no C block (arcFate,
+  // PRELUDE): a short one is an L move, or no block (the last programmed
+  // point still moves on). A near-full turn keeps the refusal below.
+  var fate = arcFate(function (k, v) { return local(v, k); });
+  if (fate === "linear") { onLinear(); return; }
+  if (fate === "none") { motion(); return; }
   var p = motion();
   if (p.CircularPlane !== "XY" || p.Z !== p.StartZ) refuse("only constant-Z XY arcs are supported");
   var centre = p.IJKIncrement || {};

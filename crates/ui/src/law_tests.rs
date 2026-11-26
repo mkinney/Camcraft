@@ -51,7 +51,7 @@ mod gizmo_tests {
 
     /// The Z=0 ground grid: the floor the empty viewport was missing. It is
     /// world-space overlay geometry on the table plane, spaced in 1-2-5
-    /// decades that follow the zoom, and it obeys the axes switch.
+    /// decades that follow the zoom, and only the Grid switch hides it.
     #[test]
     fn the_ground_grid_is_a_round_spaced_floor() {
         let mut state = State::new();
@@ -72,8 +72,13 @@ mod gizmo_tests {
             "the step follows the zoom: {:?}",
             coarse[0]
         );
+        // #3322: the axes switch hides the axes alone; the Grid switch hides the grid alone.
         state.show_world_axes = false;
-        assert!(ground_grid_lines(&state).is_empty(), "hiding the axes hides the floor");
+        assert!(!ground_grid_lines(&state).is_empty(), "hiding the axes leaves the floor");
+        state.show_grid = false;
+        assert!(ground_grid_lines(&state).is_empty(), "the Grid switch hides the floor");
+        state.show_world_axes = true;
+        assert!(ground_grid_lines(&state).is_empty(), "axes on does not bring the floor back");
     }
 
     /// #948: a non-finite or absurd camera must not stretch the grid's
@@ -506,7 +511,7 @@ mod path_tests {
                 "Face1",
                 "EM-0400-2FL",
                 SrcRef::Stock,
-                OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+                OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                     stepover: 3.0,
                     clearance_z: Height::fixed(25.0),
                     cut_z: Height::fixed(19.5),
@@ -515,6 +520,7 @@ mod path_tests {
                     feed: 1200.0,
                     plunge_feed: 300.0,
                     climb: true,
+                    picks: Default::default(),
                 },
             )
             .expect("operation"),
@@ -692,9 +698,10 @@ mod path_tests {
                     tab_height: 0.0,
                     entry: camcraft_app::machining3d::Entry3D::Plunge,
                     helix_radius: 1.0,
-                    blend_turns: false,
+                    blend_turns: false, blend_radius: None,
                     links: camcraft_app::links::Links::PLANAR,
                     chain_overrides: Vec::new(),
+                    picks: Default::default(),
                 },
             )
             .expect("operation"),
@@ -849,7 +856,7 @@ mod preview_tests {
                 name: "Face1".into(),
                 tool: "EM-0400-2FL".into(),
                 src: SrcRef::Stock,
-                params: OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+                params: OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                     stepover: 3.0,
                     clearance_z: Height::fixed(25.0),
                     cut_z: Height::fixed(19.5),
@@ -858,6 +865,7 @@ mod preview_tests {
                     feed: 1200.0,
                     plunge_feed: 300.0,
                     climb: true,
+                    picks: Default::default(),
                 },
             },
         ]);
@@ -887,7 +895,7 @@ mod preview_tests {
         // read, never a leftover from the last generation.
         state.pending.push_back(CommandKind::EditOperationParams {
             name: "Face1".into(),
-            params: OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+            params: OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                 stepover: 3.0,
                 clearance_z: Height::fixed(25.0),
                 cut_z: Height::fixed(10.0),
@@ -896,6 +904,7 @@ mod preview_tests {
                 feed: 1200.0,
                 plunge_feed: 300.0,
                 climb: true,
+                picks: Default::default(),
             },
         });
         state.drain_actions();
@@ -1189,7 +1198,7 @@ mod feature_pick_tests {
                 "G1",
                 "EM-0400-2FL",
                 SrcRef::Stock,
-                OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+                OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                     stepover: 3.0,
                     clearance_z: Height::fixed(25.0),
                     cut_z: Height::fixed(4.5),
@@ -1198,6 +1207,7 @@ mod feature_pick_tests {
                     feed: 1200.0,
                     plunge_feed: 300.0,
                     climb: true,
+                    picks: Default::default(),
                 },
             )
             .expect("operation"),
@@ -1439,14 +1449,15 @@ mod height_plane_tests {
             tab_height: 0.0,
             entry: camcraft_app::machining3d::Entry3D::Plunge,
             helix_radius: 1.0,
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             chain_overrides: Vec::new(),
+            picks: Default::default(),
         }
     }
 
     fn pocket() -> OpParams {
-        OpParams::Pocket { rest: None, tilt: None, blend_radius: None,
+        OpParams::Pocket { pass_start: Default::default(), rest: None, tilt: None, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             stepover: 3.0,
             stock_to_leave: 0.0,
@@ -1464,6 +1475,7 @@ mod height_plane_tests {
             optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
             blend_turns: false,
             corner_relief: Default::default(),
+            picks: Default::default(),
         }
     }
 
@@ -1555,7 +1567,7 @@ mod height_plane_tests {
     fn height_planes_stand_in_only_when_the_level_is_undrawn() {
         let staged = state_with(
             "F1",
-            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                 stepover: 3.0,
                 clearance_z: Height::fixed(25.0),
                 cut_z: Height::fixed(18.0),
@@ -1564,6 +1576,7 @@ mod height_plane_tests {
                 feed: 1200.0,
                 plunge_feed: 400.0,
                 climb: false,
+                picks: Default::default(),
             },
         );
         let lines = height_plane_lines(&staged);
@@ -1580,7 +1593,7 @@ mod height_plane_tests {
         // Unstaged: region_z IS the cut, one outline at one level.
         let flat = state_with(
             "F2",
-            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                 stepover: 3.0,
                 clearance_z: Height::fixed(25.0),
                 cut_z: Height::fixed(18.0),
@@ -1589,6 +1602,7 @@ mod height_plane_tests {
                 feed: 1200.0,
                 plunge_feed: 400.0,
                 climb: false,
+                picks: Default::default(),
             },
         );
         let lines = height_plane_lines(&flat);
@@ -1723,7 +1737,7 @@ mod height_plane_tests {
         // level it will never cut. Staged, Top appears at the first level,
         // and editing the draft walks it live, the same honesty rule the
         // depth kinds follow.
-        let face_at = |top_z: Option<Height>| OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+        let face_at = |top_z: Option<Height>| OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
             stepover: 8.0,
             clearance_z: Height::fixed(15.0),
             cut_z: Height::fixed(2.0),
@@ -1732,6 +1746,7 @@ mod height_plane_tests {
             feed: 800.0,
             plunge_feed: 200.0,
             climb: true,
+            picks: Default::default(),
         };
         let plain = state_with("F1", face_at(None));
         let names: Vec<&str> = height_planes(&plain).iter().map(|p| p.name).collect();
@@ -1790,9 +1805,10 @@ mod height_plane_tests {
             tab_height: 0.0,
             entry: camcraft_app::machining3d::Entry3D::Plunge,
             helix_radius: 1.0,
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             chain_overrides: Vec::new(),
+            picks: Default::default(),
         };
         let mut state = state_with("C1", params);
         // G54 at z 3.0: stock top (20) + 5 = 25, G54 - 1 = 2.
@@ -1856,9 +1872,10 @@ mod height_plane_tests {
             tab_height: 0.0,
             entry: camcraft_app::machining3d::Entry3D::Plunge,
             helix_radius: 1.0,
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             chain_overrides: Vec::new(),
+            picks: Default::default(),
         };
         let state = state_with("C1", params);
         assert!(

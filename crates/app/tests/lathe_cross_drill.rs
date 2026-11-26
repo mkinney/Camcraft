@@ -75,6 +75,7 @@ fn params(holes: Vec<Hole>, cross: Vec<CrossHole>) -> OpParams {
         plunge_feed: 80.0,
         holes,
         cross,
+        picks: Default::default(),
     }
 }
 

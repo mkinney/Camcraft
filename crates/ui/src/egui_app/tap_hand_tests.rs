@@ -12,13 +12,16 @@ fn editor(name: &str) -> Harness<'static, State> {
     let tool = catalog().into_iter().find(|(n, _)| *n == name).unwrap().1;
     state.pending.push_back(CommandKind::AddTool { name: name.into(), tool });
     state.drain_actions();
-    // #2397: the tool settings are Properties; the shape editor has its
-    // own window and does not carry these fields.
-    state.ui_target = crate::state::UiTarget::Tool(name.into());
+    // #3930: the tool settings are edited in the tool library window;
+    // Properties shows a summary.
+    state.open_tool_in_library(name);
     let mut harness = Harness::builder()
-        .with_size(Vec2::new(1280.0, 1200.0))
-        .build_ui_state(|ui, state: &mut State| super::properties(ui, state, &super::super::theme::current()), state);
-    harness.run();
+        .with_size(Vec2::new(1600.0, 1200.0))
+        .build_ui_state(
+            |ui, state: &mut State| super::super::tool_library_dialog::tool_library_window(ui.ctx(), state),
+            state,
+        );
+    harness.run_steps(2);
     harness
 }
 
@@ -37,7 +40,8 @@ fn tap_hand_checkbox_stages_until_apply_and_undo_restores_right() {
     assert_eq!(checkbox.accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
     checkbox.click();
     harness.run();
-    assert_eq!(harness.state().tool_ui.thread_hand, ThreadHand::Left);
+    let staged = harness.state().tool_library.as_ref().and_then(|v| v.editor.as_ref()).map(|e| e.draft.thread_hand);
+    assert_eq!(staged, Some(ThreadHand::Left));
     assert_eq!(hand(harness.state()), ThreadHand::Right, "checkbox only stages the edit");
     harness.get_by_label("Apply").click();
     harness.run();

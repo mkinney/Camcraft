@@ -13,8 +13,9 @@
 //! takes the ChangeTool gates, and holders off never clears a body.
 //! Provenance: our own tests over our own format and commands.
 //!
+//! #3897: the holder list's used-by count (`used_by`).
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import),
-//! app::mcp (import_tool_library), app::script (importTools).
+//! app::mcp (import_tool_library), app::script (importTools), app::tool_body.
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, ImportMode, ImportReport, ImportTools, SetStock, SetToolBody,
@@ -33,6 +34,9 @@ use camcraft_app::tools::{Tool, ToolKind, catalog};
 use camcraft_app::world::new_world;
 use flecs_ecs::prelude::World;
 use serde_json::{Value, json};
+
+#[path = "tool_library_holders/used_by.rs"]
+mod used_by;
 
 const DRAWN: &str = "Six";
 const MESH: &str = "Four";
@@ -299,7 +303,7 @@ fn held_op_world() -> (World, History) {
     let params = OpParams::Face {
         holes: Default::default(),
         tilt: None,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
         cut_z: Height::fixed(19.5),
@@ -308,6 +312,7 @@ fn held_op_world() -> (World, History) {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     };
     h.execute(&w, CreateOperation::new(&w, "Face1", DRAWN, SrcRef::Stock, params).expect("op"));
     h.execute(&w, GenerateOperation::new(&w, "Face1").expect("generate"));

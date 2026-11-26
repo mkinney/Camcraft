@@ -3,6 +3,8 @@
 //! Provenance: our own fixtures; no vendor material.
 
 use super::*;
+use super::circular_levels::{levels_from, under_top};
+use super::super::levels::cut_levels;
 
 /// #2004: the rim ring and a flat disk start a stepdown under Top Z;
 /// an inner vault ring keeps the previous ring's floor as its first

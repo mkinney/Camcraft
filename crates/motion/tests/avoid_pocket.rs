@@ -6,7 +6,10 @@ use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::links::{Link, Links};
 use camcraft_motion::load::DEFAULT_OPTIMAL_LOAD;
-use camcraft_motion::machining2d::{pocket, pocket_avoid, PocketParams, PocketStrategy};
+use camcraft_motion::machining2d::{
+    CornerRelief, PreHole, RestParams, RestSource, pocket, pocket_avoid,
+    pocket_avoid_entered_with_relief, rest_pocket_avoid_with_relief, PocketParams, PocketStrategy,
+};
 use camcraft_motion::machining3d::{
     pocket3d, pocket3d_avoid, pocket3d_offset, pocket3d_with_rest, Pocket3DParams,
 };
@@ -77,6 +80,7 @@ fn base_2d(strategy: PocketStrategy, entry: Entry3D, links: Links) -> PocketPara
 
 fn base_3d(strategy: PocketStrategy, entry: Entry3D, links: Links) -> Pocket3DParams {
     Pocket3DParams {
+        pass_start: Default::default(),
         links,
         tool_diameter: 6.0,
         stepover: 2.5,
@@ -114,9 +118,9 @@ fn empty_avoid_matches_plain_paths_exactly() {
 #[test]
 fn pocket_avoid_all_strategies_entries_holder_and_edge() {
     let reg = rect(-35.0, -25.0, 35.0, 25.0);
-    // Tall pin on the center + elevated holder-height ledge on the east side + bare 3D edge on the west.
+    // Tall pin on the center + elevated holder-height ledge (14..17 mm) on the east side + bare 3D edge on the west.
     let mut tris = box_facets([-3.0, -3.0, -10.0], [3.0, 3.0, 2.0]);
-    tris.extend(box_facets([28.0, -10.0, 4.0], [34.0, 10.0, 12.0]));
+    tris.extend(box_facets([28.0, -10.0, 14.0], [34.0, 10.0, 17.0]));
     let spec = AvoidSpec {
         items: vec![AvoidItem {
             label: "pin & boss edge".into(),
@@ -154,6 +158,13 @@ fn pocket_avoid_all_strategies_entries_holder_and_edge() {
             })
             .collect();
         assert!(hits.is_empty(), "strategy {strategy:?} entry {entry:?} violated Do not touch: {details:#?}");
+        // Verify holder-height ledge [28..34, -10..10, 14..17] keeps holder_r (12.0) + clearance (1.0) = 13.0 mm standoff at cut depth.
+        for m in path.moves.iter().filter(|m| m.to.z < 0.0) {
+            let dx = if m.to.x < 28.0 { 28.0 - m.to.x } else if m.to.x > 34.0 { m.to.x - 34.0 } else { 0.0 };
+            let dy = (m.to.y.abs() - 10.0).max(0.0);
+            let dist = dx.hypot(dy);
+            assert!(dist >= 13.0 - 1e-2, "{strategy:?}: move {:?} came {dist:.3} mm from holder ledge (< 13.0 mm)", m.to);
+        }
     }
 
     // Covering the entire pocket refuses cleanly naming the protected item.
@@ -220,4 +231,148 @@ fn pocket3d_avoid_shell_rest_and_adaptive_stay_clear() {
         );
         assert!(avoid_hits(&path_over, &spec, AVOID_VERIFY_TOL).expect("verify").is_empty());
     }
+}
+
+#[test]
+fn pocket_avoid_keeps_final_clearance_lift_clear_of_overhead_obstacle() {
+    let reg = rect(-35.0, -25.0, 35.0, 25.0);
+    // Overhead protected pads at all 4 outer corners above retract_z + total_tool_height (2 + 38 = 40),
+    // but inside clearance_z + total_tool_height (10 + 38 = 48), catching whichever outer corner
+    // Waterline finishes and lifts to clearance_z at.
+    let mut corner_tris = Vec::new();
+    for (x0, x1) in [(-35.0, -28.0), (28.0, 35.0)] {
+        for (y0, y1) in [(-25.0, -18.0), (18.0, 25.0)] {
+            corner_tris.extend(box_facets([x0, y0, 44.0], [x1, y1, 48.0]));
+        }
+    }
+    let spec = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "overhead bridge".into(),
+            tris: corner_tris,
+            edges: vec![],
+        }],
+        cutter: stepped_cutter(),
+        clearance: 1.0,
+    };
+    let mut p = base_2d(
+        PocketStrategy::Waterline,
+        Entry3D::Plunge,
+        Links { level: Link::Retract, pass: Link::Retract, ..Links::ROUGH3D },
+    );
+    p.top_z = -40.0;
+    p.bottom_z = -45.0;
+    p.stepdown = 2.5;
+    p.retract_z = Some(2.0);
+    p.clearance_z = 10.0;
+
+    let path = pocket_avoid(&reg, &p, &spec).expect("pocket_avoid");
+    let hits = avoid_hits(&path, &spec, AVOID_VERIFY_TOL).expect("verify");
+    assert!(hits.is_empty(), "final clearance lift must not hit overhead bridge: {hits:?}");
+}
+
+#[test]
+fn pocket_avoid_predrilled_and_rest_stay_clear() {
+    let reg = rect(-30.0, -20.0, 30.0, 20.0);
+    let spec = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "protected pin".into(),
+            tris: box_facets([-3.0, -3.0, -10.0], [3.0, 3.0, 2.0]),
+            edges: vec![],
+        }],
+        cutter: stepped_cutter(),
+        clearance: 1.0,
+    };
+    // Pre-drilled hole inside the protected pin must be ignored; safe hole at (-18, 0) stays usable.
+    let mut p = base_2d(PocketStrategy::Waterline, Entry3D::Helix, Links::PLANAR);
+    p.links.approach.predrilled = true;
+    p.links.approach.center_cutting = true;
+    let holes = [
+        PreHole { at: Point2::new(0.0, 0.0), floor: -6.0 },
+        PreHole { at: Point2::new(-18.0, 0.0), floor: -6.0 },
+    ];
+    let path = pocket_avoid_entered_with_relief(&reg, &p, &holes, &spec, &CornerRelief::default())
+        .expect("predrilled pocket_avoid");
+    let hits = avoid_hits(&path, &spec, AVOID_VERIFY_TOL).expect("verify predrilled");
+    assert!(hits.is_empty(), "predrilled pocket_avoid hit protected pin: {hits:?}");
+
+    // Rest machining with Do not touch: previous 20 mm cutter left corner material;
+    // protect the north-east corner so that corner is skipped while other corners cut clear.
+    let rest_spec = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "ne corner guard".into(),
+            tris: box_facets([22.0, 12.0, -10.0], [31.0, 21.0, 2.0]),
+            edges: vec![],
+        }],
+        cutter: stepped_cutter(),
+        clearance: 1.0,
+    };
+    let rp = RestParams {
+        source: RestSource::EnteredTool,
+        previous_tool_diameter: 20.0,
+        previous_corner_radius: 0.0,
+        previous_stock_to_leave: 0.0,
+        allowance: 0.5,
+    };
+    let p_rest = base_2d(PocketStrategy::Waterline, Entry3D::Helix, Links::ROUGH3D);
+    let rest_path = rest_pocket_avoid_with_relief(&reg, &p_rest, &rp, &rest_spec, &CornerRelief::default())
+        .expect("rest_pocket_avoid");
+    let rest_hits = avoid_hits(&rest_path, &rest_spec, AVOID_VERIFY_TOL).expect("verify rest");
+    assert!(rest_hits.is_empty(), "rest pocket_avoid hit protected corner: {rest_hits:?}");
+
+    // When all rest corners are protected, refusal names the protected item.
+    let all_guard = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "all corners".into(),
+            tris: box_facets([-32.0, -22.0, -10.0], [32.0, 22.0, 2.0]),
+            edges: vec![],
+        }],
+        cutter: stepped_cutter(),
+        clearance: 0.5,
+    };
+    let err = rest_pocket_avoid_with_relief(&reg, &p_rest, &rp, &all_guard, &CornerRelief::default())
+        .expect_err("fully protected rest pocket must refuse");
+    assert!(format!("{err:?}").contains("all corners"), "expected protected label: {err:?}");
+}
+
+#[test]
+fn pocket_avoid_offset_rings_keep_down_never_crosses() {
+    let reg = rect(-25.0, -25.0, 25.0, 25.0);
+    // Overhead ledge sits clear of flutes at Z 17, but meets the wider shank/holder at Z 10 so
+    // inner rings drop out between levels and Level 1's helix enters near a Level 0 helix ring.
+    let spec = AvoidSpec {
+        items: vec![
+            AvoidItem {
+                label: "center pin".into(),
+                tris: box_facets([-17.0, -17.0, 0.0], [17.0, 17.0, 22.0]),
+                edges: vec![],
+            },
+            AvoidItem {
+                label: "side guard".into(),
+                tris: vec![],
+                edges: vec![([18.0, -10.0, 12.0], [18.0, 10.0, 12.0])],
+            },
+        ],
+        cutter: stepped_cutter(),
+        clearance: 1.0,
+    };
+    let mut p = base_2d(
+        PocketStrategy::OffsetRings,
+        Entry3D::Helix,
+        Links { level: Link::KeepDown, pass: Link::KeepDown, ..Links::ROUGH3D },
+    );
+    p.tool_diameter = 4.0;
+    p.stepover = 1.0;
+    p.optimal_load = 0.22;
+    p.helix_radius = 1.5;
+    p.top_z = 24.0;
+    p.bottom_z = 10.0;
+    p.stepdown = 7.0;
+    p.clearance_z = 30.0;
+    p.retract_z = Some(26.0);
+
+    let path = pocket_avoid(&reg, &p, &spec).expect("pocket_avoid offset_rings+keep_down");
+    let crossed = camcraft_motion::verify::crossed_pairs(&path, 0.01);
+    assert!(crossed.is_empty(), "OffsetRings + KeepDown crossed: {crossed:?}");
+    let hits = avoid_hits(&path, &spec, AVOID_VERIFY_TOL).expect("verify");
+    assert!(hits.is_empty(), "OffsetRings + KeepDown hit protected: {hits:?}");
 }

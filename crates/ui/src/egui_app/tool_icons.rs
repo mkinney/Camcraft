@@ -39,6 +39,7 @@ pub(crate) fn tool_icon(kind: ToolKind) -> Icon {
         ToolKind::Keyseat => Icon::ToolKeyseat,
         ToolKind::Dovetail => Icon::ToolDovetail,
         ToolKind::Lollipop => Icon::ToolLollipop,
+        ToolKind::FormMill => Icon::ToolFormMill,
     }
 }
 

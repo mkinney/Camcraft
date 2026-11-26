@@ -33,15 +33,30 @@ Below the pages, {{ <icon name="tree-op-group" /> }} **Operations** lists the se
 ## Place a DXF profile
 
 A DXF drawing is a profile on the stock of one setup, not a solid model.
-Create the stock first. The automation commands `import_dxf` (MCP) and
+Create the stock first. On the **Stock** page, open **DXF profiles** and
+choose **Add DXF profile…**. In the desktop app you can also drop one
+`.dxf` file onto the window to import it onto the active setup's stock.
+A drop without stock is refused: "make a stock first (Setup > Stock)".
+Browser drops are refused; use the desktop app for this workflow.
+
+The automation commands `import_dxf` (MCP) and
 `cam.importDxf(path, { setup, units, join_tol, name })` (script) place it
 on the stock top at the stock origin. For box and cylinder stock, that
 origin is the XY centre. A moved or resized stock carries its profile.
 
-Use `move_dxf_profile` to set X, Y and a rotation about the stock face
-normal. The profile stays on that face; it has no independent Z move.
-Import and placement changes are undoable. A drawing without units is
-refused with its width and height until you state the intended units.
+Each profile row has **Profile X**, **Profile Y** and **Profile angle
+(deg)**. Choose **Place profile** to apply the placement, **Hide profile**
+or **Show profile** to change visibility, or **Delete profile** to remove
+it. For example, X 10 mm, Y 5 mm and angle 90 place the drawing 10 mm
+across and 5 mm along the stock face, turned a quarter turn.
+The automation equivalent is `move_dxf_profile`. The profile stays on
+that face; it has no independent Z move. Import, placement and deletion
+are undoable; hiding is view state.
+
+A drawing without units waits at **DXF units**, showing its width and
+height under both readings. Choose **Millimeters** or **Inches** from
+the drawing's intended units. **Cancel** places nothing; CamCraft never
+guesses the units. Automation refuses the import until units are stated.
 Read the import summary for skipped DXF items.
 
 **Current limit:** a 2D operation can name a profile, but generation from
@@ -53,6 +68,48 @@ heights have no value for a profile; use stock or fixed references.
 later. A build that reads only version 70 or earlier refuses a newer file
 instead of opening the setup without its profiles. Keep an older copy
 when you need to return to an older build.
+
+## Typed text as outline shapes
+
+Outline text makes closed letter shapes in a **TrueType** font. It is
+different from the single-line strokes used for engraving text. A letter's
+inner loop, such as the hole in O, stays a hole. The shapes are stored in
+the project as a profile on the setup's stock top; the font is not needed
+to reopen that profile.
+
+In 0.26.0 there is no desktop outline-font dialog or font picker. Create
+the stock first, then use an [MCP agent](@/guide/automate/mcp.md) connected
+to the app to call `insert_outline_text`. For example, the tool arguments
+below place the left end of the baseline 10 mm across and 5 mm along the
+stock top from its origin. Replace the font path with a file on the
+computer running CamCraft:
+
+```json
+{
+  "font": "/path/to/font.ttf",
+  "text": "PART 01",
+  "height": 7,
+  "position": [10, 5],
+  "angle": 0,
+  "letter_spacing": 0,
+  "name": "Part label"
+}
+```
+
+`height` is the font's cap height in mm, from 0.5 to 1000. `angle` turns
+the baseline counterclockwise in degrees when seen from above.
+`letter_spacing` adds a gap in mm between letters. Use a `.ttf` file or
+an `.otf` file with TrueType outlines. CFF outlines, font collections,
+missing characters, crossing or touching outlines, and empty text are
+refused by name. The setup must have stock.
+
+The result appears with the other **DXF profiles** on the Stock page.
+Use **Profile X**, **Profile Y**, **Profile angle (deg)** and
+**Place profile** to move it as described above. Insertion is one undo
+step. Saving the project keeps the closed shapes. The current profile
+generation limit above also applies to outline text: an operation can
+name it as its source, but generation from its chains is not available
+in this release. It does not produce a machinable text toolpath yet.
 
 ## Linked models
 

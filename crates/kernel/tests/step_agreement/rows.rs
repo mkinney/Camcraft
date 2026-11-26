@@ -207,6 +207,13 @@ pub const ROWS: &[Row] = &[
         mesh: "watertight, within tolerance",
     },
     Row {
+        file: "hole_on_pocket_wall.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
+        mesh: "off: area",
+    },
+    Row {
         file: "lathe_holder_offset.step",
         mm_per_unit: 1.0,
         truck: read(1, 50200.0, 10740.0, [-21.0, 12.0, -7.0], [4.0, 130.0, 13.0], 0, 0.005),
@@ -225,6 +232,16 @@ pub const ROWS: &[Row] = &[
         mm_per_unit: 1.0,
         truck: read(1, 2112.0, 1000.0, [2.0, -6.0, 1.0], [18.0, 6.0, 12.0], 0, 0.005),
         import: "agree",
+        mesh: "watertight, within tolerance",
+    },
+    // #3034: the recorded QA part (a mould base with an ellipsoid boss
+    // whose spline face ends in a pole). Added after #2790, so truck has
+    // no recorded reading.
+    Row {
+        file: "q02_3d_mold.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
         mesh: "watertight, within tolerance",
     },
     Row {
@@ -269,6 +286,15 @@ pub const ROWS: &[Row] = &[
         truck: Truck::Refused("a shell's mesh is not finite"),
         import: "truck refuses: a shell's mesh is not finite",
         mesh: "off: volume, area",
+    },
+    // #3034: a rational B-spline dome that ends in a pole at a vertex. It
+    // was added after #2790, so truck has no recorded reading.
+    Row {
+        file: "sphere_quarter_pole.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
+        mesh: "watertight, within tolerance",
     },
     Row {
         file: "spline_revolved.step",
@@ -345,7 +371,9 @@ pub const ROWS: &[Row] = &[
             10,
             0.005,
         ),
-        import: "solidcore refuses: #117 at read: pcurves failed on",
+        // #3767: solidcore fa67b3f5 builds the pcurves; its vertex check
+        // refuses the solid (was "#117 at read: pcurves failed on").
+        import: "solidcore refuses: #117 at check: a vertex sits",
         mesh: "no exact solid to judge against",
     },
 ];

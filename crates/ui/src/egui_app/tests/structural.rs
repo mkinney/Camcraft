@@ -17,6 +17,9 @@ use super::*;
 #[path = "structural/corner_relief.rs"]
 mod corner_relief;
 
+#[path = "structural/finish3d_direction.rs"]
+mod finish3d_direction;
+
 #[path = "tool_properties.rs"]
 mod tool_properties;
 
@@ -183,9 +186,10 @@ fn shell_structure_light() {
 }
 
 /// #2397: `egui_tool_editor.png`'s intent, split in two. Properties keeps
-/// the tool settings; one floating window over the dock is the tool shape
-/// editor - titled by the tool, the holder library at its top, the Body /
-/// Profile tabs under it, Close at its foot.
+/// the tool (#3930: as a read-only summary); one floating window over the
+/// dock is the tool shape editor - titled by the tool, the Body / Profile
+/// tabs at its top (#3930: the holder library is the tool library
+/// window's), Close at its foot.
 #[test]
 fn tool_editor_structure() {
     let _g = snapshot_guard();
@@ -193,8 +197,16 @@ fn tool_editor_structure() {
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
     harness.run();
-    // The settings are Properties, with no second editable surface.
-    assert!(harness.query_by_label("Diameter").is_some(), "Properties owns the editable diameter");
+    // Properties states the settings; it has no editable surface (#3930).
+    assert!(harness.query_by_label("Diameter").is_some(), "Properties states the diameter");
+    assert_eq!(
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Pane, "Properties")
+            .query_all_by_role(egui::accesskit::Role::SpinButton)
+            .count(),
+        0,
+        "the summary has no number field"
+    );
     assert!(
         harness
             .query_all_by_role(egui::accesskit::Role::Window)
@@ -208,17 +220,20 @@ fn tool_editor_structure() {
         .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
         .expect("the shape editor window is titled by the tool");
     let wr = win.rect();
-    // The window owns the shape surface: the holder library first, then
-    // the Body / Profile tabs, then Close.
-    for label in ["Holder library", "Library holder", "Body", "Profile", "Close"] {
+    // The window owns the shape surface: the Body / Profile tabs, then
+    // Close. The holder pick is not here (#3930).
+    for label in ["Body", "Profile", "Close"] {
         assert!(win.query_by_label(label).is_some(), "the shape window shows {label:?}");
+    }
+    for label in ["Holder library", "Library holder"] {
+        assert!(win.query_by_label(label).is_none(), "the shape window has no {label:?}");
     }
     assert!(
         win.query_all_by_label("Diameter").next().is_none(),
         "the settings do not stand in the shape window"
     );
-    // The settings stay on the page behind it.
-    assert!(harness.query_by_label("Shank diameter").is_some(), "Properties keeps the settings");
+    // The summary stays on the page behind it.
+    assert!(harness.query_by_label("Shank diameter").is_some(), "Properties keeps the summary");
     assert!(
         wr.min.x > 0.0 && wr.max.x < 1280.0 && wr.min.y > 0.0 && wr.max.y <= 720.0,
         "the editor floats inside the shell: {wr:?}"

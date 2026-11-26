@@ -2,14 +2,14 @@
 //! linked model is checked about once a second. When its SHA-256 is not the
 //! one the model records, the file is imported again through
 //! `CommandKind::ImportFile`, and `finish_import` lands it on the linked
-//! model by name (`linked_name`): one `UpdateModel`, one undo step, the
+//! model by name (`linked_to`): one `UpdateModel`, one undo step, the
 //! operations only go Stale. Nothing here regenerates or posts. A file
 //! that is missing or cannot be read leaves the model as it is and is said
 //! on the status line one time, by name.
 //! Provenance: our own code over our own commands; std file metadata.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 // The clock seam (#31): std's Instant panics in the browser build.
@@ -46,11 +46,26 @@ fn linked(world: &World) -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// The model linked to the file at `path`, if one is: a re-import of that
-/// file lands on it, whatever the file's name says.
-pub(crate) fn linked_name(world: &World, path: &Path) -> Option<String> {
-    let text = path.to_string_lossy();
-    linked(world).into_iter().find(|(_, p, _)| *p == text).map(|(n, _, _)| n)
+/// The file a link names (#3686). A relative link is read against the
+/// folder of the open project file, not the working directory of the
+/// process. An absolute link, or a project not saved yet, keeps the path
+/// as it is.
+pub(crate) fn resolve(path: &str, project: Option<&Path>) -> PathBuf {
+    let p = Path::new(path);
+    match project.and_then(Path::parent) {
+        Some(dir) if p.is_relative() => dir.join(p),
+        _ => p.to_path_buf(),
+    }
+}
+
+/// The model linked to the file at `path`, if one is, and the link text it
+/// records: a re-import of that file lands on it, whatever the file's name
+/// says, and keeps the link as it was written.
+pub(crate) fn linked_to(world: &World, path: &Path, project: Option<&Path>) -> Option<(String, String)> {
+    linked(world)
+        .into_iter()
+        .find(|(_, p, _)| p.as_str() == path.to_string_lossy() || resolve(p, project) == path)
+        .map(|(n, p, _)| (n, p))
 }
 
 /// True when the frame timer must come back for the next check.
@@ -67,8 +82,10 @@ pub(crate) fn check(state: &mut State, now: Instant) {
     if state.import_in_progress() || !state.pending.is_empty() {
         return;
     }
-    for (name, path, sha256) in linked(&state.world) {
-        match now_digest(&mut state.link_watch, &name, Path::new(&path)) {
+    let project = state.project_path.clone();
+    for (name, link, sha256) in linked(&state.world) {
+        let path = resolve(&link, project.as_deref());
+        match now_digest(&mut state.link_watch, &name, &path) {
             Ok(digest) => {
                 state.link_watch.said.remove(&name);
                 let Some(digest) = digest else { continue };
@@ -77,7 +94,7 @@ pub(crate) fn check(state: &mut State, now: Instant) {
                 }
                 state.link_watch.acted.insert(name.clone(), digest);
                 state.status = format!("{name}: its file changed - importing it again");
-                state.pending.push_back(CommandKind::ImportFile(path.into()));
+                state.pending.push_back(CommandKind::ImportFile(path));
                 return;
             }
             Err(why) => {

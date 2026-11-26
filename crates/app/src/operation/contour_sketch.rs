@@ -244,7 +244,7 @@ pub(super) fn generate_plan(
 
     if !closed_items.is_empty() {
         if can_group_natural(&closed_items, op_climb) {
-            let mut g_cp = *cp;
+            let mut g_cp = cp.clone();
             g_cp.side = Side::Outside;
             g_cp.climb = op_climb;
             let mut ctx = area.take();
@@ -277,7 +277,7 @@ pub(super) fn generate_plan(
                     c.contour_side(eff_side == Side::Inside);
                 }
                 let reg = apply_area_controls(single_raw, local_ctx.as_ref())?;
-                let mut c_cp = *cp;
+                let mut c_cp = cp.clone();
                 c_cp.side = eff_side;
                 c_cp.climb = item.eff_climb;
                 let mut sub = machining2d::contour(&reg, &c_cp)?;
@@ -297,7 +297,7 @@ pub(super) fn generate_plan(
     }
 
     for item in plan.items.iter().filter(|i| !i.closed) {
-        let mut o_cp = *cp;
+        let mut o_cp = cp.clone();
         o_cp.side = Side::Auto;
         o_cp.climb = item.eff_climb;
         let next = machining2d::contour_along_chain(&item.pts, &o_cp)

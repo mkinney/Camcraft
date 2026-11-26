@@ -198,3 +198,62 @@ fn a_profile_moves_on_the_stock_and_takes_a_2d_operation_but_no_3d_one() {
     let out = run(&format!("cam.importDxf({unitless:?}, {{ unit: \"mm\" }})"));
     assert!(!out.ok && out.errors.iter().any(|e| e.contains("unknown option \"unit\"")), "{:?}", out.errors);
 }
+
+#[test]
+fn agie_inspection_accepts_listed_chain_and_checks_mounted_travel_in_the_wcs() {
+    let dir = tmp_dir("agie-inspection-travel");
+    let source: Value = serde_json::from_str(include_str!(
+        "../../../assets/machines/agiecut-classic-2s.mch"
+    ))
+    .unwrap();
+    let mut client = Client {
+        server: Server::new(),
+        next: 1,
+    };
+    let machine_path = dir.join("machine.mch");
+    let mount = |client: &mut Client, x: [f64; 2], y: [f64; 2], x_sign: i32| {
+        let mut fixture = source.clone();
+        let table = &mut fixture["kinematics"]["default"]["parts"][0];
+        table["travel"] = json!({"min": x[0], "max": x[1]});
+        table["direction"] = json!(x_sign);
+        table["parts"][0]["travel"] = json!({"min": y[0], "max": y[1]});
+        std::fs::write(&machine_path, serde_json::to_vec(&fixture).unwrap()).unwrap();
+        client.ok("load_machine", json!({"path":machine_path}));
+    };
+    mount(&mut client, [-8.0, 8.0], [-8.0, 8.0], 1);
+    client.ok("set_stock", json!({"box":{"dx":1.0,"dy":1.0,"dz":10.0}}));
+    client.ok("set_wcs", json!({"origin":[20.0,0.0,10.0]}));
+    client.ok("add_tool", json!({"catalog":"EDM-W025","holder":"none"}));
+    let drawing = dir.join("opening.dxf");
+    std::fs::write(&drawing,"0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\nopening\n10\n20\n20\n0\n40\n7\n0\nENDSEC\n0\nEOF\n").unwrap();
+    client.ok("import_dxf", json!({"path":drawing}));
+    let features = client.ok("list_features", json!({"model":"opening"}));
+    let id = features["chains"][0]["id"].as_str().expect("listed chain");
+    let create = |name: &str, chain: &str| json!({"name":name,"drawing":"opening","tool":"EDM-W025","chain":chain,"start":[20.0,0.0]});
+    client.ok("create_agie_inspection", create("Nominal", id));
+    client.ok(
+        "create_agie_inspection",
+        create("Bare", id.strip_prefix("sketch_chain:").unwrap()),
+    );
+    for invalid in [
+        "face:0x12",
+        "sketch_layer:opening",
+        "sketch_chain:xyz",
+        "garbage",
+    ] {
+        client.refused("create_agie_inspection", create("Invalid", invalid));
+    }
+    let dest = dir.join("BLOCKED");
+    let args = json!({"operation":"Nominal","directory":dest});
+    for (x, y, sign, expected) in [
+        ([-4.0, 4.0], [-8.0, 8.0], 1, "in X"),
+        ([-8.0, 8.0], [-4.0, 4.0], 1, "in Y"), // The two semicircle endpoints have Y=0.
+        ([-8.0, 8.0], [-8.0, 8.0], -1, "inverted X"),
+    ] {
+        mount(&mut client, x, y, sign);
+        let why = client.refused("export_agie_inspection", args.clone());
+        assert!(why.contains(expected), "{why}");
+        assert!(!dest.exists());
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}

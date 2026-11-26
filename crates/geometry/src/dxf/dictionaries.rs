@@ -1,5 +1,6 @@
-//! Provenance: dictionary entries, handles and ownership in the Autodesk DXF Reference.
-use super::pairs::{Pairs, Record, handle, integer};
+//! Provenance: dictionary entries, handles, ownership and group 102 brackets in the Autodesk DXF Reference.
+use super::entities::is_entity_kind;
+use super::pairs::{Pair, Pairs, Record, handle, integer};
 use super::types::{DxfError, error};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -7,6 +8,48 @@ fn invalid(message: &str) -> DxfError {
     error("DICTIONARY", message)
 }
 
+/// Application-defined data in a `102 {NAME` .. `102 }` bracket, for example reactor handles.
+/// The content is opaque. A bracket is never nested and closes before its record ends.
+#[derive(Default)]
+struct AppGroup {
+    open: bool,
+}
+
+impl AppGroup {
+    /// True when the pair is a bracket marker or bracket content, not a field of the record.
+    fn consume(&mut self, kind: &str, pair: Pair<'_>) -> Result<bool, DxfError> {
+        if pair.code != 102 {
+            return Ok(self.open);
+        }
+        let marker = pair.value.trim();
+        if marker == "}" {
+            if !self.open {
+                return Err(error(kind, "group 102 closes no open block"));
+            }
+            self.open = false;
+        } else if marker.len() > 1 && marker.starts_with('{') {
+            if self.open {
+                return Err(error(kind, "nested group 102 block"));
+            }
+            self.open = true;
+        } else {
+            return Err(error(kind, "malformed group 102 block marker"));
+        }
+        Ok(true)
+    }
+
+    fn finish(&self, kind: &str) -> Result<(), DxfError> {
+        if self.open {
+            return Err(error(kind, "unclosed group 102 block"));
+        }
+        Ok(())
+    }
+}
+
+/// Read OBJECTS. A DICTIONARY is checked field by field. Every other object is inert: the
+/// reader uses no object data, so it reads only the common header (handle, group 102
+/// brackets, owner) and consumes the rest to the next record. Each object joins the
+/// ownership graph, so a stray or unowned record is still refused.
 pub(super) fn read(input: &mut Pairs<'_>, limit: usize) -> Result<(), DxfError> {
     let mut owners = BTreeMap::new();
     let mut entries = BTreeMap::new();
@@ -29,14 +72,54 @@ pub(super) fn read(input: &mut Pairs<'_>, limit: usize) -> Result<(), DxfError> 
                     return Err(invalid("zero or duplicate dictionary handle"));
                 }
             }
+            "EOF" | "SECTION" => return Err(error("OBJECTS", "missing ENDSEC")),
+            kind if is_entity_kind(kind) => {
+                return Err(error(kind, "graphical entity in OBJECTS"));
+            }
             _ => {
-                return Err(error(
-                    record.kind,
-                    "unsupported record in OBJECTS; expected DICTIONARY or ENDSEC",
-                ));
+                if owners.len() >= limit {
+                    return Err(error("OBJECTS", "object count exceeds limit"));
+                }
+                let (id, owner) = read_object(record)?;
+                if owners.insert(id, Some(owner)).is_some() {
+                    return Err(error(record.kind, "duplicate object handle"));
+                }
             }
         }
     }
+}
+
+/// The common object header: handle 5, then group 102 brackets and owner 330, up to the
+/// first subclass marker 100. The rest is opaque. An object needs a handle and an owner.
+fn read_object(record: Record<'_>) -> Result<(u64, u64), DxfError> {
+    let kind = record.kind;
+    let mut brackets = AppGroup::default();
+    let (mut id, mut owner, mut header) = (None, None, true);
+    let mut fields = record.pairs();
+    while let Some(pair) = fields.next()? {
+        // A graphical entity has the AcDbEntity subclass; it never belongs in OBJECTS.
+        if pair.code == 100 && pair.value.trim().eq_ignore_ascii_case("AcDbEntity") {
+            return Err(error(kind, "graphical entity in OBJECTS"));
+        }
+        if !header || brackets.consume(kind, pair)? {
+            continue;
+        }
+        match pair.code {
+            5 if id.is_none() => id = Some(handle(pair.value, kind)?),
+            330 if owner.is_none() => owner = Some(handle(pair.value, kind)?),
+            5 | 330 => return Err(error(kind, "duplicate object header field")),
+            100 => header = false,
+            _ => {}
+        }
+    }
+    brackets.finish(kind)?;
+    let id = id
+        .filter(|&id| id != 0)
+        .ok_or_else(|| error(kind, "missing or zero object handle"))?;
+    let owner = owner
+        .filter(|&owner| owner != 0)
+        .ok_or_else(|| error(kind, "missing object owner"))?;
+    Ok((id, owner))
 }
 
 fn read_fields(
@@ -49,10 +132,14 @@ fn read_fields(
     let mut singleton_fields = BTreeSet::new();
     let mut names = BTreeSet::new();
     let mut needs_target = false;
+    let mut brackets = AppGroup::default();
     let mut fields = record.pairs();
     while let Some(pair) = fields.next()? {
         if needs_target && !matches!(pair.code, 350 | 360) {
             return Err(invalid("missing dictionary entry target"));
+        }
+        if brackets.consume(record.kind, pair)? {
+            continue;
         }
         if !matches!(pair.code, 3 | 350 | 360) && !singleton_fields.insert(pair.code) {
             return Err(invalid("duplicate dictionary field"));
@@ -90,6 +177,7 @@ fn read_fields(
     if needs_target {
         return Err(invalid("missing dictionary entry target"));
     }
+    brackets.finish(record.kind)?;
     Ok(owner)
 }
 

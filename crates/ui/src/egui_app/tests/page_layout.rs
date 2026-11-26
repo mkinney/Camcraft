@@ -13,6 +13,8 @@
 //!   `structural::tool_cutter_params_structure`
 //! - machine editor window: `structural::wire_machine_editor_structure`
 //! - G-code window: `gcode_viewer`
+//! - tool library window (#3892, was `layout_page_tool_library`):
+//!   `page_layout_tool_library::layout_window_tool_library`
 //! - dock panes: `layout`
 //!
 //! Provenance: our own page law over the egui_kittest AccessKit tree; no
@@ -188,23 +190,24 @@ fn layout_page_model() {
 }
 
 #[test]
-fn layout_page_tool_library() {
-    let _g = snapshot_guard();
-    let h = page(UiTarget::Tool(String::new()));
-    assert_page_layout(&h, "Tool library", &["New tool…", "Import library…", "Import tool holders"]);
-}
-
-#[test]
 fn layout_page_tool() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Tool("EM-0600-4FL".into()));
-    // #2014: the selected tool's settings are a label-left property grid
-    // in collapsible groups; the rows below the Geometry header follow it.
+    // #3930: the selected tool's page is a read-only summary: the heading,
+    // the door row ("Edit in tool library", "Edit tool shape", "Delete"),
+    // then the label-left rows.
     assert_page_layout(
         &h,
         "Tool",
-        &["Tool: EM-0600-4FL", "Delete", "Edit tool shape", "Geometry", "Type", "Diameter", "Corner radius", "Flute length"],
+        &["Tool: EM-0600-4FL", crate::egui_app::tool_summary::EDIT_IN_LIBRARY, "Type", "Diameter", "Corner radius", "Flute length", "Holder"],
     );
+    // The door row wraps in a narrow pane, above the first summary row.
+    let door = h.get_by_label(crate::egui_app::tool_summary::EDIT_IN_LIBRARY).rect();
+    let first = h.query_all_by_label("Type").next().map_or(f32::MAX, |n| n.rect().top());
+    for b in ["Edit tool shape", "Delete"] {
+        let r = h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").get_by_label(b).rect();
+        assert!(r.top() >= door.top() - 1.0 && r.bottom() <= first + 1.0, "{b:?} {r:?} stands in the door row {door:?}");
+    }
 }
 
 /// #2007 / #2397: the tool page's Profile tab moved into the tool shape
@@ -260,6 +263,8 @@ fn layout_page_setup_post() {
         "Setup post",
         &["This setup has its own post", "Load post (.cps)", "Skip pauses and homes", "This setup has its own post options"],
     );
+    // #3996: the Agie inspection section is Agie-only; this setup mounts no Agie machine.
+    assert!(h.query_by_label_contains("Agie nominal inspection").is_none(), "no Agie section on a non-Agie setup");
 }
 
 #[test]

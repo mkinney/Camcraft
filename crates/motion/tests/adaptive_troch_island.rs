@@ -9,6 +9,7 @@ use camcraft_motion::machining2d::PocketParams;
 use camcraft_motion::geo2d::Region;
 
 #[test]
+#[ignore = "heavy lane: motion heavy: adaptive_troch_island (154 s alone in debug, #3514)"]
 fn pocket_with_island_is_cleared_without_crossing_or_excess_rest() {
     let p = PocketParams { bottom_z: -3.0, ..params() };
     let Ok(isl) = Region::new(vec![
@@ -24,6 +25,22 @@ fn pocket_with_island_is_cleared_without_crossing_or_excess_rest() {
         panic!("island2")
     };
     check_cleared("48x40 island D10", &isl2, &PocketParams { tool_diameter: 10.0, ..p });
+    check_cleared("30x30 island D6", &isl, &p);
+}
+
+/// The 30x30 island D6 case only: the same confinement, no-crossing,
+/// engagement, no-slot and rest-against-HSM laws. The 48x40 D10 case
+/// stays in the full test.
+#[test]
+#[ignore = "light lane: the 30x30 island D6 case of the full test only (release); the full test is pocket_with_island_is_cleared_without_crossing_or_excess_rest"]
+fn pocket_with_island_is_cleared_without_crossing_or_excess_rest_light() {
+    let p = PocketParams { bottom_z: -3.0, ..params() };
+    let Ok(isl) = Region::new(vec![
+        poly(&[(0.0, 0.0), (30.0, 0.0), (30.0, 30.0), (0.0, 30.0)]),
+        poly(&[(12.0, 12.0), (18.0, 12.0), (18.0, 18.0), (12.0, 18.0)]),
+    ]) else {
+        panic!("island")
+    };
     check_cleared("30x30 island D6", &isl, &p);
 }
 

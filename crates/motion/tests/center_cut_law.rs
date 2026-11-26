@@ -238,7 +238,7 @@ fn a_tool_that_is_not_centre_cutting_never_plunges_into_a_slot() {
                     plunge_feed: 100.0,
                     climb: true,
                     entry,
-                    helix_radius: 1.5,
+                    helix_radius: 1.5, blend_turns: false, blend_radius: None,
                 };
                 let what = format!("slot w{w} d{d} {entry:?} {ln}");
                 let (a, b) = (Point2::new(0.0, 0.0), Point2::new(40.0, 10.0));
@@ -280,6 +280,7 @@ fn a_tool_that_is_not_centre_cutting_never_plunges_into_a_bore_or_circular() {
             judge(&format!("bore {entry:?} {ln}"), bore(&bp), 3.0, TOP);
             for stepover in [2.0, 3.5] {
                 let cp = CircularParams {
+                    pass_start: Default::default(),
                     links: not_cc(links),
                     center: Point2::new(0.0, 0.0),
                     radius: 15.0,
@@ -360,6 +361,7 @@ fn a_tool_that_is_not_centre_cutting_never_plunges_on_the_3d_ladder() {
                 ("clearance", Links { pass: Link::Clearance, level: Link::Clearance, ..Links::ROUGH3D }),
             ] {
                 let p = Pocket3DParams {
+                    pass_start: Default::default(),
                     links,
                     tool_diameter: 8.0,
                     stepover: 3.0,

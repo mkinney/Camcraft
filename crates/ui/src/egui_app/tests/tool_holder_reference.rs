@@ -1,13 +1,16 @@
 //! #2016: a library holder is the tool's holder by reference. Apply
-//! holder stores the entry's name and the two lengths; the Properties
-//! tool settings then show the holder cylinder the laws read for that
+//! holder stores the entry's name and the two lengths; the tool's holder
+//! cylinder rows (#3930: in the tool library window's Body section, before
+//! in Properties) then show the holder cylinder the laws read for that
 //! entry instead of two fields to size by hand; the Profile tab names
-//! the entry and its picker shows it; the unchanged outline applied
-//! again keeps the reference, an edited point makes the holder a drawn
-//! profile and the two fields come back. Provenance: our own page law.
-//! Gate map: covers ui::egui_app::tool_settings, ui::egui_app::tool_profile_page,
-//! ui::egui_app::tool_holder_picker, ui::state (tool profile).
+//! the entry and the window's picker shows it; the unchanged outline
+//! applied again keeps the reference, an edited point makes the holder a
+//! drawn profile and the two fields come back. Provenance: our own page law.
+//! Gate map: covers ui::egui_app::tool_settings_grid, ui::egui_app::tool_profile_page,
+//! ui::egui_app::tool_holder_picker, ui::egui_app::tool_library_dialog, ui::state (tool profile).
 
+use super::tool_library_assembly::{holder, open_body};
+use super::tool_library_editor::{H, library_window, open_in_window};
 use super::*;
 use camcraft_app::holder_library::HolderRef;
 use egui_kittest::kittest::NodeT;
@@ -22,33 +25,42 @@ fn reference(state: &State) -> Option<HolderRef> {
         .and_then(|b| b.library)
 }
 
-fn properties() -> Harness<'static, ShellUi> {
-    let mut h = shell_harness();
+fn properties() -> H {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1400.0)).build_ui_state(super::frame, ShellUi::seeded());
     h.run();
     crate::egui_app::browser_pane::click(&mut h.state_mut().state, panes::Leaf::Tool(TOOL.into()));
     h.run_steps(3);
     h
 }
 
-/// The values of the typed number fields on screen.
-fn spins(h: &Harness<'static, ShellUi>) -> Vec<String> {
-    h.query_all_by_role(egui::accesskit::Role::SpinButton).filter_map(|n| n.value()).collect()
+/// Properties on the tool, and the tool open in the library window with
+/// its Body section unfolded (#3930: the holder cylinder rows live there).
+fn body_rows() -> H {
+    let mut h = properties();
+    open_in_window(&mut h, TOOL);
+    open_body(&mut h);
+    h
+}
+
+/// The values of the typed number fields in the library window.
+fn spins(h: &H) -> Vec<String> {
+    library_window(h).query_all_by_role(egui::accesskit::Role::SpinButton).filter_map(|n| n.value()).collect()
 }
 
 /// Are the tool's own holder diameter and length (the catalog's
 /// Ø44 x 35) on screen as typed fields?
-fn typed(h: &Harness<'static, ShellUi>) -> bool {
+fn typed(h: &H) -> bool {
     let s = spins(h);
     s.iter().any(|v| v == "44.0 mm") && s.iter().any(|v| v == "35.0 mm")
 }
 
-fn set_bt30(h: &mut Harness<'static, ShellUi>) {
+fn set_bt30(h: &mut H) {
     let cmd = CommandKind::SetToolHolder { name: TOOL.into(), entry: "bt30 er20".into(), gauge: None, projection: None };
     h.state_mut().state.pending.push_back(cmd);
     h.run_steps(3);
 }
 
-fn apply_profile(h: &mut Harness<'static, ShellUi>, edit: impl Fn(&mut Vec<camcraft_app::spun::SpunPoint>)) {
+fn apply_profile(h: &mut H, edit: impl Fn(&mut Vec<camcraft_app::spun::SpunPoint>)) {
     let st = &mut h.state_mut().state;
     st.sync_tool_profile_ui();
     edit(&mut st.tool_profile_ui.points);
@@ -58,15 +70,16 @@ fn apply_profile(h: &mut Harness<'static, ShellUi>, edit: impl Fn(&mut Vec<camcr
 
 #[test]
 fn a_library_holder_sizes_the_holder_fields_until_its_outline_is_edited() {
-    let mut h = properties();
-    assert!(h.query_all_by_label_contains("from the library holder").next().is_none(), "a holder cylinder is typed");
+    let mut h = body_rows();
+    let win = |h: &H, text: &str| library_window(h).query_all_by_label_contains(text).count();
+    assert_eq!(win(&h, "from the library holder"), 0, "a holder cylinder is typed");
     assert!(typed(&h), "the catalog's Ø44 x 35 holder cylinder is typed: {:?}", spins(&h));
     set_bt30(&mut h);
     let want = HolderRef { entry: "BT30 ER20".into(), gauge_len: 60.0, projection: 55.0 };
     assert_eq!(reference(&h.state().state), Some(want.clone()), "status: {}", h.state().state.status);
-    assert_eq!(h.query_all_by_label_contains(FROM).count(), 2, "holder diameter and length name the entry");
-    assert!(h.query_all_by_label_contains("46.000 mm").next().is_some(), "the BT30 flange is the holder diameter");
-    assert!(h.query_all_by_label_contains("60.000 mm").next().is_some(), "nose face to gauge line is its length");
+    assert_eq!(win(&h, FROM), 2, "holder diameter and length name the entry");
+    assert!(win(&h, "46.000 mm") > 0, "the BT30 flange is the holder diameter");
+    assert!(win(&h, "60.000 mm") > 0, "nose face to gauge line is its length");
     assert!(!typed(&h), "the two fields are not typed: {:?}", spins(&h));
     // The outline as it stands, applied again: the same holder.
     apply_profile(&mut h, |_| {});
@@ -77,12 +90,12 @@ fn a_library_holder_sizes_the_holder_fields_until_its_outline_is_edited() {
         p[2].r += 1.0;
     });
     assert_eq!(reference(&h.state().state), None, "status: {}", h.state().state.status);
-    assert!(h.query_all_by_label_contains("from the library holder").next().is_none());
+    assert_eq!(win(&h, "from the library holder"), 0);
     assert!(typed(&h), "{:?}", spins(&h));
     h.state_mut().state.pending.push_back(CommandKind::Undo);
     h.run_steps(3);
     assert!(reference(&h.state().state).is_some(), "undo: the library holder again");
-    assert_eq!(h.query_all_by_label_contains(FROM).count(), 2);
+    assert_eq!(win(&h, FROM), 2);
 }
 
 #[test]
@@ -104,23 +117,23 @@ fn the_profile_tab_names_the_entry_and_the_picker_shows_it() {
         "the tab click lands on the Profile column"
     );
     assert!(h.query_all_by_label_contains("In use: library holder BT30 ER20").next().is_some());
-    let d = &h.state().state.tool_profile_ui;
+    // #3930: the picker is the tool library window's; it opens on the
+    // tool's holder.
+    open_in_window(&mut h, TOOL);
+    let d = holder(&mut h).clone();
     assert_eq!((d.library.as_deref(), d.gauge, d.projection), (Some("BT30 ER20"), 60.0, 55.0), "the picker shows the tool's holder");
-    assert!(!h.get_by_label("Apply holder").accesskit_node().is_disabled());
+    assert!(!library_window(&h).get_by_label("Apply holder").accesskit_node().is_disabled());
 }
 
-/// #2007: the shape window's holder library controls align label-left on
-/// one row, matching the property grid.
+/// #2007: the holder library controls align label-left on one row,
+/// matching the property grid. #3930: they stand in the tool library
+/// window's assembly group.
 #[test]
 fn holder_picker_uses_label_left_rows() {
     let mut h = properties();
     set_bt30(&mut h);
-    crate::actions::open_tool_shape_editor(&mut h.state_mut().state, TOOL);
-    h.run_steps(3);
-    let win = h
-        .query_all_by_role(egui::accesskit::Role::Window)
-        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
-        .expect("the shape window");
+    open_in_window(&mut h, TOOL);
+    let win = library_window(&h);
     let texts = super::structural::painted(&h);
     let lib_l = super::structural::at(&texts, "Library holder");
     let lib_c = win

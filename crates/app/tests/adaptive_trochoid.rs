@@ -41,6 +41,7 @@ fn part(a: f64, b: f64) -> camcraft_app::geometry::Mesh {
 
 fn adaptive(method: AdaptiveMethod) -> OpParams {
     OpParams::Adaptive2D {
+        rest: None,
         blend_radius: None, blend_turns: false,
         links: Links::PLANAR,
         stepover: 1.0,
@@ -60,6 +61,8 @@ fn adaptive(method: AdaptiveMethod) -> OpParams {
         troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         tilt: None,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
+        picks: Default::default(),
     }
 }
 

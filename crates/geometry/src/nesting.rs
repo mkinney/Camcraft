@@ -1,6 +1,7 @@
 //! Deterministic 2D true-shape nesting kernel (NFP/IFP and bottom-left-fill, #2158).
 //! Provenance: Bennell & Oliveira (EJOR 2008); Burke, Hellier, Kendall & Whitwell (OR 2006, EJOR 2007).
 
+pub mod cut_order;
 pub mod raster;
 
 mod blf;

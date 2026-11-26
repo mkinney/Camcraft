@@ -50,10 +50,11 @@ fn user_op() -> OpParams {
         tab_height: 1.0,
         entry: Entry3D::Arc,
         helix_radius: 1.0,
-        blend_turns: true,
+        blend_turns: true, blend_radius: None,
         tilt: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
+        picks: Default::default(),
     }
 }
 
@@ -299,8 +300,9 @@ fn wall_params(entry: Entry3D, tabs: u32) -> ContourParams {
         tab_height: 2.0,
         entry,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
+        picks: Default::default(),
     }
 }
 

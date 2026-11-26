@@ -277,6 +277,7 @@ mod tests {
             hand: ThreadHand::Right,
             external: false,
             passes: crate::machining2d::ThreadPasses::default(),
+            picks: Default::default(),
         }
     }
 

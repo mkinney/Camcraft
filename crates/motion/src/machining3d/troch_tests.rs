@@ -22,6 +22,7 @@ fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Region {
 
 fn params() -> Pocket3DParams {
     Pocket3DParams {
+        pass_start: Default::default(),
         tool_diameter: 6.0,
         stepover: 2.0,
         stock_to_leave: 0.0,

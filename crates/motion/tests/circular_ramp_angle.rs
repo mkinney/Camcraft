@@ -30,6 +30,7 @@ fn region() -> Region {
 /// an 11 mm cut, with the entry Ramp.
 fn params(climb: bool) -> CircularParams {
     CircularParams {
+        pass_start: Default::default(),
         links: Links::PLANAR,
         center: C,
         radius: 3.0,

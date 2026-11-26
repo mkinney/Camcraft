@@ -86,7 +86,7 @@ fn bottom_of(src: &SrcRef, world: &World, off: f64) -> Option<f64> {
 
 /// A pocket whose four heights all read the selection.
 fn pocket_from_selection() -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
@@ -106,6 +106,7 @@ fn pocket_from_selection() -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        picks: Default::default(),
     }
 }
 
@@ -121,7 +122,8 @@ fn face_on_selection() -> OpParams {
         feed: 1000.0,
         plunge_feed: 300.0,
         climb: true,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
+        picks: Default::default(),
     }
 }
 
@@ -237,7 +239,7 @@ fn creation_and_edits_refuse_a_selection_that_yields_no_height() {
         .to_string();
     assert!(err.contains("cut downward"), "{err}");
     // Params that never read the selection pass the pick exactly as before.
-    let fixed = OpParams::Pocket { rest: None,
+    let fixed = OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
@@ -257,6 +259,7 @@ fn creation_and_edits_refuse_a_selection_that_yields_no_height() {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        picks: Default::default(),
     };
     history.execute(
         &world,
@@ -295,7 +298,7 @@ fn generation_refuses_a_vanished_selection_by_name() {
 #[test]
 fn an_edit_to_selection_rides_edit_params_and_undoes() {
     let (world, mut history) = fixture();
-    let before = OpParams::Pocket { rest: None,
+    let before = OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
@@ -315,6 +318,7 @@ fn an_edit_to_selection_rides_edit_params_and_undoes() {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        picks: Default::default(),
     };
     history.execute(
         &world,

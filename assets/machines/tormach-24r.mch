@@ -1,5 +1,5 @@
 {
-  "general": { "model": "Tormach 24R", "vendor": "Camcraft", "kind": "mill" },
+  "general": { "model": "Tormach 24R", "vendor": "Camcraft", "kind": "router" },
   "kinematics": { "default": {
     "units": { "length": "inch", "angle": "degrees" },
     "parts": [

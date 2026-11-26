@@ -1,4 +1,6 @@
 //! Unit and strategy tests for 2D pocket/slot corner relief (#2400).
+//!
+//! Gate map: covers camcraft_motion::machining2d (corner_relief, corner_relief_spur, rest2d).
 
 use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::entry::Entry3D;

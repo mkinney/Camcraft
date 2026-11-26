@@ -91,6 +91,9 @@ pub(crate) fn finish_tol_of(params: &OpParams) -> Option<f64> {
         // the picks (M5.1 J).
         | OpParams::Flow5D { tolerance, .. }
         | OpParams::MultiAxisContour { tolerance, .. }
+        // The flow band reads it the same way (#2826):
+        // the scallop budget, and the envelope's.
+        | OpParams::RotaryFlow { tolerance, .. }
         // Facing reads it the same way - its ONLY
         // reading: the stations come from the
         // profile, the budget judges them (M5.2 A).
@@ -186,6 +189,7 @@ fn own_law_tol_of(params: &OpParams) -> Option<f64> {
     match params {
         OpParams::Probe { .. } => Some(STYLUS_SLACK),
         OpParams::PlasmaProfile(_) => Some(KERF_TOL),
+        OpParams::WaterjetProfile(_) => Some(crate::waterjet::KERF_TOL),
         _ => None,
     }
 }
@@ -228,7 +232,7 @@ pub(crate) fn excess_aware(params: &OpParams) -> bool {
         }
         Section::Turning => true,
         Section::MultiAxis => !matches!(params, OpParams::Swarf { .. } | OpParams::AdvancedSwarf { .. }),
-        Section::Plasma => true,
+        Section::Plasma | Section::Waterjet => true,
         // #532: the wire's kerf law is not excess-aware yet either.
         // #541: nor the sinker's burn verdict.
         Section::WireEdm | Section::Sinker => false,

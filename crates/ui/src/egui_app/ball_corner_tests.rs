@@ -1,7 +1,7 @@
 //! #263 in the surface: a ball nose's corner is its ball. The tool
-//! editor shows half the diameter as text with no field to edit, Apply
-//! saves that number, and the library summary reads it; a bull nose
-//! keeps its editable corner.
+//! editor (#3930: the tool library window's Tool tab) shows half the
+//! diameter as text with no field to edit, Apply saves that number, and
+//! the Properties summary reads it; a bull nose keeps its editable corner.
 //! Provenance: our own tests over our own tool editor page.
 
 use egui::Vec2;
@@ -36,14 +36,14 @@ fn saved(state: &State, name: &str) -> Tool {
     model::find_by_name(&state.world, name).and_then(|e| model::tool_of(&state.world, &e)).expect("the tool")
 }
 
-/// The tool's Properties page on `name`, drawn alone. The settings live
-/// there (#2397); the shape editor window has the body and the profile.
+/// The tool library window open on `name`, drawn alone. #3930: the
+/// settings are edited there; Properties shows a summary.
 fn editor(mut state: State, name: &str) -> Harness<'static, State> {
-    state.ui_target = UiTarget::Tool(name.to_owned());
+    state.open_tool_in_library(name);
     let mut h = Harness::builder()
-        .with_size(Vec2::new(900.0, 1000.0))
-        .build_ui_state(|ui, st: &mut State| super::pages::properties(ui, st, &super::theme::current()), state);
-    h.run();
+        .with_size(Vec2::new(1600.0, 1000.0))
+        .build_ui_state(|ui, st: &mut State| super::tool_library_dialog::tool_library_window(ui.ctx(), st), state);
+    h.run_steps(2);
     h
 }
 

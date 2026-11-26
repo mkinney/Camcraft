@@ -9,7 +9,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use camcraft_app::ai::http::{Client, probe_ollama_cancellable, send_chat};
+use camcraft_app::ai::http::{Client, discover_ollama_cancellable, probe_ollama_cancellable, send_chat};
 use camcraft_app::ai::wire::{ChatMessage, ChatRequest, DEFAULT_MAX_TOKENS, Image, split_payload};
 use camcraft_app::ai::{Endpoint, ProviderEndpoint, by_id, keychain, secret};
 use camcraft_app::mcp::provider::FallbackMode;
@@ -98,15 +98,26 @@ impl HttpTransport {
         key: Option<&camcraft_app::ai::ApiKey>,
     ) -> Result<TransportOutput, String> {
         let client = Client::new(req.offline_only);
-        if endpoint_for(&req.preset.id).is_some_and(|def| def.ollama_probe)
+        let ollama = endpoint_for(&req.preset.id).is_some_and(|def| def.ollama_probe);
+        let automatic = ollama && req.model.trim().is_empty();
+        let model = if automatic {
+            discover_ollama_cancellable(&client, ep, cancel)?
+        } else if req.model.trim().is_empty()
+            && req.preset.endpoint_kind == super::EndpointKind::Cloud
+        {
+            camcraft_app::ai::presets::default_model(req.preset.provider).to_owned()
+        } else {
+            req.model.clone()
+        };
+        if ollama && !automatic
             && req.fallback_mode == FallbackMode::Native
         {
-            let caps = probe_ollama_cancellable(&client, ep, &req.model, cancel)?;
+            let caps = probe_ollama_cancellable(&client, ep, &model, cancel)?;
             if !caps.tools {
                 return Err(format!(
                     "model '{}' cannot call tools (Ollama lists no 'tools' capability) - \
                      choose 'Local Prompt-JSON' or 'Local Q&A (Read-Only)' for it",
-                    req.model
+                    model
                 ));
             }
         }
@@ -114,13 +125,20 @@ impl HttpTransport {
         let messages: Vec<ChatMessage> = req.messages.iter().map(to_wire).collect();
         let chat = ChatRequest {
             provider: req.preset.provider,
-            model: &req.model,
+            model: &model,
             system,
             messages: &messages,
             tools: &tools,
             max_tokens: DEFAULT_MAX_TOKENS,
         };
-        let envelope = send_chat(&client, ep, &chat, key, cancel)?;
+        // The person did not type the automatic model: a failure names it.
+        let envelope = send_chat(&client, ep, &chat, key, cancel).map_err(|e| {
+            if automatic && !cancel.load(Ordering::Relaxed) {
+                format!("automatic model '{model}': {e}")
+            } else {
+                e
+            }
+        })?;
         let text = extract_assistant_text(req.preset.provider, &envelope, "");
         Ok(TransportOutput::AssistantResponse {
             text,

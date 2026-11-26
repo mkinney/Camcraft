@@ -41,9 +41,11 @@ pub mod g76_clearance;
 pub mod infeed;
 pub mod offset;
 pub mod parting;
+pub mod parting_law;
 pub mod prof;
 pub mod profile;
 pub mod revolve;
+pub mod start_exit;
 pub mod stock;
 pub mod thread;
 mod thread_cycle;
@@ -67,7 +69,12 @@ pub use prof::{
 };
 pub use profile::{profile_of, silhouette, Profile};
 pub use blade_law::{blade_program_warnings, blade_program_warnings_excess, blade_warnings, blade_warnings_excess, BladeLeg};
+pub use parting_law::{
+    chuck_side, part_kerf_refusal, part_kerf_refusal_for, plane_inside_model, rule_decides, PartKept, PartKerf,
+    WasteSide, CHUCK_NOTE, KERF_TOL,
+};
 pub use revolve::{gouge_tol_on, BandMove, Floor};
+pub use start_exit::{with_picks, PickLaw};
 pub use stock::StockEnv;
 pub use infeed::{DepthSchedule, InfeedMethod, ThreadInfeed};
 pub use thread_dips::{ThreadDips, MIN_DIP_HEIGHT};

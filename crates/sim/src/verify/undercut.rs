@@ -24,22 +24,20 @@
 //! for the neck, or a pocket cut earlier for the entry, air. An unknown
 //! height is material: the conviction stands.
 //!
-//! Sampled: a disc is read at its centre and on [`RINGS`] rings; a move
-//! at stations no further apart than a quarter of the narrowest disc. A
-//! move too long to march at that step fails closed (convicted).
+//! A disc meets the stock prism by an exact disc-polygon test (centre
+//! inside, or an edge within the radius). A move is read at stations no
+//! further apart than a quarter of the narrowest disc. A move too long to
+//! march at that step fails closed (convicted).
 
+use super::laws::dist2_seg;
 use super::probe::Cutter;
 use super::rest::Rest;
 use super::types::{VerifyContext, Warning};
 
 use crate::cl::{Move, Toolpath};
-use crate::geo2d::Point2;
+use crate::geo2d::{Point2, Region};
 use crate::stock_sim::Columns;
 
-/// Rings a disc is sampled on, out to its rim.
-const RINGS: usize = 6;
-/// Samples on the rim ring; ring k holds `RIM * k / RINGS`, at least 6.
-const RIM: usize = 24;
 /// The most stations one move is marched at; past it the move is convicted.
 const MAX_STATIONS: usize = 1 << 16;
 /// The smallest march step, mm.
@@ -47,20 +45,6 @@ const MIN_STEP: f64 = 0.01;
 
 /// The highest material under the disc `(centre, radius)`.
 type Top<'a> = &'a dyn Fn(Point2, f64) -> f64;
-
-/// The disc's sample points: its centre, then the rings.
-fn disc(c: Point2, r: f64) -> impl Iterator<Item = Point2> {
-    let r = if r.is_finite() && r > 0.0 { r } else { 0.0 };
-    let rings = if r > 0.0 { RINGS } else { 0 };
-    std::iter::once(c).chain((1..=rings).flat_map(move |k| {
-        let rad = r * k as f64 / RINGS as f64;
-        let n = (RIM * k / RINGS).max(6);
-        (0..n).map(move |j| {
-            let t = std::f64::consts::TAU * j as f64 / n as f64;
-            Point2::new(c.x + rad * t.cos(), c.y + rad * t.sin())
-        })
-    }))
-}
 
 /// The stations of `m`: `(xy, tip z)` along its chords, no further apart
 /// than `step`. `None` when the move cannot be marched (fail closed).
@@ -128,11 +112,30 @@ fn convictions(path: &Toolpath, cutter: &Cutter, z_tol: f64, chord_tol: f64, top
     out
 }
 
+/// Whether the closed disc `(c, r)` meets `region`: its centre is inside,
+/// or a boundary edge lies within `r` of it. Exact for a polygon region,
+/// so a stock corner that enters the disc between samples is still read
+/// (#1444 review). A disc that is not finite meets it (fail closed).
+fn disc_meets(region: &Region, c: Point2, r: f64) -> bool {
+    if !(c.x.is_finite() && c.y.is_finite() && r.is_finite()) {
+        return true;
+    }
+    if region.contains(c) {
+        return true;
+    }
+    let r2 = r.max(0.0) * r.max(0.0);
+    region.loops().iter().any(|l| {
+        let p = l.points();
+        p.iter().zip(p.iter().cycle().skip(1)).any(|(&a, &b)| dist2_seg(c, a, b) <= r2)
+    })
+}
+
 /// Law (g) against the stock prism: a disc that reaches the stock's
 /// footprint has the stock top over it.
 pub(super) fn undercut_law(path: &Toolpath, cx: &VerifyContext, rest: &Rest, cutter: &Cutter, warns: &mut Vec<Warning>) {
+    let stock = rest.cx().stock.unwrap_or(rest.cx().region);
     let top = |c: Point2, r: f64| {
-        if disc(c, r).any(|q| rest.in_stock(q)) { cx.stock_top_z } else { f64::NEG_INFINITY }
+        if disc_meets(stock, c, r) { cx.stock_top_z } else { f64::NEG_INFINITY }
     };
     for w in convictions(path, cutter, cx.z_tol, cx.gouge_tol, &top) {
         if !warns.contains(&w) {

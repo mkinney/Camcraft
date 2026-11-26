@@ -120,7 +120,7 @@ pub(crate) fn default_presets() -> Vec<ProviderPreset> {
             label: "Anthropic (Cloud)".to_owned(),
             provider: Provider::Anthropic,
             endpoint_kind: EndpointKind::Cloud,
-            default_model: "claude-sonnet-4-20250514".to_owned(),
+            default_model: camcraft_app::ai::presets::default_model(Provider::Anthropic).to_owned(),
             fallback_mode: FallbackMode::Native,
         },
         ProviderPreset {
@@ -128,7 +128,7 @@ pub(crate) fn default_presets() -> Vec<ProviderPreset> {
             label: "OpenAI Responses (Cloud)".to_owned(),
             provider: Provider::OpenAiResponses,
             endpoint_kind: EndpointKind::Cloud,
-            default_model: "gpt-4.1".to_owned(),
+            default_model: camcraft_app::ai::presets::default_model(Provider::OpenAiResponses).to_owned(),
             fallback_mode: FallbackMode::Native,
         },
         ProviderPreset {
@@ -136,7 +136,7 @@ pub(crate) fn default_presets() -> Vec<ProviderPreset> {
             label: "OpenAI Chat (Cloud)".to_owned(),
             provider: Provider::OpenAiChat,
             endpoint_kind: EndpointKind::Cloud,
-            default_model: "gpt-4.1".to_owned(),
+            default_model: camcraft_app::ai::presets::default_model(Provider::OpenAiChat).to_owned(),
             fallback_mode: FallbackMode::Native,
         },
         ProviderPreset {
@@ -144,7 +144,7 @@ pub(crate) fn default_presets() -> Vec<ProviderPreset> {
             label: "Gemini (Cloud)".to_owned(),
             provider: Provider::Gemini,
             endpoint_kind: EndpointKind::Cloud,
-            default_model: "gemini-2.5-flash".to_owned(),
+            default_model: camcraft_app::ai::presets::default_model(Provider::Gemini).to_owned(),
             fallback_mode: FallbackMode::Native,
         },
         ProviderPreset {
@@ -152,7 +152,7 @@ pub(crate) fn default_presets() -> Vec<ProviderPreset> {
             label: "Offline local (Ollama)".to_owned(),
             provider: Provider::OpenAiChat,
             endpoint_kind: EndpointKind::Local,
-            default_model: "qwen2.5:14b".to_owned(),
+            default_model: String::new(),
             fallback_mode: FallbackMode::Native,
         },
         ProviderPreset {
@@ -160,7 +160,7 @@ pub(crate) fn default_presets() -> Vec<ProviderPreset> {
             label: "Local Prompt-JSON".to_owned(),
             provider: Provider::OpenAiChat,
             endpoint_kind: EndpointKind::Local,
-            default_model: "qwen2.5:7b".to_owned(),
+            default_model: String::new(),
             fallback_mode: FallbackMode::PromptJson,
         },
         ProviderPreset {
@@ -168,7 +168,7 @@ pub(crate) fn default_presets() -> Vec<ProviderPreset> {
             label: "Local Q&A (Read-Only)".to_owned(),
             provider: Provider::OpenAiChat,
             endpoint_kind: EndpointKind::Local,
-            default_model: "llama3.2".to_owned(),
+            default_model: String::new(),
             fallback_mode: FallbackMode::ReadOnly,
         },
     ]
@@ -199,7 +199,9 @@ pub(crate) fn requires_confirmation(
         FallbackMode::ReadOnly => true,
         FallbackMode::PromptJson => !is_read_only_tool(tool_name),
         FallbackMode::Native => {
-            tool_name == "open_project" || requires_approval(tool_name, arguments).is_some()
+            tool_name.starts_with("delete_")
+                || tool_name == "open_project"
+                || requires_approval(tool_name, arguments).is_some()
         }
     }
 }
@@ -329,6 +331,21 @@ pub(crate) fn encode_base64(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_confirmation_covers_every_published_delete_tool() {
+        let deletes: Vec<_> = camcraft_app::mcp::catalog::tool_names().into_iter()
+            .filter(|name| name.starts_with("delete_")).collect();
+        assert!(!deletes.is_empty(), "the published delete tools must be covered");
+        for name in deletes {
+            assert!(requires_confirmation(name, &json!({}), FallbackMode::Native),
+                "native {name} must wait for Allow/Deny");
+        }
+        for name in ["get_job", "add_operation"] {
+            assert!(!requires_confirmation(name, &json!({}), FallbackMode::Native),
+                "ordinary {name} must retain its native policy");
+        }
+    }
 
     #[test]
     fn offline_policy_refuses_cloud_and_allows_local() {

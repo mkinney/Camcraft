@@ -25,6 +25,7 @@ fn region(c: Point2) -> Region {
 /// stepover 2, stepdown 2, Z20 to Z0, helix radius 1.
 fn params(center: Point2, climb: bool, stepover: f64, helix_radius: f64) -> CircularParams {
     CircularParams {
+        pass_start: Default::default(),
         links: Links::PLANAR,
         center,
         radius: 10.0,

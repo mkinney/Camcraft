@@ -13,6 +13,9 @@ winresource = { version = "0.1", default-features = false }
 
 [dependencies]
 camcraft-app = { workspace = true }
+# #2620: the headless device policy (`headless_gpu`) lives in the compute
+# seam crate, so the renderer and the GPU kernels share one adapter choice.
+camcraft-gpu = { workspace = true }
 flecs_ecs = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true }

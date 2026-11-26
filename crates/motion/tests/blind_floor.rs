@@ -62,6 +62,7 @@ fn block(d: f64) -> Vec<Triangle> {
 
 fn params(entry: Entry3D, strategy: PocketStrategy, stepdown: f64, bottom_z: f64) -> Pocket3DParams {
     Pocket3DParams {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         tool_diameter: 2.0 * R,
         stepover: 2.0,

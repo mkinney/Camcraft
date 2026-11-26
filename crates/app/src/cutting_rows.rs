@@ -112,6 +112,28 @@ pub fn steps_mut(p: &mut OpParams) -> (Option<&mut f64>, Option<&mut f64>) {
     }
 }
 
+/// The stepdown the verifier's plunge depth law reads (#3679): the kinds
+/// that cut in vertical levels and state a stepdown in mm, as
+/// [`steps_mut`] seeds them. `None` - every kind that cuts no levels
+/// (drills, bores, threads, the turning, wire and plasma families) -
+/// keeps the law silent.
+#[must_use]
+pub fn plunge_stepdown(p: &OpParams) -> Option<f64> {
+    match p {
+        OpParams::Contour { stepdown, .. }
+        | OpParams::Pocket { stepdown, .. }
+        | OpParams::Offset2D { stepdown, .. }
+        | OpParams::Slot { stepdown, .. }
+        | OpParams::TrochoidalSlot { stepdown, .. }
+        | OpParams::Adaptive2D { stepdown, .. }
+        | OpParams::Pocket3D { stepdown, .. }
+        | OpParams::MultiAxisRough { stepdown, .. } => Some(*stepdown),
+        // Staged facing only: `None` faces in one level at `cut_z`.
+        OpParams::Face { stepdown, .. } => *stepdown,
+        _ => None,
+    }
+}
+
 /// Seed `params` from `tool`'s rows for `material`: the feed from a
 /// row naming it, the stepdown / stepover from the row in force (each
 /// missing one from the `Unknown` row). `true` when anything moved.

@@ -38,6 +38,8 @@ mod marks;
 // The wire clause (#1110): a wire cut stays out of the plan, by name.
 #[path = "stock_sim_wire.rs"]
 pub mod wire;
+#[path = "stock_sim_waterjet.rs"]
+pub mod waterjet;
 pub use carry::{
     CARRY_MACHINE_CHANGE_REFUSAL, CARRY_MACHINE_REFUSAL, carry_machine_refusal, incoming_body, machine_kind_name,
 };
@@ -64,6 +66,7 @@ pub fn simulate_document(
 ) -> Result<ProgramSim, String> {
     let planned = plan_program(world)?;
     wire::refuse_wire_cuts(world)?;
+    waterjet::refuse_waterjet_cuts(world)?;
     refuse_unjudged(&planned)?;
     // #864: a part imported coarser than promised tightens the verdict by
     // its excess; one too coarse for that is refused by name, not judged -
@@ -257,7 +260,7 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
     for (name, e) in ops {
         let op = model::operation_of(world, e)
             .ok_or_else(|| format!("{name}: lost its operation"))?;
-        if wire::skips(&op) {
+        if wire::skips(&op) || waterjet::skips(&op) {
             continue;
         }
         // The rotary clause (M13.1): between two stations a rotary
@@ -380,7 +383,7 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
             breaks: if breaks::breaks_stock_edge(world, &op) { Vec::new() } else { breaks::bounded(name, &op.params, cache.path.breaks) },
             walled: matches!(op.params, crate::operation::OpParams::Chamfer2D { .. }),
             auto_edges: breaks::auto_edges(&op),
-            mark: crate::operation::mark_law::sim_mark_of(world, &op, tool.diameter * 0.5),
+            mark: crate::operation::mark_law::sim_mark_of(world, &op, crate::operation::mark_law::cutter_depth_limit(&op.params, &tool)),
             radius,
             ball: tool.kind == crate::tools::ToolKind::BallNose,
             cone,

@@ -20,7 +20,7 @@ use camcraft_app::tools::catalog;
 use crate::state::{CommandKind, ErrorScope, State, UiTarget};
 
 fn pocket() -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
@@ -40,6 +40,7 @@ fn pocket() -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        picks: Default::default(),
     }
 }
 

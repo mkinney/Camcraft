@@ -43,6 +43,7 @@ pub(super) fn seed_plasma_profile(c: &Carried) -> OpParams {
         pierce_height: None,
         cut_height: None,
         pierce_delay: None,
+        picks: crate::path_picks::PathPicks::default(),
     })
 }
 

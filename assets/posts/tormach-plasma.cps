@@ -59,6 +59,7 @@ function trim(s) {
 function fu(v) { return trim(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3)); }
 function ff(v) { return inch ? trim((v / 25.4).toFixed(2)) : String(Math.round(v)); }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }
+function arcWord(k, v) { return k === "Z" ? "" : wo(k, v, k === "X" ? orgX : orgY); }  // #3442: a position word as written (no Z), for arcFate
 function block(words) {
   var a = [];
   for (var i = 0; i < words.length; i++) {
@@ -342,6 +343,9 @@ function onCircular() {
     refuse("comparc" + opName, who() + "G41/G42 engages or cancels on an arc - PathPilot needs a straight G1 lead");
     return;
   }
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   var c = p.IJKIncrement || {};
   block([
     p.CircularDirection === "CW" ? "G2" : "G3",

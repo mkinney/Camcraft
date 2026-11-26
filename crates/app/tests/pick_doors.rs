@@ -68,7 +68,7 @@ fn pick(id: u64) -> GeoSel {
 }
 
 fn pocket() -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
@@ -88,6 +88,7 @@ fn pocket() -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        picks: Default::default(),
     }
 }
 
@@ -103,7 +104,8 @@ fn facing() -> OpParams {
         feed: 800.0,
         plunge_feed: 200.0,
         climb: true,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
+        picks: Default::default(),
     }
 }
 

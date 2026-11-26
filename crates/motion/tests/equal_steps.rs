@@ -249,7 +249,9 @@ fn a_contour_cuts_the_levels_of_its_mode() {
             entry: Entry3D::Plunge,
             helix_radius: 1.0,
             blend_turns: false,
+            blend_radius: None,
             links: links(Links::PLANAR, equal),
+            picks: Default::default(),
         };
         contour(&square(0.0, 0.0, 30.0), &p).expect("contour")
     });
@@ -259,6 +261,8 @@ fn a_contour_cuts_the_levels_of_its_mode() {
 fn a_slot_cuts_the_levels_of_its_mode() {
     two_modes("slot", |equal| {
         let p = SlotParams {
+            blend_turns: false,
+            blend_radius: None,
             links: links(Links::PLANAR, equal),
             tool_diameter: 10.0,
             width: 10.0,
@@ -307,6 +311,7 @@ fn a_bore_cuts_the_levels_of_its_mode() {
 fn a_circular_cuts_the_levels_of_its_mode() {
     two_modes("circular", |equal| {
         let p = CircularParams {
+            pass_start: Default::default(),
             links: links(Links::PLANAR, equal),
             center: Point2::new(0.0, 0.0),
             radius: 10.0,
@@ -343,6 +348,7 @@ fn plate() -> Vec<Triangle> {
 
 fn p3d(equal: bool) -> Pocket3DParams {
     Pocket3DParams {
+        pass_start: Default::default(),
         links: links(Links::ROUGH3D, equal),
         tool_diameter: 6.0,
         stepover: 2.4,

@@ -81,7 +81,7 @@ fn level_center() -> Region {
 #[ignore = "known-fail #1950 | lib | machining2d::pocket_hsm::ring_tests::the_stock_ring_level_reaches_the_air_planner_with_the_stock | hops "]
 fn the_stock_ring_level_reaches_the_air_planner_with_the_stock() {
     let t = std::time::Instant::now();
-    let Ok((passes, notes, rest, _, _, travel, refused)) = hsm_passes(&level_center(), &params(), Some(&stock())) else { panic!("plan") };
+    let Ok((passes, notes, rest, _, _, travel, refused)) = hsm_passes(&level_center(), &params(), Some(&stock()), false) else { panic!("plan") };
     eprintln!("level: {:.1} s, passes {}, rest {rest:.4}, {travel:?}, refused {refused:?}", t.elapsed().as_secs_f64(), passes.len());
     assert!(refused.is_none(), "{refused:?}");
     assert!(notes.iter().any(|n| n.contains("cut from the air")), "{notes:?}");
@@ -115,7 +115,7 @@ fn the_stock_ring_level_plans_adaptive_with_no_budget_note() {
 fn no_stock_keeps_the_growth_spiral() {
     let Ok(comps) = components(&level_center()) else { panic!("comps") };
     let Some(bore) = comps.iter().find(|c| c.area() < 1000.0) else { panic!("bore") };
-    let Ok((_, notes, ..)) = hsm_passes(bore, &params(), None) else { panic!("plan") };
+    let Ok((_, notes, ..)) = hsm_passes(bore, &params(), None, false) else { panic!("plan") };
     assert!(!notes.iter().any(|n| n.contains("cut from the air")), "{notes:?}");
 }
 

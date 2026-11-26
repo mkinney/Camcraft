@@ -55,7 +55,9 @@ fn face_op() -> OpParams {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        blend_radius: None,
         blend_turns: false,
+        picks: Default::default(),
     }
 }
 

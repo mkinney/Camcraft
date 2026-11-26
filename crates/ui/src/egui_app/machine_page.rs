@@ -157,9 +157,9 @@ fn library_row(ui: &mut Ui, state: &mut State, path: &str) {
 }
 
 /// Load other / Edit / Clear as equal buttons; with no machine, the one
-/// load button. #1431: in the browser build the `.mch` load slot greys
-/// with its refusal reason (a page has no file picker yet); the rows
-/// lay out exactly as on the desktop while nothing is refused.
+/// load button. #1431: a refused `.mch` load slot greys with its reason;
+/// since #2950 the browser's picker loads one, so nothing is refused, and
+/// the browser adds a folder button under the row.
 fn actions(ui: &mut Ui, state: &mut State, has_machine: bool) {
     let avail = ui.available_width();
     let why = state.browser_refusal_of(&CommandKind::LoadMachineDialog);
@@ -198,4 +198,15 @@ fn actions(ui: &mut Ui, state: &mut State, has_machine: bool) {
             state.pending.push_back(CommandKind::LoadMachineDialog);
         }
     }
+    // #2950: a page has no machine or post folder; the browser picks one.
+    if state.browser_build {
+        let size = Vec2::new(cell_w(ui, avail, 1), BUTTON_H);
+        if crate::browser_files::button_sized(ui, None, LOAD_FOLDER, FOLDER_HELP, size) {
+            state.pending.push_back(CommandKind::LoadSetupFolderDialog);
+        }
+    }
 }
+
+/// The browser's folder button (#2950).
+pub(crate) const LOAD_FOLDER: &str = "Load folder (.mch, .cps)";
+const FOLDER_HELP: &str = "Add every machine and post file of one folder to this session's lists";

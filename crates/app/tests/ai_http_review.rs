@@ -68,13 +68,51 @@ fn provider_errors_redact_supplied_key_before_truncation() {
     assert_error_redacted(format!("{}{KEY}", "x".repeat(390)));
 }
 
+#[test]
+fn provider_errors_keep_type_code_and_request_endpoint() {
+    let body = json!({"error":{
+        "message": "bad key",
+        "type": format!("{}{KEY}", "t".repeat(360)),
+        "code": 401,
+    }})
+    .to_string();
+    let (err, base) = error_for(body);
+    assert!(err.contains("bad key [type: tttt"), "{err}");
+    assert!(err.contains("[redacted]"), "redaction must precede truncation: {err}");
+    assert!(!err.contains("placeholder"), "partial key leaked: {err}");
+    assert!(
+        err.ends_with(&format!("(endpoint: POST {base}/chat/completions)")),
+        "{err}"
+    );
+    let (err, _) = error_for(
+        json!({"error":{"message":"m","type":"invalid_request_error","code":"model_not_found"}})
+            .to_string(),
+    );
+    assert!(
+        err.contains("m [type: invalid_request_error, code: model_not_found]"),
+        "{err}"
+    );
+}
+
 fn assert_error_redacted(body: String) {
+    let (err, _) = error_for(body);
+    assert!(err.contains("401"), "{err}");
+    assert!(!err.contains(KEY), "key leaked: {err}");
+    assert!(
+        !err.contains("placeholder"),
+        "partial key leaked at truncation: {err}"
+    );
+    assert!(
+        err.contains("[redacted]"),
+        "redaction must precede truncation: {err}"
+    );
+}
+
+/// The error of one chat request that a loopback server answers with HTTP 401 and `body`.
+fn error_for(body: String) -> (String, String) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("loopback");
-    let ep = Endpoint::parse(&format!(
-        "http://{}/v1",
-        listener.local_addr().expect("addr")
-    ))
-    .expect("endpoint");
+    let base = format!("http://{}/v1", listener.local_addr().expect("addr"));
+    let ep = Endpoint::parse(&base).expect("endpoint");
     let server = std::thread::spawn(move || {
         let (mut s, _) = listener.accept().expect("accept");
         read_request(&mut s);
@@ -95,16 +133,7 @@ fn assert_error_redacted(body: String) {
     )
     .expect_err("401");
     server.join().expect("server");
-    assert!(err.contains("401"), "{err}");
-    assert!(!err.contains(KEY), "key leaked: {err}");
-    assert!(
-        !err.contains("placeholder"),
-        "partial key leaked at truncation: {err}"
-    );
-    assert!(
-        err.contains("[redacted]"),
-        "redaction must precede truncation: {err}"
-    );
+    (err, base)
 }
 
 #[test]

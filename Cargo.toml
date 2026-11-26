@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/app", "crates/cl", "crates/motion", "crates/post", "crates/sim",
-  "crates/tools", "crates/ui", "crates/geometry", "crates/kernel", "xtask"]
+members = ["crates/app", "crates/cl", "crates/gcode", "crates/motion", "crates/post", "crates/sim",
+  "crates/tools", "crates/ui", "crates/geometry", "crates/kernel", "crates/gpu", "xtask"]
 
 [workspace.package]
-version = "0.25.0"
+version = "0.27.0"
 edition = "2024"
 rust-version = "1.90"
 
@@ -16,6 +16,7 @@ camcraft-tools = { path = "crates/tools" }
 camcraft-post = { path = "crates/post" }
 camcraft-sim = { path = "crates/sim" }
 camcraft-motion = { path = "crates/motion" }
+camcraft-gpu = { path = "crates/gpu" }
 
 # ECS - alpha bindings, hard-pinned; expect churn on bumps.
 # flecs_alerts is NOT optional: flecs_ecs_sys 0.2.1's bindings.rs references
@@ -56,8 +57,13 @@ url = "2.5"
 
 # Platform + dialog deps shared with the UI stack; imgui retired at M1.4.2
 # M-g (the dear-imgui-* trio left with it).
-# No direct wgpu dep: camcraft-ui uses egui_wgpu::wgpu so types match the
-# renderer exactly (wgpu is re-exported, version-selected by the set below).
+# camcraft-ui uses egui_wgpu::wgpu so types match the renderer exactly.
+# camcraft-gpu (#2620, the headless compute seam) is the one direct wgpu
+# user: the version is the one the egui set below pins (egui-wgpu 0.36.2
+# wants ^30.0, the lock has 30.0.1), so the lock keeps one wgpu. It moves
+# with the egui set (#658, #1118): bump the two together or hold.
+# Default features: a subset of what egui-wgpu's defaults already turn on.
+wgpu = "=30.0.1"
 winit = "0.30"
 rfd = "0.15"
 pollster = "0.4"
@@ -115,7 +121,6 @@ clipper2-rust = "=1.2.0"
 # default features pull vtkio -> lzma-sys (C code): keep them off and take
 # only `tessellation` (which enables `filters` + spade, both pure Rust).
 # STEP no longer reads through truck-stepio or ruststep (#917, #2790).
-truck-polymesh = "=0.6.0"
 truck-meshalgo = { version = "=0.4.0", default-features = false, features = ["tessellation"] }
 
 # Third-party code is optimized even in dev builds: an unoptimized

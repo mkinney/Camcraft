@@ -173,9 +173,9 @@ fn the_project_file_keeps_the_link_and_a_v71_file_opens_unlinked() {
     assert!(model::find_by_name(&fresh, "part").is_some());
 
     let mut newer = doc;
-    newer["version"] = json!(project::PROJECT_VERSION + 1);
+    newer["version"] = json!(project::NEWEST_PROJECT_VERSION + 1);
     let err = project::open(&new_world(), &serde_json::to_string(&newer).expect("json")).expect_err("too new");
-    assert!(err.to_string().contains(&format!("unsupported project version {}", project::PROJECT_VERSION + 1)), "{err}");
+    assert!(err.to_string().contains(&format!("unsupported project version {}", project::NEWEST_PROJECT_VERSION + 1)), "{err}");
 
     let plain = new_world();
     let mut h = History::default();

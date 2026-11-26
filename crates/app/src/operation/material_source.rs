@@ -52,6 +52,7 @@ pub(super) fn section_z_of(
         // along (M2.4 B).
         | OpParams::Adaptive2D { top_z, .. }
         | OpParams::Offset2D { top_z, .. }
+        | OpParams::VCarve { top_z, .. }
         | OpParams::Engrave { top_z, .. }
         | OpParams::Chamfer2D { top_z, .. }
         | OpParams::Trace { top_z, .. } => *top_z,
@@ -128,7 +129,7 @@ fn source_region(
         OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => Err(GenError::Invalid("a sinker burn has no machining region".into())),
         // The plasma cut goes THROUGH the plate (#670): what it can cut
         // is the through-silhouette - a blind pocket is no torch's work.
-        OpParams::PlasmaProfile(_) => {
+        OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) => {
             slice::project(&material.facets, FOOTPRINT_SAMPLES).map_err(from_slice)
         }
         // The wire cuts THROUGH the workpiece too (#532): its profile
@@ -152,7 +153,7 @@ fn source_region(
         // The deburr ride's machine area is the model's own shadow:
         // its loci are welded edges in the material, and the region
         // only says where the model stands (M2.5 E B).
-        | OpParams::Deburr { .. }
+        | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
         | OpParams::Contour5D { .. }
         | OpParams::Parallel5D { .. }
         | OpParams::Swarf { .. }
@@ -171,6 +172,9 @@ fn source_region(
         // solid; the chains it rides are resolved separately, in 3D,
         // at generation (M5.1 J).
         | OpParams::MultiAxisContour { .. }
+        // The flow band's guide chains ride the same way (#2826):
+        // the model's own skin between them is the ground.
+        | OpParams::RotaryFlow { .. }
         // Facing rides the same shadow for the panels: the station
         // limits are the meridian profile's own, computed in the
         // axis frame by the kernel (M5.2 A) - and so are the
@@ -207,6 +211,7 @@ fn source_region(
         | OpParams::Pocket { .. }
         | OpParams::Adaptive2D { .. }
         | OpParams::Offset2D { .. }
+        | OpParams::VCarve { .. }
         | OpParams::Engrave { .. }
         | OpParams::Trace { .. } => {
             let z = z?;
@@ -214,7 +219,7 @@ fn source_region(
         }
         // The chamfer ride's machine area is the edge the cone lies
         // along - a boundary ride the contour's way (M2.4 B). #2435: the
-        // tip touches the WALL at the corner depth, not the top plane's
+        // inner cone radius touches the WALL at the corner depth, not the top plane's
         // outline - on a model whose edge is already bevelled that
         // outline is the bevel's top edge, inside the wall. Each top
         // edge rides the wall section under it (a vertical wall: the
@@ -225,8 +230,11 @@ fn source_region(
             let corner_z = z - width * angle_deg.to_radians().tan();
             let top = section(&material.facets, &material.bodies, z)?;
             let wall = section(&material.facets, &material.bodies, corner_z)?;
+            // #2929: the section half way down tells a drafted wall (one
+            // straight face) from a modelled chamfer.
+            let mid = section(&material.facets, &material.bodies, (z + corner_z) * 0.5)?;
             let lean = crate::machining2d::chamfer_wall_lean(frame, z - corner_z);
-            crate::machining2d::chamfer_ride_loops(&top, &wall, *width, corner_z, lean)
+            crate::machining2d::chamfer_ride_loops(&top, &mid, &wall, *width, z - corner_z, corner_z, lean)
         }
         // #1731: the Slot's machine area is the stadium of its EXTENDED
         // ends - the channel the pass is asked to cut. Where the

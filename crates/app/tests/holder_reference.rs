@@ -28,7 +28,9 @@ use camcraft_app::schema::{Location, ToolBody};
 use camcraft_app::spun::{SpunPoint, SpunProfile};
 use camcraft_app::stock::StockShape;
 use camcraft_app::tool_body;
-use camcraft_app::tool_library::{CUTTING_STEPS_VERSION, HOLDER_REF_VERSION, export_tool_library, parse_tool_library};
+use camcraft_app::tool_library::{
+    CUTTER_VERSION, CUTTING_STEPS_VERSION, HOLDER_REF_VERSION, TIP_FORM_VERSION, export_tool_library, parse_tool_library,
+};
 use camcraft_app::tools::{catalog, Tool};
 use camcraft_app::verify::{FixturePart, Warning};
 use camcraft_app::world::new_world;
@@ -97,7 +99,7 @@ fn a_library_holder_is_the_reference_in_the_document_and_the_file() {
     const { assert!(project::PROJECT_VERSION >= 70, "v69 and earlier readers must refuse the holder reference"); }
     assert_eq!(file["version"], json!(project::PROJECT_VERSION));
     let mut future = file.clone();
-    future["version"] = json!(project::PROJECT_VERSION + 1);
+    future["version"] = json!(project::NEWEST_PROJECT_VERSION + 1);
     assert!(matches!(project::open(&new_world(), &future.to_string()), Err(ProjectError::UnsupportedVersion(_))));
     let tool = file["entities"].as_array().expect("entities").iter().find(|e| e["name"] == TOOL).expect("the tool")["tool"].clone();
     assert_eq!(tool["holder"], json!({ "entry": "BT30 ER20", "gauge_len": 60.0, "projection": 52.0 }));
@@ -174,7 +176,7 @@ fn walled_world() -> (World, History) {
         let params = OpParams::Face {
             holes: Default::default(),
             tilt: None,
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             stepover: 3.0,
             clearance_z: Height::fixed(CLEAR_Z),
             cut_z: Height::fixed(CUT_Z),
@@ -183,6 +185,7 @@ fn walled_world() -> (World, History) {
             feed: 1200.0,
             plunge_feed: 300.0,
             climb: true,
+            picks: Default::default(),
         };
         history.execute(&world, CreateOperation::new(&world, op, tool, SrcRef::Stock, params).expect("face op"));
         history.execute(&world, GenerateOperation::new(&world, op).expect("generate"));
@@ -287,7 +290,9 @@ fn an_older_tool_library_loads_as_custom_holders_and_a_new_one_round_trips_the_r
     const { assert!(HOLDER_REF_VERSION > CUTTING_STEPS_VERSION, "v0.22.0 (v2) and v3 readers must refuse holder references"); }
     assert_eq!(file["version"], json!(HOLDER_REF_VERSION), "a reader that would drop the reference must refuse the file");
     let mut future = file.clone();
-    future["version"] = json!(HOLDER_REF_VERSION + 1);
+    // #3904, #3368: the newest version this build reads is TIP_FORM_VERSION.
+    const { assert!(TIP_FORM_VERSION > CUTTER_VERSION) };
+    future["version"] = json!(TIP_FORM_VERSION + 1);
     let err = parse_tool_library(&future.to_string()).expect_err("future library version refused");
     assert!(err.contains("version"), "{err}");
     let def = file["tools"].as_array().expect("tools").iter().find(|t| t["name"] == TOOL).expect("tool")["definition"].clone();

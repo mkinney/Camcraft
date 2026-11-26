@@ -17,6 +17,12 @@
 # not the same commit, reports nothing: an older green run never closes the
 # issue of a newer red run. This needs the full history (fetch-depth: 0).
 # When git cannot decide (an unknown sha), the run reports as before.
+# Runner stall (#3303): a red run with no FAIL row, but with a STALL row (the
+# xtask watchdog killed a silent step) or the "gate step TIMEOUT" line (the
+# workflow's step timeout stopped the gate), is a runner stop, not a red main.
+# It opens and comments on no issue: it writes one warning that names the step
+# and the runner (env RUNNER), and exits 0. The coordinator logs it on the
+# runner-stop issue and re-runs the run one time (AGENTS.md "Runner stops").
 # Provenance: our own AGENTS.md "Issue Law"; GitHub's public gh CLI docs.
 set -uo pipefail
 gh_bin="${GH:-gh}"
@@ -24,6 +30,29 @@ repo="${REPO:?REPO is required}"
 sha="${SHA:?SHA is required}"
 title="main is red (post-merge gate)"
 short="${sha:0:10}"
+
+if [ "${STATUS:-}" != success ]; then
+  gate_out="${OUTPUT:-/dev/null}"
+  summary=$(sed -n '/^== gate summary/,$p' "$gate_out" 2>/dev/null || true)
+  # A FAIL anywhere is a red main: a FAIL row of the summary, or a "FAIL in"
+  # line that the gate prints as each step ends. A later hang can stop the
+  # gate before its summary, so the progress lines count too (#3303). No
+  # grep -q in a pipe here: under pipefail its early exit can give the writer
+  # SIGPIPE, and a match then reads as a miss.
+  red_rows=$(grep -E '^ +FAIL ' <<<"$summary" || true)
+  red_progress=$(grep -E '^ +FAIL in ' "$gate_out" 2>/dev/null || true)
+  if [ -z "$red_rows" ] && [ -z "$red_progress" ]; then
+    stalls=$(grep -E '^ +STALL ' <<<"$summary" || true)
+    [ -n "$stalls" ] || stalls=$(grep -E '^gate step TIMEOUT ' "$gate_out" 2>/dev/null || true)
+    if [ -n "$stalls" ]; then
+      stalls=$(head -n 10 <<<"$stalls")
+      step=$(sed -E -e 's/^ +STALL +[0-9]+s +//' -e 's/^gate step TIMEOUT .*last started step: //' -e 's/  .*//' <<<"$stalls" | paste -sd ';' -)
+      echo "::warning title=runner stall::runner stall: $step on ${RUNNER:-unknown runner} at $short (${RUN_URL:-no run url}); not a red main, no issue opened"
+      printf 'runner stall: %s on %s\n%s\n' "$step" "${RUNNER:-unknown runner}" "$stalls"
+      exit 0
+    fi
+  fi
+fi
 
 # Whole test-binary names (the stem of tests/<name>.rs), matched anchored,
 # never as substrings: "compost" or a "post suites" step note does not match.
@@ -89,7 +118,9 @@ if [ "${STATUS:-}" = success ]; then
 fi
 
 # Failing steps: the gate summary's "  FAIL  <secs>s  <step>  <note>" rows.
-fails=$(sed -n '/^== gate summary/,$p' "${OUTPUT:-/dev/null}" 2>/dev/null | grep -E '^ +FAIL ' | head -40 || true)
+# Without a summary, the "FAIL in" lines of the steps that ended red.
+fails=$(head -n 40 <<<"$red_rows")
+[ -n "$fails" ] || fails=$(head -n 40 <<<"$red_progress")
 [ -n "$fails" ] || fails="(no FAIL row in the gate summary: the gate did not finish or failed to build; see the run)"
 # The FAIL rows' notes read "failed: tests/<name>.rs, ..." (xtask exec.rs read_log,
 # which prints cargo's "Running <path>"); a directory suite reads tests/<name>/main.rs.

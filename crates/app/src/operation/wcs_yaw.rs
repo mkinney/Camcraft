@@ -178,6 +178,7 @@ pub(crate) fn op_applies(kind: crate::machine::Kind, params: &OpParams) -> bool 
         | OpParams::Pocket { .. }
         | OpParams::Adaptive2D { .. }
         | OpParams::Offset2D { .. }
+        | OpParams::VCarve { .. }
         | OpParams::Engrave { .. }
         | OpParams::Chamfer2D { .. }
         | OpParams::Circular { .. }
@@ -216,6 +217,7 @@ impl WcsYaw {
         picked_region: &mut Option<Result<Region, GenError>>,
         contour_sel: &mut Option<Result<SelectionGeometry, GenError>>,
         sketch_contour: &mut Option<Result<super::contour_sketch::SketchContourPlan, GenError>>,
+        sketch_mark: &mut Option<machining2d::TraceStrokes>,
         drive_chains: &mut Option<Result<Vec<Vec<Point3>>, GenError>>,
         slot_bound: &mut Option<Result<SlotBound, GenError>>,
         prior: &mut Option<Result<Arc<crate::rest::PriorState>, GenError>>,
@@ -256,6 +258,9 @@ impl WcsYaw {
         }
         if let Some(Ok(plan)) = sketch_contour {
             plan.rotate_xy(&r)?;
+        }
+        if let Some(strokes) = sketch_mark {
+            strokes.transform(|p| r.p2(p));
         }
         if let Some(Ok(chains)) = drive_chains {
             for ch in chains {
@@ -354,6 +359,16 @@ fn rotate_params(r: &Rot2, params: &mut OpParams) {
             }
         }
         _ => {}
+    }
+    // #3326 review: each start and exit pick is stated in Setup `S` and
+    // enters `W_gen` with the geometry that it names, for every kind. This is
+    // the one place that turns a pick (the Slot of #3325 included): a second
+    // loop in a kind's arm turns its picks two times. The stored picks stay in
+    // model coordinates; these are the temporary generation-frame points.
+    if let Some(picks) = params.path_picks_mut() {
+        for k in picks.start.iter_mut().chain(&mut picks.exit) {
+            k.xy = r.p2(k.xy);
+        }
     }
 }
 

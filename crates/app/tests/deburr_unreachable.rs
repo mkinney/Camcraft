@@ -32,7 +32,7 @@ const CONE: &str = "CM-0600-90";
 /// rim and the top ends of the four vertical corner edges (out of reach).
 fn deburr(unreachable: UnreachableEdges) -> OpParams {
     OpParams::Deburr {
-        width: 2.0,
+        width: 2.0 * std::f64::consts::SQRT_2, // #1890: the chord of a 2.0 mm setback
         clearance_z: Height::fixed(25.0),
         top_z: Height::fixed(8.0),
         bottom_z: Height::fixed(6.0),
@@ -44,6 +44,8 @@ fn deburr(unreachable: UnreachableEdges) -> OpParams {
         exclude_holes: false,
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
+        sizing: camcraft_app::finishing3d::DeburrBreak::default(),
+        picks: Default::default(),
     }
 }
 
@@ -131,7 +133,9 @@ fn the_policy_round_trips_in_the_project_file() {
     let plain = project::save_text(&world).expect("save");
     let word = "\"unreachable\": \"skip_with_note\"";
     assert!(plain.contains("\"deburr\"") && plain.contains(word), "{plain}");
-    let old: String = plain.lines().filter(|l| !l.contains("\"unreachable\"")).collect::<Vec<_>>().join("\n").replace("\"plunge_feed\": 100.0,", "\"plunge_feed\": 100.0");
+    // #1890: the break keys follow `unreachable`, so its line goes with
+    // its comma and the object stays well formed.
+    let old: String = plain.lines().filter(|l| !l.contains("\"unreachable\"")).collect::<Vec<_>>().join("\n");
     assert!(!old.contains("unreachable"), "{old}");
     let back = new_world();
     project::open(&back, &old).expect("a file without the key reads");

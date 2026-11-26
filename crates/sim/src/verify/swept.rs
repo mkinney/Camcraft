@@ -166,6 +166,10 @@ pub(super) fn rho_expanded(atom: &super::probe::Atom, w: f64, m: f64) -> f64 {
     }
 }
 
+#[cfg(test)]
+#[path = "swept_tests.rs"]
+mod tests;
+
 /// Exact 3D Euclidean penetration of swept `b` inside `atom` inflated by 3D
 /// ball `m = clearance + grow` (`NEG_INFINITY` if disjoint in Z).
 pub(super) fn pen_3d(b: &Body, atom: &Atom, m: f64, allow: f64, pts: &mut Vec<[f64; 2]>) -> f64 {

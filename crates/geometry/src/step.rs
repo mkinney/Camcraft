@@ -19,6 +19,10 @@ pub enum StepError {
     /// The model does not fit the facet budget at any chord tried.
     #[error("model exceeds the import limit")]
     TooLarge,
+    /// The file states no length unit and the caller stated none (#1874):
+    /// the model is never read in a guessed unit.
+    #[error("the STEP file states no length unit")]
+    MissingUnits,
     /// The reader, the kernel or the mesher refused the file; the reason
     /// names what failed.
     #[error("{0}")]
@@ -53,6 +57,13 @@ pub struct StepMesh {
     pub loosened: bool,
     /// True only when file tolerance, without a budget retry, set the chord.
     pub file_tolerance: bool,
+    /// Millimetres per length unit of each context that states one, in the
+    /// order met (#1874). Never empty: a file that states no unit is
+    /// refused, or read in the caller's unit, which is then listed here.
+    pub length_units_mm: Vec<f64>,
+    /// The caller's millimetres per unit, when the file states no unit and
+    /// the model was read in it (#1874). `None`: the file states its unit.
+    pub assumed_mm: Option<f64>,
 }
 
 /// How many times a model over the facet budget is meshed again, coarser,
@@ -72,7 +83,7 @@ pub const ADVICE: &str = "re-export the model, or import an STL";
 /// always `None`).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn parse(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, StepError> {
-    read(data, budget, chord_cap, false)
+    read(data, budget, chord_cap, false, None)
 }
 
 /// [`parse`], but a solid whose faces the mesher leaves out is meshed with
@@ -80,20 +91,34 @@ pub fn parse(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, Ste
 /// model import, which lands it incomplete. Every other refusal stays.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn parse_open(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, StepError> {
-    read(data, budget, chord_cap, true)
+    read(data, budget, chord_cap, true, None)
+}
+
+/// [`parse_open`], and the caller's unit, `assume_mm` millimetres per unit,
+/// for a file that states no length unit (#1874). A file that states its
+/// own unit keeps it. With `None`, a file that states no unit is
+/// [`StepError::MissingUnits`]: the model is never read in a guessed unit.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn parse_open_assuming(data: &[u8], budget: usize, chord_cap: f64, assume_mm: Option<f64>) -> Result<StepMesh, StepError> {
+    read(data, budget, chord_cap, true, assume_mm)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn read(data: &[u8], budget: usize, chord_cap: f64, keep_open: bool) -> Result<StepMesh, StepError> {
+fn read(data: &[u8], budget: usize, chord_cap: f64, keep_open: bool, assume_mm: Option<f64>) -> Result<StepMesh, StepError> {
     use camcraft_kernel::machining_mesh::{MachiningMesh, MeshRefusal, machining_mesh};
     use camcraft_kernel::machining_mesh_open::{partial_mesh, sheet_mesh};
     use camcraft_kernel::solidcore_impl::SolidcoreKernel;
-    use camcraft_kernel::solidcore_step::import_step_model;
+    use camcraft_kernel::solidcore_step::import_step_model_assuming;
 
     let stop = camcraft_kernel::CancelToken::new();
     let _watch = crate::kernel_import::Watchdog::start(stop.clone(), "STEP import");
-    let import = import_step_model(&mut SolidcoreKernel::default(), data, &stop)
+    let import = import_step_model_assuming(&mut SolidcoreKernel::default(), data, &stop, assume_mm)
         .map_err(|e| StepError::Refused(locate(data, e.to_string())))?;
+    // #1874: a file that states no length unit is never read in a guessed
+    // one; the caller states the unit, or the file is refused.
+    if import.length_units_mm.is_empty() {
+        return Err(StepError::MissingUnits);
+    }
     let refused = |label: &str, e: MeshRefusal| StepError::Refused(format!("{label} could not be tessellated: {e} - {ADVICE}"));
     // A face whose edges lie off its surface by more than the chord cannot
     // be meshed to the chord. A file that states a tolerance is then meshed
@@ -216,7 +241,17 @@ fn finish(
     };
     let deviation_mm = meshes.iter().map(|(_, m)| m.report.deviation.largest()).fold(0.0, f64::max);
     let open = (!holes.is_empty()).then(|| holes.join("; "));
-    Ok(StepMesh { mesh, chord_mm: chord, deviation_mm, notes, open, loosened, file_tolerance })
+    Ok(StepMesh {
+        mesh,
+        chord_mm: chord,
+        deviation_mm,
+        notes,
+        open,
+        loosened,
+        file_tolerance,
+        length_units_mm: import.length_units_mm.clone(),
+        assumed_mm: import.assumed_mm,
+    })
 }
 
 /// `closed shell of solid #12 (10 faces) meshes open: face 4 of 10 got no
@@ -240,6 +275,12 @@ pub fn parse(_data: &[u8], _budget: usize, _chord_cap: f64) -> Result<StepMesh, 
 /// [`parse`] in the browser build: refused by name.
 #[cfg(target_arch = "wasm32")]
 pub fn parse_open(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, StepError> {
+    parse(data, budget, chord_cap)
+}
+
+/// [`parse`] in the browser build: refused by name.
+#[cfg(target_arch = "wasm32")]
+pub fn parse_open_assuming(data: &[u8], budget: usize, chord_cap: f64, _assume_mm: Option<f64>) -> Result<StepMesh, StepError> {
     parse(data, budget, chord_cap)
 }
 

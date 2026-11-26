@@ -104,6 +104,7 @@ fn facing(bottom: f64) -> OpParams {
         stepdown: 0.5,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     }
 }
 
@@ -117,6 +118,7 @@ fn profile_rough() -> OpParams {
         stock_to_leave: 0.25,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     }
 }
 
@@ -128,6 +130,7 @@ fn profile_finish() -> OpParams {
         bottom_z: Height::fixed(0.0),
         feed: 120.0,
         plunge_feed: 60.0,
+        picks: Default::default(),
     }
 }
 
@@ -220,6 +223,7 @@ fn profile_finish_to(bottom: f64) -> OpParams {
             bottom_z: Height::fixed(bottom),
             feed,
             plunge_feed,
+            picks: Default::default(),
         },
         other => other,
     }
@@ -336,6 +340,7 @@ fn profile_finish_over_cone_neck_and_thread_posts() {
         bottom_z: Height::fixed(bottom),
         feed: 120.0,
         plunge_feed: 60.0,
+        picks: Default::default(),
     };
     let rough_zero_leave = OpParams::ProfileRough {
         tolerance: 0.05,
@@ -346,6 +351,7 @@ fn profile_finish_over_cone_neck_and_thread_posts() {
         stock_to_leave: 0.0,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     for (tag, dia, op) in [
         ("full_z20_z69", 22.0, finish_window(20.0, 69.0)),

@@ -140,6 +140,7 @@ fn rest_parameters_and_profile_rows_share_the_v71_project_file() {
     let mut history = History::default();
     let mut pocket = operation::seed_params(OpType::Pocket.ordinal());
     let previous = camcraft_app::machining2d::RestParams {
+        source: Default::default(),
         previous_tool_diameter: 12.0,
         previous_corner_radius: 1.0,
         previous_stock_to_leave: 0.2,

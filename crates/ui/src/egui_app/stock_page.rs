@@ -34,6 +34,9 @@ pub(super) fn stock_page(ui: &mut Ui, state: &mut State) {
         group(ui, "Fit to models", None, |ui| fit_fields(ui, state, u));
     }
     actions(ui, state);
+    // #1863: DXF profiles placed on this stock's top, under the stock's
+    // own actions (those act on the stock, not on its profiles).
+    group(ui, "DXF profiles", None, |ui| super::stock_profiles::profiles_group(ui, state));
 }
 
 /// Units, the shape choice and the models' size it is sized against.
@@ -113,10 +116,13 @@ fn source_fields(ui: &mut Ui, state: &mut State) {
     prop_grid(ui, "stock_source_grid", |ui| {
         ui.label("Source");
         let mut idx = models.iter().position(|m| *m == state.stock_ui.source).unwrap_or(models.len() - 1);
-        let before = idx;
         combo_owned(ui, "stk_src", &mut idx, &models);
-        if idx != before {
-            state.stock_ui.source = models[idx.min(models.len() - 1)].clone();
+        // #3261: the draft holds the part the picker shows, also when the
+        // user accepts the default (one model: the index never changes).
+        if let Some(shown) = models.get(idx).or(models.last())
+            && state.stock_ui.source != *shown
+        {
+            state.stock_ui.source = shown.clone();
         }
         ui.end_row();
     });

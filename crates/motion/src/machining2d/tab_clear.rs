@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use crate::geo2d::{Loop, Point2};
 
 use super::contour_params::ContourParams;
-use super::contour_start::seat;
+use super::contour_start::{seat, start_at};
 use super::fillet::Legal;
 use super::fillet_tally::FilletTally;
 use super::ring::{Ring, dist, tab_window, walked};
@@ -44,6 +44,22 @@ pub(super) fn fit_loops(
         })
         .collect();
     fit_band(&rings, levels, pick.map(|(pi, _)| pi), p, legal).into_iter().enumerate().collect()
+}
+
+/// #3453: an untabbed level of a tabbed loop starts where the first cut of
+/// its tabbed levels begins (`raw`, the ring as the tabbed levels seat it,
+/// and its fit), so that the tabbed level enters where each level above
+/// cut its lead-in - not one stepdown below the stock top in sheet that no
+/// level cut. `seated`, the untabbed start, when the loop has no tab fit.
+pub(super) fn level_start(seated: Vec<Point2>, raw: Vec<Point2>, fit: Option<&TabFit>) -> Vec<Point2> {
+    let Some(&(k0, _)) = fit.and_then(|f| f.keeps.first()) else {
+        return seated;
+    };
+    let ring = Ring::new(raw);
+    if !(ring.len > 0.0 && ring.len.is_finite() && k0.is_finite()) {
+        return seated;
+    }
+    start_at(&seated, ring.at(k0.rem_euclid(ring.len)))
 }
 
 /// Each ring's fit (`tab_bridge::fit_tabs`), then each tab against all the

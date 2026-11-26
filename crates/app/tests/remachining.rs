@@ -131,6 +131,7 @@ fn plate_with_pocket() -> Mesh {
 
 fn pocket(bottom_z: f64) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::ROUGH3D,
         stepover: 4.0,
         stock_to_leave: 0.0,
@@ -150,6 +151,7 @@ fn pocket(bottom_z: f64) -> OpParams {
         feed_opt: false,
         shell: false,
         method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
+        picks: Default::default(),
     }
 }
 

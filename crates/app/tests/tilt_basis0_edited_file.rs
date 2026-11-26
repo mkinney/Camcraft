@@ -32,6 +32,8 @@ const TOOL: &str = "EM 6";
 fn slot(a: (f64, f64), b: (f64, f64), tilt: Option<Tilt>) -> OpParams {
     let above = |mm: f64| Height::of(HeightReference::TopOfStock, mm);
     OpParams::Slot {
+        blend_turns: false,
+        blend_radius: None,
         a: Point2::new(a.0, a.1),
         b: Point2::new(b.0, b.1),
         width: 6.0,
@@ -51,6 +53,7 @@ fn slot(a: (f64, f64), b: (f64, f64), tilt: Option<Tilt>) -> OpParams {
         tilt,
         extend_start: 0.0,
         extend_end: 0.0,
+        picks: Default::default(),
     }
 }
 

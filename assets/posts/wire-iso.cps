@@ -101,6 +101,7 @@ function pt(s) {
 }
 function fu(v) { return pt(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3)); }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }
+function arcWord(k, v) { return k === "Z" ? "" : wo(k, v, k === "X" ? orgX : orgY); }  // #3442: a position word as written (no Z), for arcFate
 function block(words, machineCode) {
   var a = [];
   for (var i = 0; i < words.length; i++) {
@@ -403,6 +404,9 @@ function onCircular() {
     refuse("uvarc" + opName, who() + "a tapered arc - this post writes straight tapered moves only");
     return;
   }
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   var c = p.IJKIncrement || {};
   block([
     p.CircularDirection === "CW" ? "G2" : "G3",

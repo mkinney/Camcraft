@@ -90,22 +90,27 @@ fn resolve(world: &World, items: &[GeoSel]) -> Result<Picked, GenError> {
 }
 
 /// The picked facets of `material` (the picked model's facets, in the
-/// job's own frame), judged against the axis the kernel will fit:
-/// every pick must look away from that axis, and the picks must touch.
-/// None is the whole model. A pick is never dropped: one the radial
-/// tool cannot reach refuses the whole selection by name.
-pub(super) fn usable(picks: Option<Result<Picked, GenError>>, material: &[Triangle]) -> Result<Option<Vec<Triangle>>, GenError> {
+/// job's own frame), judged against the axis the kernel will turn
+/// about - `ax`, the stated line or the fit the caller resolved
+/// (#2772 parts 1-2): every pick must look away from that axis, and
+/// the picks must touch. None is the whole model. A pick is never
+/// dropped: one the radial tool cannot reach refuses the whole
+/// selection by name.
+pub(super) fn usable(
+    picks: Option<Result<Picked, GenError>>,
+    material: &[Triangle],
+    ax: &crate::multiaxis::axis::Axis,
+) -> Result<Option<Vec<Triangle>>, GenError> {
     const KIND: &str = "Rotary Parallel";
     let Some(picks) = picks else { return Ok(None) };
     let picks = picks?;
-    let ax = crate::multiaxis::axis::fit(material)?;
     let mut all: Vec<Triangle> = Vec::new();
     for (label, idx) in &picks {
         let face: Option<Vec<Triangle>> = idx.iter().map(|&i| material.get(i as usize).copied()).collect();
         let Some(face) = face else {
             return Err(GenError::Invalid(format!("{KIND}: {label} is no longer in the model: re-pick it")));
         };
-        if !crate::multiaxis::rotary_pick::faces_outward(&ax, &face) {
+        if !crate::multiaxis::rotary_pick::faces_outward(ax, &face) {
             return Err(GenError::Invalid(format!(
                 "{KIND}: {label} does not face away from the work's axis - the tool stands on the radial, so it cannot reach an end face or the wall of a bore; pick faces of the turned surface"
             )));

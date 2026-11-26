@@ -34,6 +34,7 @@ fn face(world: &World, history: &mut History, name: &str) {
     let params = OpParams::Face {
         holes: Default::default(),
         tilt: None,
+        blend_radius: None,
         blend_turns: false,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
@@ -43,6 +44,7 @@ fn face(world: &World, history: &mut History, name: &str) {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     };
     run(world, history, CreateOperation::new(world, name, TOOL, SrcRef::Stock, params), name);
 }

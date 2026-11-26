@@ -11,6 +11,32 @@ use crate::mcp::provider::Provider;
 
 use super::secret::KeyName;
 
+/// Cloud defaults verified against the providers' model catalogs on 2026-11-24.
+/// Mark a row retired when its provider retires it; the catalog test then fails.
+/// Sources: https://platform.claude.com/docs/en/models/overview,
+/// https://developers.openai.com/api/docs/models,
+/// https://aistudio.google.com/docs/models.
+#[derive(Clone, Copy, Debug)]
+pub struct CloudDefault {
+    pub provider: Provider,
+    pub model: &'static str,
+    pub retired: bool,
+}
+
+pub const CLOUD_DEFAULTS: &[CloudDefault] = &[
+    CloudDefault { provider: Provider::Anthropic, model: "claude-sonnet-5-5", retired: false },
+    CloudDefault { provider: Provider::OpenAiChat, model: "gpt-6.2-sol", retired: false },
+    CloudDefault { provider: Provider::OpenAiResponses, model: "gpt-6.2-sol", retired: false },
+    CloudDefault { provider: Provider::Gemini, model: "gemini-4-hydrogen", retired: false },
+];
+
+/// The one maintained default for this cloud wire format.
+#[must_use]
+pub fn default_model(provider: Provider) -> &'static str {
+    CLOUD_DEFAULTS.iter().find(|entry| entry.provider == provider)
+        .map_or("", |entry| entry.model)
+}
+
 /// One selectable endpoint: its wire format, default base URL, and the
 /// key it needs (cloud) or the capability probe it offers (Ollama).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

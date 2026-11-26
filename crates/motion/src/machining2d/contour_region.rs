@@ -6,7 +6,7 @@ use crate::geometry::{Point3, Triangle};
 
 use super::contour::{ContourParams, emit_band, finish_contour, prepare_band};
 use super::contour_comp;
-use super::contour_depth::{Ladder, ladder, picked_law};
+use super::contour_depth::{Ladder, ladder, ladder_picked, picked_law};
 use super::contour_start;
 use super::contour_step::Said;
 use super::face::GenError;
@@ -107,7 +107,10 @@ fn contour_impl(region: &Region, p: &ContourParams, part: Option<PartRef<'_>>) -
     // a flat region; against a part, each ring down to its own floor.
     let lad = match part {
         None => Ladder::uniform(&flat, band.loops.len()),
-        Some((f, bodies, _)) => ladder(&band.plan, f, bodies, &flat, p.top_z, r, p.stock_to_leave, &mut lead_notes),
+        Some((f, bodies, true)) => {
+            ladder_picked(&band.plan, f, bodies, &flat, p.top_z, r, p.stock_to_leave, &mut lead_notes)
+        }
+        Some((f, bodies, false)) => ladder(&band.plan, f, bodies, &flat, p.top_z, r, p.stock_to_leave, &mut lead_notes),
     };
     // A picked ring on the wrong side is refused by its own name first
     // (#1927), also when it was the only ring (#2004: with no air level

@@ -341,6 +341,27 @@ pub enum OpType {
     /// [`crate::machining2d::undercut`]). Appended: stored kind ids
     /// never move.
     SlotUndercut,
+    /// V-carve (#1443): a V-bit's tip on the medial axis of a closed
+    /// region, the depth set by the region's width (see
+    /// [`crate::machining2d::v_carve`]). Appended: the declaration order
+    /// is the table order (`OpType as usize` is the row everywhere).
+    VCarve,
+    /// Waterjet profile (#1883): the abrasive jet's 2D through-cut of
+    /// picked contours - the waterjet's family (see
+    /// [`crate::waterjet`]). Appended: stored kind ids never move.
+    WaterjetProfile,
+    /// Multi-axis deburr (#1894): the Deburr's edge break with the tool
+    /// axis tilted onto the break, around the holder (see
+    /// [`crate::multiaxis::deburr_axis`]). Appended: stored kind ids
+    /// never move.
+    MultiAxisDeburr,
+    /// Rotary Flow (#2826, the second slice of #2804): the 4-axis
+    /// cylindrical flow-line finish - the caller PICKS the guide
+    /// chains (the edges of a helical band on a rotor) and the kind
+    /// blends flow passes between each adjacent pair about a STATED
+    /// rotation axis (see [`crate::multiaxis::rotary_flow`]).
+    /// Appended: stored kind ids never move.
+    RotaryFlow,
 }
 
 impl core::fmt::Display for OpType {

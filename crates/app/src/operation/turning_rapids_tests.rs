@@ -46,6 +46,7 @@ fn convicted_in(moves: Vec<crate::cl::Move>, bar_top: f64) -> Vec<Warning> {
         stock_to_leave: 0.25,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     let path = Toolpath { moves, cycles: Vec::new(), notes: Vec::new(), comps: Vec::new(), threads: Vec::new(), probes: Vec::new(), breaks: Vec::new(), plasma: None };
     let (part, stock) = (cylinder(6.0, -16.0, 16.0), cylinder(10.0, -16.0, bar_top));
@@ -89,6 +90,7 @@ fn a_single_groove_at_the_bars_end_is_judged_across_its_band() {
         stock_to_leave: 0.25,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     let p = Point3::new;
     let path = Toolpath {
@@ -147,6 +149,7 @@ fn a_ten_mm_bar_with_its_nose_on_the_axis_in_an_eleven_mm_pilot_is_convicted() {
         stock_to_leave: 0.25,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     let (part, stock) = (tube(6.0, 10.0, -60.0, 50.0), cylinder(10.0, -60.0, 50.0));
     let p = Point3::new;
@@ -198,6 +201,7 @@ fn stepped_bar(r: f64, wall: f64, pilot: f64) -> Vec<Warning> {
         stock_to_leave: 0.25,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     let (part, stock) = (tube(wall, 12.0, -60.0, 50.0), cylinder(12.0, -60.0, 50.0));
     let p = Point3::new;
@@ -268,6 +272,7 @@ fn a_banded_rapid_just_under_an_earlier_face_cut_is_convicted() {
         stock_to_leave: 0.25,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     let p = Point3::new;
     let (part, stock) = (cylinder(6.0, -60.0, 10.0), cylinder(10.0, -60.0, 16.0));
@@ -343,6 +348,7 @@ fn the_margin_generation_hands_the_law_shrinks_with_a_coarse_models_excess() {
         stock_to_leave: 0.25,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     let (part, stock) = (cylinder(6.0, -16.0, 16.0), cylinder(10.0, -16.0, 16.0));
     let hit = |r: f64, excess: f64| {

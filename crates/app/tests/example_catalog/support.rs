@@ -81,10 +81,17 @@ pub(super) fn assert_case_layout(case: &CatalogCase) {
         case.family,
         case.name
     );
+    // #2856: a refusal case records its refusal lines, not a program.
+    let refused = super::refusal::expects_refusal(&case.dir);
+    let result = if refused { "refusal.txt".to_owned() } else { format!("{}.nc", case.name) };
+    if refused {
+        let nc = case.dir.join(format!("{}.nc", case.name));
+        assert!(!nc.exists(), "{}/{}: a refusal case has no {}", case.family, case.name, nc.display());
+    }
     for req in [
         "build.camscript".to_owned(),
         format!("{}.camproj", case.name),
-        format!("{}.nc", case.name),
+        result,
         "README.md".to_owned(),
     ] {
         let p = case.dir.join(&req);
@@ -105,7 +112,7 @@ pub(super) fn assert_case_layout(case: &CatalogCase) {
     }
 }
 
-fn copy_dir_all(src: &Path, dst: &Path) {
+pub(super) fn copy_dir_all(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).unwrap_or_else(|e| panic!("mkdir {}: {e}", dst.display()));
     for entry in fs::read_dir(src).unwrap_or_else(|e| panic!("read {}: {e}", src.display())) {
         let entry = entry.expect("dir entry");
@@ -122,10 +129,11 @@ fn copy_dir_all(src: &Path, dst: &Path) {
 
 // Portable examples embed their meshes. A relative source link makes the UI
 // reopen a file from the process directory instead of the case directory.
-fn assert_portable_models(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
+pub(super) fn assert_portable_models(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
     let names: &[&str] = match (case.family.as_str(), case.name.as_str()) {
         ("2d", "contour-tabs") => &["contour-tabs"],
         ("turning", "cone-thread") => &["cone-blank", "cone-thread"],
+        ("2d", "drill-overfeed") => &["drill-overfeed"],
         _ => return,
     };
     for name in names {
@@ -146,6 +154,9 @@ fn assert_portable_models(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
 }
 
 pub(super) fn regenerate(case: &CatalogCase) {
+    if super::refusal::expects_refusal(&case.dir) {
+        return super::refusal::regenerate(case);
+    }
     let label = format!("{}/{}", case.family, case.name);
     let proj_path = case.dir.join(format!("{}.camproj", case.name));
     let nc_path = case.dir.join(format!("{}.nc", case.name));
@@ -210,6 +221,9 @@ pub(super) fn regenerate(case: &CatalogCase) {
 }
 
 pub(super) fn rebuild(case: &CatalogCase) {
+    if super::refusal::expects_refusal(&case.dir) {
+        return super::refusal::rebuild(case);
+    }
     let label = format!("{}/{}", case.family, case.name);
     let work = std::env::temp_dir()
         .join(format!("camcraft-catalog-test-{}", std::process::id()))

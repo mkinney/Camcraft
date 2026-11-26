@@ -101,7 +101,7 @@ fn assert_inert(stem: &str, l: &str) {
 fn hostile_names_post_well_formed_comments_in_every_mill_dialect() {
     let stream = mill_stream(8000.0);
     let m = mill(MACHINE);
-    for stem in ["fanuc", "haas", "mazak", "tormach", "grblhal", "tinyg", "grbl"] {
+    for stem in ["fanuc", "haas", "mazak", "tormach", "grblhal", "tinyg", "grbl", "mach3"] {
         let nc = post(stem, &m, &stream);
         for l in nc.lines() {
             assert_paren_line(stem, l);
@@ -260,14 +260,15 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
     let hostile = "Reduced accuracy: model bad) (G0 X999;*\nM3 checked to 0.024 mm";
     let id = ProgramId { notes: vec![note.into(), hostile.into()], ..Default::default() };
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/posts");
-    let mut seen = 0;
+    let mut text_posts = 0;
+    let mut native_refusals = 0;
     for entry in std::fs::read_dir(dir).expect("shipped posts").flatten() {
         let p = entry.path();
         if p.extension().and_then(|s| s.to_str()) != Some("cps") { continue; }
         let stem = p.file_stem().and_then(|s| s.to_str()).expect("post name");
         if stem == "heidenhain-klartext" {
             assert_klartext_header_notes(&std::fs::read_to_string(&p).unwrap(), &id, note);
-            seen += 1;
+            text_posts += 1;
             continue;
         }
         let mut mch = mill("Test mill");
@@ -275,9 +276,22 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         if stem.contains("wire") { mch["kind"] = json!("wire-edm"); }
         if stem.contains("sinker") { mch["kind"] = json!("sinker-edm"); }
         if stem.contains("plasma") { mch["kind"] = json!("plasma"); }
-        let out = engine::run_program_with(
+        if stem.contains("waterjet") { mch["kind"] = json!("waterjet"); }
+        let result = engine::run_program_with(
             &std::fs::read_to_string(&p).expect("post reads"), &mch, "", &json!(null), &id,
-        ).unwrap_or_else(|e| panic!("{stem}: {e}"));
+        );
+        if stem == "agie-native" {
+            let error = result.expect_err("the native Agie job must refuse a single-file program");
+            assert!(
+                matches!(&error, camcraft_post::post::PostError::Script(message) if message.contains(
+                    "Native wire EDM job files require the desktop or CLI One program post to a new job directory"
+                )),
+                "{stem}: {error}"
+            );
+            native_refusals += 1;
+            continue;
+        }
+        let out = result.unwrap_or_else(|e| panic!("{stem}: {e}"));
         let line = out.program.lines().find(|l| l.contains(note))
             .unwrap_or_else(|| panic!("{stem}: full bound absent\n{}", out.program));
         if stem == "sinumerik" {
@@ -303,7 +317,8 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
             assert_eq!(hostile_line.matches('(').count(), 1, "{stem}: {hostile_line}");
             assert_eq!(hostile_line.matches(')').count(), 1, "{stem}: {hostile_line}");
         }
-        seen += 1;
+        text_posts += 1;
     }
-    assert_eq!(seen, 20, "every shipped post is checked");
+    assert_eq!(text_posts, 25, "every shipped text post writes both notes");
+    assert_eq!(native_refusals, 1, "the native Agie dispatcher refused the notes");
 }

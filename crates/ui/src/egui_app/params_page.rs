@@ -237,7 +237,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
         .and_then(|t| model::tool_of(&state.world, t))
         .map(|t| t.diameter);
     let draft_src = state.op_ui.src();
-    let picks = if matches!(state.op_ui.params, OpParams::Deburr { .. }) { state.op_ui.geo.clone() } else { Vec::new() };
+    let picks = if matches!(state.op_ui.params, OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }) { state.op_ui.geo.clone() } else { Vec::new() };
     let mut cx = Cx {
         u,
         tab,
@@ -259,15 +259,18 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     let params = &mut state.op_ui.params;
     super::mill2d_page::fields(ui, world, params, &mut cx);
     super::mill2d_more_page::fields(ui, world, params, &mut cx);
+    super::vcarve_page::fields(ui, world, params, &mut cx);
     super::holes_page::fields(ui, world, params, &mut cx);
     super::probe_page::fields(ui, world, params, &mut cx);
     super::plasma_page::fields(ui, world, params, &mut cx);
+    super::waterjet_page::fields(ui, world, params, &mut cx);
     super::wire_page::fields(ui, world, params, &mut cx);
     super::sinker_page::fields(ui, world, params, &mut cx);
     super::trochoid_page::fields(ui, world, params, &mut cx);
     super::undercut_page::fields(ui, world, params, &mut cx);
     super::mill3d_page::fields(ui, world, params, &mut cx);
     super::multiaxis_page::fields(ui, world, params, &mut cx);
+    super::multiaxis_deburr_page::fields(ui, world, params, &mut cx);
     super::rotary_page::fields(ui, world, params, &mut cx);
     super::turning_page::fields(ui, world, params, &mut cx);
     super::turning_more_page::fields(ui, world, params, &mut cx);

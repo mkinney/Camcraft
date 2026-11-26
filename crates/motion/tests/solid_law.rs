@@ -191,7 +191,7 @@ fn law_verify(t: &Toolpath, region: &Region, f: &[Triangle], mode: Mode, top: f6
 
 fn gouge_moves(w: &[Warning]) -> Vec<usize> {
     let mut v: Vec<usize> = w.iter().filter_map(|w| match w {
-        Warning::Gouge { at } | Warning::RapidInStock { at } => Some(*at),
+        Warning::Gouge { at } | Warning::RapidInStock { at } | Warning::RapidInPart { at } => Some(*at),
         _ => None,
     }).collect();
     v.sort_unstable();
@@ -307,8 +307,9 @@ fn a_contour_ring_under_an_overhanging_slab_is_a_gouge() {
         tab_height: 1.0,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_motion::links::Links::PLANAR,
+        picks: Default::default(),
     };
     let t = contour(&region, &p).expect("contour");
     let got = old_silent_new_exact(&t, &b, &f, &region, Mode::Boundary, 20.0);
@@ -365,8 +366,9 @@ fn a_cavity_ring_under_an_undercut_lip_is_a_gouge() {
         tab_height: 1.0,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_motion::links::Links::PLANAR,
+        picks: Default::default(),
     };
     let t = contour(&region, &p).expect("contour");
     let levels: Vec<f64> = t.moves.iter().filter(|m| m.kind == MoveKind::Feed && m.from.z == m.to.z).map(|m| m.to.z).collect();
@@ -457,5 +459,5 @@ fn a_cutter_wholly_inside_the_solid_is_found_by_parity() {
     b.push(MoveKind::Rapid, Point3::new(10.0, 0.0, 300.0), None);
     b.push(MoveKind::Rapid, Point3::new(500.0, 0.0, 300.0), None);
     let w = solid_hits(&b.finish(), &f, &c, &law);
-    assert_eq!(w, vec![Warning::Gouge { at: 0 }, Warning::RapidInStock { at: 1 }]);
+    assert_eq!(w, vec![Warning::Gouge { at: 0 }, Warning::RapidInPart { at: 1 }]);
 }

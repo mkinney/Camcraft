@@ -25,6 +25,10 @@
 //!   turning tool frame ([`BodyFrame::Lathe`], `crate::tool_body_lathe`).
 //!   The milling laws read only the first; a lathe body leaves the tool
 //!   record as it is for them and is judged by the revolved-stock law.
+//! - **Who uses a holder (#3897).** [`holder_users`] and
+//!   [`tools_using_holder`] read the document's tools by their library
+//!   reference (`HolderRef::entry`), the holder key until #3645. A read
+//!   only: the tool library window's holder list counts with them.
 
 use std::sync::Arc;
 
@@ -63,6 +67,33 @@ pub const LATHE_HELD: [ToolKind; 4] = [ToolKind::Turning, ToolKind::Groove, Tool
 #[must_use]
 pub fn body_of(world: &World, entity: &Entity) -> Option<ToolBody> {
     entity.entity_view(world).try_get::<&ToolBody>(|b| b.clone())
+}
+
+/// #3897: each document tool that sits in a library holder, by tool name
+/// (sorted), with its reference. A tool with no body, a drawn body or a
+/// mesh body has no library holder and is not listed.
+#[must_use]
+pub fn holder_users(world: &World) -> Vec<(String, HolderRef)> {
+    crate::model::named_entities(world)
+        .into_iter()
+        .filter(|(_, e)| crate::model::is_tool(world, e))
+        .filter_map(|(name, e)| body_of(world, &e).and_then(|b| b.library).map(|r| (name, r)))
+        .collect()
+}
+
+/// #3897: the names of the document tools (sorted) whose library holder is
+/// `entry`. The entry compares as `holder_library::find` reads a name:
+/// case and spacing are ignored.
+#[must_use]
+pub fn tools_using_holder(world: &World, entry: &str) -> Vec<String> {
+    let want = holder_key(entry);
+    holder_users(world).into_iter().filter(|(_, r)| holder_key(&r.entry) == want).map(|(n, _)| n).collect()
+}
+
+/// A holder name as a key: words joined by one space, lower case.
+#[must_use]
+pub fn holder_key(name: &str) -> String {
+    name.split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_lowercase()
 }
 
 /// Land (`Some`) or clear (`None`) a tool's body - the one writer,

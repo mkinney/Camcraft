@@ -5,10 +5,14 @@
 //! Provenance: our own tests.
 //!
 //! Gate map (M4.4): covers ui::run, ui::headless_open (#2648).
+//!
+//! A headless run that draws makes a wgpu device. Such a test takes
+//! `gpu_guard` first (#3379); the lib test `gpu_test_lock` pins it.
 
 
 #[test]
 fn egui_headless_cli_exit_code_is_zero() {
+    let _gpu = camcraft_ui::headless_gpu::gpu_guard();
     assert_eq!(
         camcraft_ui::run(&[
             String::from("--ui"),
@@ -95,6 +99,7 @@ endsolid t
 
 #[test]
 fn a_headless_start_with_a_model_file_imports_and_draws_it() {
+    let _gpu = camcraft_ui::headless_gpu::gpu_guard();
     let dir = temp_dir("model");
     let part = dir.join("part.stl");
     std::fs::write(&part, TETRA_STL).expect("write part");
@@ -124,6 +129,7 @@ fn a_headless_start_with_a_broken_model_fails_by_name() {
 
 #[test]
 fn a_headless_start_with_a_project_file_opens_and_draws_it() {
+    let _gpu = camcraft_ui::headless_gpu::gpu_guard();
     let project = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/first-part.camproj");
     assert_eq!(headless_with(&project), 0);
 }

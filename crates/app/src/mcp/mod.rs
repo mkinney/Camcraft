@@ -24,6 +24,8 @@ mod schema_validation;
 
 mod align_tools;
 mod area;
+// #3035: the stdio server generates on a worker thread.
+mod background;
 mod body_tools;
 mod bridge;
 // #1944: compact read modes for a model's context window.
@@ -41,11 +43,20 @@ mod fixture_turn_tools;
 mod holders;
 mod holder_dxf_tools;
 mod job;
+mod kind_fields;
 mod listen;
+pub mod link;
+mod link_client;
+pub mod link_owner;
+mod port_flag;
+mod wire;
 mod live;
 mod model_tools;
 // #1862: DXF profiles placed on a setup's stock.
 mod sketch_tools;
+mod svg_tools;
+// #3072: typed text in an outline font as a profile of closed shapes.
+mod outline_text_tools;
 // #45: an operation's display name and its place in its setup.
 mod machine_tools;
 mod order_tools;
@@ -54,6 +65,7 @@ mod pick;
 mod box_pick;
 mod pockets;
 // #1534: document and per-setup post options (`SetPostOptions` / `SetSetupPostOptions`).
+mod agie_inspection;
 mod post_options_tools;
 mod post_offer_view;
 mod render;
@@ -87,11 +99,15 @@ mod thread_infeed_tools;
 mod workholding_tools;
 // #3070: the guided sheet job.
 mod sheet_job_tools;
+// #3073: saved cut recipes.
+mod recipe_tools;
 
 // #183: the same tool table served live from inside the GUI, over a
 // loopback socket, against the app's own document and History.
 pub use bridge::bridge;
-pub use listen::{port_from, Inbox, Request, Wake, IDLE_TIMEOUT};
+pub use link_client::{bridge as link_bridge, call as link_call, connect as link_connect, LinkError, Select};
+pub use listen::{Inbox, Request, Wake, IDLE_TIMEOUT};
+pub use port_flag::port_from;
 pub use live::{
     answer_live, answer_live_with, requires_approval, ApprovedCall, GateKind, LiveAnswer,
     LiveGate, LiveOptions,
@@ -102,7 +118,7 @@ pub(crate) use tools::call;
 use crate::script::Env;
 
 use serde_json::{json, Value};
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 
 /// The protocol revisions this server speaks, newest first. A client
 /// asking for one of them gets it echoed; anything else gets the newest
@@ -119,6 +135,9 @@ const INVALID_PARAMS: i64 = -32602;
 /// testable - `handle` is the whole protocol, `serve` only moves lines.
 pub struct Server {
     env: Env,
+    /// #3035: the background generate lane; only [`serve`] sets it.
+    bg: Option<background::Background>,
+    gate: Option<background::Gate>,
 }
 
 impl Default for Server {
@@ -130,7 +149,17 @@ impl Default for Server {
 impl Server {
     #[must_use]
     pub fn new() -> Self {
-        Self { env: Env::fresh() }
+        Self { env: Env::fresh(), bg: None, gate: None }
+    }
+
+    /// Test hook (#3035): each generate worker that [`serve_with`] starts
+    /// waits for one message on the returned sender before it runs, so a
+    /// test can hold a generate open. Dropping the sender frees them all.
+    #[doc(hidden)]
+    pub fn hold_generations(&mut self) -> std::sync::mpsc::Sender<()> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.gate = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
+        tx
     }
 
     /// One wire line in, at most one wire line out (notifications get
@@ -274,30 +303,18 @@ pub const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
 /// JSON-RPC parse error for that line; the loop reads on. Only an I/O
 /// failure of the streams themselves ends it early.
 /// Diagnostics never go to stdout - that stream is the protocol's.
-pub fn serve(mut input: impl BufRead, mut output: impl Write) -> std::io::Result<()> {
-    let mut server = Server::new();
-    let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        let cap = u64::try_from(MAX_LINE_BYTES).unwrap_or(u64::MAX).saturating_add(1);
-        let n = (&mut input).take(cap).read_until(b'\n', &mut buf)?;
-        if n == 0 {
-            return Ok(());
-        }
-        let reply = if !buf.ends_with(b"\n") && buf.len() > MAX_LINE_BYTES {
-            skip_line(&mut input)?;
-            Some(parse_error(&format!("line longer than {MAX_LINE_BYTES} bytes")))
-        } else {
-            match std::str::from_utf8(&buf) {
-                Ok(line) => server.handle_line(line),
-                Err(e) => Some(parse_error(&format!("the line is not UTF-8: {e}"))),
-            }
-        };
-        if let Some(reply) = reply {
-            writeln!(output, "{reply}")?;
-            output.flush()?;
-        }
-    }
+/// #3035: a `generate` runs on a worker thread; the loop answers the
+/// other calls meanwhile, and its answer goes out when it lands (so
+/// answers can come out of request order, as JSON-RPC permits). A
+/// `notifications/cancelled` for it drops it with no answer.
+pub fn serve(input: impl BufRead + Send + 'static, output: impl Write) -> std::io::Result<()> {
+    serve_with(Server::new(), input, output)
+}
+
+/// [`serve`] over a given session (tests set [`Server::hold_generations`]).
+#[doc(hidden)]
+pub fn serve_with(server: Server, input: impl BufRead + Send + 'static, output: impl Write) -> std::io::Result<()> {
+    background::serve_with(server, input, output)
 }
 
 fn parse_error(msg: &str) -> String {

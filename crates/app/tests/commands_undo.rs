@@ -360,7 +360,7 @@ fn cat_tool(name: &str) -> camcraft_app::tools::Tool {
 }
 
 fn face_params() -> OpParams {
-    OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+    OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
         cut_z: Height::fixed(4.5),
@@ -369,6 +369,7 @@ fn face_params() -> OpParams {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     }
 }
 

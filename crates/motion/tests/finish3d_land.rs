@@ -104,6 +104,7 @@ fn fp(pattern: FinishPattern) -> Finish3DParams {
         entry_ramp: false,
         steep_stepover: None,
         pencil_reference: None,
+        waterlines: true,
     }
 }
 

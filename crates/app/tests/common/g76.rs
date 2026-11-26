@@ -108,6 +108,7 @@ pub fn g76_world(infeed: f64, plan: ThreadInfeed) -> World {
         plunge_feed: 40.0,
         infeed_plan: plan,
         hand: camcraft_app::cl::ThreadHand::Right,
+        picks: Default::default(),
     };
     let cmd = CreateOperation::new(&world, "TH1", "TD-1732-60", SrcRef::Entity("bar".into()), params);
     history.execute(&world, cmd.expect("create"));

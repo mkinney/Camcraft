@@ -6,7 +6,9 @@
 //! bore the library's standard bore for the tool's shank. #2016: the tool keeps a reference to the
 //! entry; the Profile table above shows its outline, and an edited
 //! point makes it a drawn profile of its own. Provenance: our own
-//! pane over `app::holder_library`; no vendor material consulted.
+//! pane over `app::holder_library`; no vendor material consulted. #3895:
+//! the tool library window's assembly group draws the same fields; #3930:
+//! the tool shape window no longer does.
 
 use egui::{Color32, Ui};
 
@@ -18,9 +20,11 @@ use crate::state::State;
 const NOTE: Color32 = Color32::from_rgb(0x9E, 0xA8, 0xB8);
 const BAD: Color32 = Color32::from_rgb(230, 90, 80);
 
-/// The holder library picker, the first thing the shape editor shows
-/// (#2397).
-pub(super) fn holder_picker(ui: &mut Ui, state: &mut State, u: Unit) {
+/// #3895: the picker without its Apply holder button - the pick, the
+/// gauge length, the projection and what the pick is. The tool library
+/// window's assembly group adds its own rows before the button. #3930:
+/// that group is the one place that draws the picker.
+pub(super) fn holder_fields(ui: &mut Ui, state: &mut State, u: Unit) {
     ui.separator();
     ui.strong("Holder library");
     let picked = state.tool_profile_ui.library.clone();
@@ -79,8 +83,13 @@ pub(super) fn holder_picker(ui: &mut Ui, state: &mut State, u: Unit) {
             }
         }
     }
+}
+
+/// "Apply holder": queue the one `SetToolBody::library` of the pick.
+pub(super) fn apply_holder_button(ui: &mut Ui, state: &mut State) {
+    let pick = state.tool_profile_ui.library.is_some();
     if ui
-        .add_enabled(pick.is_some(), egui::Button::new("Apply holder"))
+        .add_enabled(pick, egui::Button::new("Apply holder"))
         .on_hover_text("set the library holder as the tool's holder (one undo step); the tool keeps the holder by name until its profile is edited")
         .clicked()
     {

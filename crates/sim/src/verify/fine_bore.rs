@@ -194,7 +194,7 @@ mod tests {
         let mut bore = fine_bore(0.5, 0.0);
         bore.cycles[0].kind = CycleKind::Bore;
         let w = solid(&bore, &wall.facets);
-        assert!(w.contains(&Warning::RapidInStock { at: 2 }), "a turning tool shifted into the wall: {w:?}");
+        assert!(w.contains(&Warning::RapidInPart { at: 2 }), "a turning tool shifted into the wall: {w:?}");
         // The stopped bar of a fine bore stays in its own kerf.
         assert_eq!(solid(&fine_bore(0.5, 0.0), &wall.facets), Vec::new());
 
@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(solid(&fine_bore(-0.5, 0.0), &block.facets), Vec::new(), "shifted away: clear");
         let w = solid(&fine_bore(0.5, 0.0), &block.facets);
         assert!(
-            w.contains(&Warning::RapidInStock { at: 2 }) && w.contains(&Warning::RapidInStock { at: 3 }),
+            w.contains(&Warning::RapidInPart { at: 2 }) && w.contains(&Warning::RapidInPart { at: 3 }),
             "the holder moves with the shift and is still read: {w:?}"
         );
         assert!(!w.contains(&Warning::Gouge { at: 1 }), "the feed in itself is clear: {w:?}");
@@ -235,11 +235,11 @@ mod tests {
         };
         let toward = super::super::verify(&fine_bore(0.5, 0.0), &cx);
         for at in 2..=4 {
-            assert!(toward.contains(&Warning::RapidInStock { at }), "holder collision at {at}: {toward:?}");
+            assert!(toward.contains(&Warning::RapidInPart { at }), "holder collision at {at}: {toward:?}");
         }
         let away = super::super::verify(&fine_bore(-0.5, 0.0), &cx);
         for at in 2..=4 {
-            assert!(!away.contains(&Warning::RapidInStock { at }), "shifted away: {away:?}");
+            assert!(!away.contains(&Warning::RapidInPart { at }), "shifted away: {away:?}");
         }
     }
 

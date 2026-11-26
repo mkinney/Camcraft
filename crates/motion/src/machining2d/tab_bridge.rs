@@ -12,7 +12,7 @@ use super::arcs::{Seg, fit_arcs_sided};
 use super::contour_entry::{flatten, seam_leads};
 use super::contour_params::ContourParams;
 use super::fillet::{Legal, fillet_corners};
-use super::fillet_tally::FilletTally;
+use super::fillet_tally::{FilletTally, corner_arc_radius};
 use super::lead_ext::extend_leads;
 use super::ring::{Ring, dist, tab_window};
 
@@ -38,7 +38,10 @@ pub(super) fn keep_cut(
     }
     let mut walk = fit_arcs_sided(&poly, p.tolerance, legal.air_left);
     if p.blend_turns {
-        let (w, t) = fillet_corners(&walk, poly[0], p.tool_diameter * 0.5, p.tolerance, legal);
+        // #1759: the radius asked for; `validate` held it to the door,
+        // and a radius the door refuses rounds nothing here.
+        let rho = corner_arc_radius(p.blend_radius, p.tool_diameter).unwrap_or(0.0);
+        let (w, t) = fillet_corners(&walk, poly[0], rho, p.tolerance, legal);
         walk = w;
         tally.add(t);
     }

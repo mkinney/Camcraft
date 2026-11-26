@@ -74,6 +74,8 @@ fn generate(world: &World, h: &mut History, src: SrcRef, params: OpParams) -> Ve
 fn slot(a_deg: f64) -> OpParams {
     let y = mid_y(a_deg);
     OpParams::Slot {
+        blend_turns: false,
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         a: Point2::new(-10.0, y),
         b: Point2::new(10.0, y),
@@ -93,6 +95,7 @@ fn slot(a_deg: f64) -> OpParams {
         tilt: Some(tilt(a_deg)),
         extend_start: 0.0,
         extend_end: 0.0,
+        picks: Default::default(),
     }
 }
 
@@ -109,7 +112,7 @@ fn side_pocket_part(a_deg: f64, depth: f64) -> Mesh {
 }
 
 fn pocket(a_deg: f64, depth: f64) -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { pass_start: Default::default(),
         rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
@@ -130,6 +133,7 @@ fn pocket(a_deg: f64, depth: f64) -> OpParams {
         blend_turns: false,
         tilt: Some(tilt(a_deg)),
         corner_relief: Default::default(),
+        picks: Default::default(),
     }
 }
 

@@ -1,15 +1,19 @@
 //! Pins for #2462: a file named on the command line opens through the
 //! dialogs' own commands, each model kind and a project, and a file that
 //! cannot be opened is refused by name with the project left empty.
+//! #3609: with `--read-only` the project refuses a save over its file, the
+//! title says read-only, and a save to a different file ends read-only.
 //!
-//! Gate map (M4.4): covers ui::launch_file, ui::cli_options (files).
+//! Gate map (M4.4): covers ui::launch_file, ui::cli_options (files, read_only),
+//! ui::state (read_only_ui).
 //! Provenance: our own tests.
 
 use std::path::{Path, PathBuf};
 
+use camcraft_app::units::Unit;
 use camcraft_app::{model, project};
 
-use crate::cli_options::{files, help_text, FILE_HELP};
+use crate::cli_options::{files, help_text, read_only, FILE_HELP};
 use crate::launch_file::{command, queue};
 use crate::state::{CommandKind, State};
 
@@ -29,7 +33,7 @@ fn text(path: &Path) -> String {
 /// command to the end.
 fn started(args: &[String]) -> State {
     let mut state = State::new();
-    queue(&mut state, &files(args));
+    queue(&mut state, &files(args), read_only(args));
     state.drain_actions();
     while state.import_in_progress() {
         state.drain_actions();
@@ -117,4 +121,50 @@ fn a_file_that_cannot_be_opened_is_refused_by_name() {
         assert!(model::model_entities(&state.world).is_empty(), "{args:?}");
         assert!(!state.history.is_dirty(), "{args:?}: nothing reached the history");
     }
+}
+
+#[test]
+fn a_read_only_project_refuses_a_save_over_its_file_and_save_as_ends_read_only() {
+    let author = started(&[text(&testdata("cube.stl"))]);
+    let dir = std::env::temp_dir().join(format!("camcraft-ro-launch-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let file = dir.join("job.camproj");
+    project::save(&author.world, &file).expect("save");
+    let before = std::fs::read(&file).expect("read the project");
+
+    let mut state = started(&[String::from("--read-only"), text(&file)]);
+    assert_eq!(state.project_path.as_deref(), Some(file.as_path()), "{}", state.status);
+    assert!(state.project_read_only);
+    assert!(state.status.ends_with(" (read-only; Save As writes your own copy)"), "{}", state.status);
+    assert_eq!(state.window_title(), "CamCraft - job.camproj (read-only)");
+
+    // A change is allowed; a save over the opened file is refused and writes nothing.
+    state.run(CommandKind::SetUnits(Unit::Inches));
+    assert!(state.history.is_dirty(), "{}", state.status);
+    assert_eq!(state.window_title(), "*CamCraft - job.camproj (read-only)");
+    state.run(CommandKind::SaveProjectFile(file.clone()));
+    assert!(state.status.starts_with("save refused: "), "{}", state.status);
+    assert!(state.status.contains("is open read-only"), "{}", state.status);
+    assert_eq!(std::fs::read(&file).expect("read the project"), before, "the file is unchanged");
+    assert!(state.history.is_dirty(), "nothing was saved");
+
+    // A save to a different file writes it and ends read-only.
+    let copy = dir.join("copy.camproj");
+    state.run(CommandKind::SaveProjectFile(copy.clone()));
+    let saved = copy.is_file();
+    let after = std::fs::read(&file).expect("read the project");
+    std::fs::remove_dir_all(&dir).expect("remove temp dir");
+    assert!(saved, "{}", state.status);
+    assert_eq!(state.project_path.as_deref(), Some(copy.as_path()));
+    assert!(!state.project_read_only);
+    assert_eq!(state.window_title(), "CamCraft - copy.camproj");
+    assert_eq!(after, before, "the opened file stays as it was");
+}
+
+#[test]
+fn read_only_changes_nothing_for_a_model_file() {
+    let state = started(&[String::from("--read-only"), text(&testdata("cube.stl"))]);
+    assert!(model::find_by_name(&state.world, "cube").is_some(), "{}", state.status);
+    assert!(!state.project_read_only);
+    assert_eq!(state.project_path, None);
 }

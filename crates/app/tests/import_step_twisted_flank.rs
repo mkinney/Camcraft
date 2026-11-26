@@ -55,9 +55,10 @@ fn the_twisted_flank_with_a_vertex_off_its_curves_is_refused_by_name() {
         Ok(c) => panic!("twisted_flank_off.step must be refused, read {} facets", c.mesh.facets.len()),
         Err(e) => {
             let s = format!("{e}");
-            assert!(s.contains("#117 at read: pcurves failed on"), "the refusal names the solid: {s}");
-            assert!(s.contains("face #93"), "the refusal names the face: {s}");
-            assert!(s.contains("off the surface's range"), "the refusal says why: {s}");
+            // #3767: solidcore fa67b3f5 refuses at its vertex check, which
+            // names the solid and the vertex fault, not face #93.
+            assert!(s.contains("#117 at check: a vertex sits"), "the refusal names the solid: {s}");
+            assert!(s.contains("mm off its edges"), "the refusal says why: {s}");
         }
     }
 }

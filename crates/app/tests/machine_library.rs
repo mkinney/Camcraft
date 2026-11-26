@@ -130,6 +130,26 @@ fn agiecut_classic_2s_exposes_the_sourced_axes_and_wire_sizes() {
     assert!(edm.conditions.is_empty());
 }
 
+/// #3038: the WorkBee 1000x1500 takes the smaller value on each axis of
+/// the owner's figure (1200 x 800) and Ooznest's page (1270 x 770, 88 mm
+/// Z, 2500 mm/min). Z rates stay unstated.
+#[test]
+fn ooznest_workbee_states_the_smaller_envelope_and_feed() {
+    let entry = library::builtins()
+        .into_iter()
+        .find(|e| e.name == "Ooznest WorkBee 1000x1500 (Estlcam)")
+        .expect("WorkBee in the library");
+    assert_eq!(entry.kind, Some(Kind::Mill));
+    assert_eq!(entry.units, "mm");
+    let (_, machine) = library::read_for_assign(&entry.source).expect("assignable machine");
+    let axes: Vec<_> = machine.axes.iter().map(|a| (a.name.as_str(), a.travel, a.rapid)).collect();
+    assert_eq!(axes, [
+        ("X", Some((-1200.0, 1200.0)), Some(2500.0)),
+        ("Y", Some((-770.0, 770.0)), Some(2500.0)),
+        ("Z", Some((-88.0, 88.0)), None),
+    ]);
+}
+
 /// Every `.mch` in `assets/machines` is a library entry, except the
 /// post-grammar default (`3axis-vmc.mch` is the static mirror form the
 /// post reads, not a checker-grammar machine file).
@@ -219,7 +239,7 @@ fn required_keys_per_kind_refuse_by_name() {
 #[test]
 fn other_stated_values_refuse_by_name() {
     let t = mill(|v| *at(v, "/general/kind") = "drill press".into());
-    one_refusal(&t, "general.kind", "not mill, lathe, mill-turn, plasma, waterjet, wire_edm or sinker_edm");
+    one_refusal(&t, "general.kind", "not mill, router, lathe, mill-turn, plasma, waterjet, wire_edm or sinker_edm");
     let t = mill(|v| *at(v, "/kinematics/default/units/length") = "cm".into());
     one_refusal(&t, "units.length", "not mm or inch");
     let t = mill(|v| *at(v, "/tooling/number_of_tools") = 0.into());

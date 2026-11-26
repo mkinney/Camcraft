@@ -55,6 +55,7 @@ fn circular_world(stepover: f64, climb: bool) -> flecs_ecs::prelude::World {
         AddTool::new(&world, "EM-0400-2FL", tool).expect("tool"),
     );
     let params = OpParams::Circular {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::PLANAR,
         center: Point2::new(0.0, 0.0),
         radius: 3.0,
@@ -72,6 +73,7 @@ fn circular_world(stepover: f64, climb: bool) -> flecs_ecs::prelude::World {
         entry: Entry3D::Ramp,
         helix_radius: 1.0,
         tilt: None,
+        picks: Default::default(),
     };
     history.execute(
         &world,

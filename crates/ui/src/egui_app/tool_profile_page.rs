@@ -2,10 +2,10 @@
 //! holder as a spun (revolved) half-outline - Parametric (the cylinder its
 //! numbers state) or Custom (a table of points with optional arcs), the
 //! live refusal by name, and Apply profile, which queues the one command.
-//! The holder library stands above the tabs (`tool_holder_picker`), so a
-//! holder is the first thing the user sees. #2007: the tool has one
+//! #3930: the holder library left this window: the tool library window's
+//! assembly group picks the holder (`tool_holder_picker`). #2007: the tool has one
 //! preview - the to-scale one beside the fields (`tool_preview`), which
-//! draws the draft of this tab through [`preview_inputs`]. The shape
+//! draws the draft of this tab through `tool_preview_inputs`. The shape
 //! window draws the flat side view itself (`profile_view`). #93 slice 2:
 //! Draw cutter switches the tab to the tool's own cutter, neck and shank
 //! (`tool_cutter_page`). Turning tools are not spun profiles: for them
@@ -15,9 +15,7 @@
 
 use egui::{Align2, Color32, FontId, Pos2, Sense, Shape, Stroke, Ui, Vec2};
 
-use camcraft_app::cutter_profile;
 use camcraft_app::spun::{SpunPoint, SpunProfile};
-use camcraft_app::tool_body;
 use camcraft_app::tool_body_view;
 use camcraft_app::tools::Tool;
 use camcraft_app::units::{self, Unit};
@@ -33,56 +31,13 @@ pub(super) const BAD: Color32 = Color32::from_rgb(230, 90, 80);
 /// table low on a scrolled page does not shrink to a few rows.
 const TABLE_H: f32 = 150.0;
 
-/// Holder bands `(above, len, r)` and a steel outline override.
-pub(super) type PreviewInputs = (Option<Vec<(f64, f64, f64)>>, Option<Vec<(f64, f64)>>);
-
-/// #2007: what the one to-scale preview draws. On the Profile tab a draft
-/// that validates shows at once - the drawn holder as the bands the
-/// collision check sweeps (#2017), the drawn cutter as the steel
-/// outline. Otherwise the landed body, as before. A draft that does not
-/// validate shows the landed state; its refusal stands below the table.
-pub(super) fn preview_inputs(state: &mut State, exists: bool) -> PreviewInputs {
-    if !exists {
-        return (None, None);
-    }
-    // The Body tab's draft follows the landed body each frame, as before
-    // #2007, also while a drawn holder draft shows.
-    state.sync_tool_body_ui();
-    let tool = state.tool_ui.to_tool();
-    let profile_tab = is_spun_kind(state.tool_ui.tool_kind()) && state.tool_profile_ui.column == ToolColumn::Profile;
-    let geom = tool.geom();
-    let bands = |p: Option<&_>| tool_body::stack(&geom, p).bands.iter().map(|q| (q.above, q.len, q.r)).collect::<Vec<_>>();
-    if profile_tab && state.tool_cutter_ui.shown {
-        state.sync_tool_cutter_ui();
-        let steel = cutter_profile::check(&tool, state.tool_cutter_ui.points.clone()).ok().map(|s| s.outline());
-        let body = super::tool_body_page::envelope(state);
-        // The drawn cutter stops at the shank top: the holder cylinder
-        // goes on top of it as bands when no body is landed.
-        let body = match (&steel, body) {
-            (Some(_), None) => Some(bands(None)),
-            (_, b) => b,
-        };
-        return (body, steel);
-    }
-    if profile_tab && state.tool_profile_ui.custom {
-        state.sync_tool_profile_ui();
-        if let Ok(s) = tool_body_view::spun_preview(&tool, &state.tool_profile_ui.points) {
-            return (Some(bands(Some(&s.holder_profile()))), None);
-        }
-    }
-    (super::tool_body_page::envelope(state), None)
-}
-
-/// #2397: the tool shape editor's body - the holder library first (a
-/// holder is the first thing the user looks for, not a row under the
-/// profile table), then the Body / Profile tabs for a milling tool, the
-/// Body section alone for a turning tool.
+/// #2397: the tool shape editor's body - the Body / Profile tabs for a
+/// milling tool, the Body section alone for a turning tool. #3930: the
+/// holder pick is the tool library window's (its assembly group).
 pub(super) fn editor(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
     let milling = is_spun_kind(state.tool_ui.tool_kind());
     if milling {
         state.sync_tool_profile_ui();
-        super::tool_holder_picker::holder_picker(ui, state, u);
-        ui.separator();
         // #2007: the tab row wraps in a narrow pane.
         ui.horizontal_wrapped(|ui| {
             let c = state.tool_profile_ui.column;

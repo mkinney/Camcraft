@@ -1,10 +1,11 @@
-//! Axial cone footprint at the stock surface, from machine-tool handbook point geometry and issue #3020.
+//! Axial cone footprint at the finished wall top, from machine-tool handbook point geometry and issues #3020/#3451.
 
 use crate::cl::{Move, Toolpath};
 use crate::verify::probe::{Atom, Prof};
 use crate::verify::{Cutter, Mode, VerifyContext};
 
-/// Static hole walls end at the stock top. For an ordinary axial cone,
+/// Static hole walls end at the part top when supplied, else the stock top.
+/// For an ordinary axial cone,
 /// only its radius below that plane can cut those walls. Model sections,
 /// other paths and untrusted cutter shapes retain the nominal radius.
 pub(super) struct Radius {
@@ -30,7 +31,7 @@ impl Radius {
         } else {
             None
         };
-        Self { nominal: cx.tool.radius, top: cx.stock_top_z, cone }
+        Self { nominal: cx.tool.radius, top: cx.rim_top_z.unwrap_or(cx.stock_top_z), cone }
     }
 
     pub(super) fn at(&self, m: &Move) -> f64 {

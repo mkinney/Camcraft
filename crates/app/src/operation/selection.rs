@@ -104,14 +104,19 @@ pub fn contour_auto_side(
 /// The drive chains, in WORLD 3D (M5.1 J): the same entity/name/
 /// hash-id resolution [`selection_geometry_impl`]'s walk does, read
 /// through the transform instead of projected to XY - for the
-/// drive-curve contour the chain is the path where it STANDS, and a
+/// drive-curve kinds the chain is the path where it STANDS, and a
 /// shadow of a space curve is not the curve. A closed chain and an
 /// open run are both welcome: the ball rides the points either way,
 /// and the kernel's winding law reads the rest. Face and Patch picks
-/// are refused by name - this kind asks for curves, not boundaries.
+/// are refused by name - these kinds ask for curves, not boundaries.
 /// Resolution errors quote the same labels the 2D walk quotes, so a
 /// re-pick instruction reads identically in both.
-pub(super) fn drive_chains(world: &World, setup: Option<&str>, items: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
+pub(super) fn drive_chains(
+    world: &World,
+    setup: Option<&str>,
+    items: &[GeoSel],
+    kind: &str,
+) -> Result<Vec<Vec<Point3>>, GenError> {
     let mut out: Vec<Vec<Point3>> = Vec::new();
     for g in items {
         let Some(entity) = model::find_by_name(world, &g.entity) else {
@@ -151,12 +156,12 @@ pub(super) fn drive_chains(world: &World, setup: Option<&str>, items: &[GeoSel])
             }
             FeatureSel::Face(_) | FeatureSel::Patch(_) => {
                 return Err(GenError::Invalid(format!(
-                    "{label} is a face - Multi-Axis Contour machines the picked EDGE CHAINS where they stand; machine this face's boundary as a chain, or use 5-Axis Contour for the model's own pattern"
+                    "{label} is a face - {kind} machines the picked EDGE CHAINS where they stand; machine this face's boundary as a chain, or use 5-Axis Contour for the model's own pattern"
                 )));
             }
             FeatureSel::Vertex(_) => {
                 return Err(GenError::Invalid(format!(
-                    "{label} is a point - Multi-Axis Contour machines picked EDGE CHAINS; pick the edges through it"
+                    "{label} is a point - {kind} machines picked EDGE CHAINS; pick the edges through it"
                 )));
             }
             FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
@@ -167,10 +172,9 @@ pub(super) fn drive_chains(world: &World, setup: Option<&str>, items: &[GeoSel])
         }
     }
     if out.is_empty() {
-        return Err(GenError::Empty(
-            "Multi-Axis Contour machines picked edge chains - pick edges in the Geometry section"
-                .into(),
-        ));
+        return Err(GenError::Empty(format!(
+            "{kind} machines picked edge chains - pick edges in the Geometry section"
+        )));
     }
     Ok(out)
 }
@@ -189,7 +193,14 @@ pub(super) fn selection_geometry_impl(
     notes: Option<&mut Vec<String>>,
 ) -> Result<SelectionGeometry, GenError> {
     let (loops, mut chains, auto) = selection_geometry_in(world, setup, items, params, notes, None)?;
-    if matches!(params, OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_))
+    if matches!(
+        params,
+        OpParams::Contour { .. }
+            | OpParams::PlasmaProfile(_)
+            | OpParams::WaterjetProfile(_)
+            | OpParams::WireContour(_)
+            | OpParams::Chamfer2D { .. }
+    )
         && !chains.is_empty()
     {
         chains = boundary_chains::join_open_runs(chains);
@@ -230,8 +241,16 @@ pub(super) fn selection_geometry_in(
         params,
         OpParams::Pocket { .. } | OpParams::Adaptive2D { .. } | OpParams::Offset2D { .. }
     );
-    // The plasma profile takes open runs as the contour does (#670).
-    let contour = matches!(params, OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_));
+    // The plasma profile and 2D Chamfer take open runs as the contour
+    // does (#670, #2988).
+    let contour = matches!(
+        params,
+        OpParams::Contour { .. }
+            | OpParams::PlasmaProfile(_)
+            | OpParams::WaterjetProfile(_)
+            | OpParams::WireContour(_)
+            | OpParams::Chamfer2D { .. }
+    );
     let contour_side = match params {
         OpParams::Contour { side, .. } => *side,
         _ => Side::Auto,

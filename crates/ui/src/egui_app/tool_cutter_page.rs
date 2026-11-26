@@ -92,7 +92,7 @@ fn cutter_view(ui: &mut Ui, state: &mut State, u: Unit) {
     let points = state.tool_cutter_ui.points.clone();
     let check = cutter_profile::check(&tool, points);
     // #2007: the one to-scale preview draws this draft
-    // (`tool_profile_page::preview_inputs`); no second view here.
+    // (`tool_preview_inputs::preview_inputs`); no second view here.
     match &check {
         Ok(s) => {
             ui.label(format!(

@@ -57,6 +57,15 @@ fn adaptive(bottom: Height) -> OpParams {
 
 const FLOOR: Height = Height { reference: HeightReference::BottomOfSelection, offset: 0.0 };
 
+fn assert_only_fallback(path: &Toolpath, warnings: &[camcraft_app::verify::Warning]) {
+    let areas = camcraft_app::machining2d::rings_fallbacks(&path.notes);
+    assert_eq!(warnings.len(), usize::from(areas > 0), "only the fallback is reported: {warnings:?}");
+    assert!(warnings.iter().all(|w| {
+        matches!(w, camcraft_app::verify::Warning::StrategyFallback { areas: n, .. } if *n == areas)
+            && !w.blocks_post()
+    }), "unexpected warnings: {warnings:?}\nnotes {:?}", path.notes);
+}
+
 #[test]
 fn a_face_selection_floor_is_the_faces_own_z() {
     let (world, name) = milling_test();
@@ -85,9 +94,9 @@ fn containment_outside_clears_past_the_edge_never_the_recess() {
     let preview = operation::region_of(&world, &op(src.clone(), adaptive(FLOOR), a.clone())).expect("the band previews");
     assert!(!preview.contains(Point2::new(c.0, c.1)), "the recess is not in the machined area");
     let t0 = std::time::Instant::now();
-    let (t, warns) = run(&world, &op(src, adaptive(FLOOR), a)).expect("generates with stock");
+    let (t, warns) = operation::generate(&world, &op(src, adaptive(FLOOR), a), "").expect("generates with stock");
     assert!(t0.elapsed().as_secs_f64() < 60.0, "the band plans in seconds, not minutes");
-    assert_eq!(warns, 0, "the plan verifies clean: {:?}", t.notes);
+    assert_only_fallback(&t, &warns);
     let part_outline = entity_outline(&world, &name);
     let first_feed = t.moves.iter().find(|m| m.kind == MoveKind::Feed).expect("first cut");
     assert!(
@@ -144,7 +153,9 @@ fn containment_outside_without_stock_clears_with_extension_never_the_recess() {
     let t0 = std::time::Instant::now();
     let (t, warns) = run(&world, &op(src, adaptive(FLOOR), a)).expect("generates");
     assert!(t0.elapsed().as_secs_f64() < 60.0, "the band plans in seconds, not minutes");
-    assert_eq!(warns, 0, "the plan verifies clean: {:?}", t.notes);
+    // #3035: the one warning is the advisory fallback to the rings (pinned
+    // by `strategy_fallback`); the plan verifies clean otherwise.
+    assert_eq!(warns, 1, "the plan verifies clean: {:?}", t.notes);
     assert!(
         t.notes.iter().any(|n| n.contains("channel") && n.contains("Offset rings cut")),
         "the refusal is named: {:?}",
@@ -257,7 +268,12 @@ fn fig8_bottom_face_outside_containment_generates_and_stops_at_face() {
     h.execute(&world, camcraft_app::commands::GenerateOperation::new(&world, "Adp1").expect("generate"));
     let e = model::find_by_name(&world, "Adp1").expect("op");
     let cached = model::toolpath_of(&world, &e).expect("cached");
-    assert!(cached.warnings.is_empty(), "verifies clean: {:?}", cached.warnings);
+    // #3035: only the advisory fallback to the rings, which posts.
+    assert!(
+        cached.warnings.iter().all(|w| matches!(w, camcraft_app::verify::Warning::StrategyFallback { .. })),
+        "verifies clean: {:?}",
+        cached.warnings
+    );
     assert!(!cached.path.moves.is_empty());
     let posted = camcraft_app::posting::post_setup_unwritten(&world).expect("posts clean");
     assert!(!posted.program.is_empty());
@@ -303,7 +319,7 @@ fn fig8_outside_containment_with_em0800_and_clearing_kinds_works() {
     h.execute(&world, camcraft_app::commands::GenerateOperation::new(&world, "Adp8").expect("generate"));
     let e = model::find_by_name(&world, "Adp8").expect("op");
     let cached = model::toolpath_of(&world, &e).expect("cached");
-    assert!(cached.warnings.is_empty(), "verifies clean: {:?}", cached.warnings);
+    assert_only_fallback(&cached.path, &cached.warnings);
     assert!(!camcraft_app::posting::post_setup_unwritten(&world).expect("posts clean").program.is_empty());
     let part_outline = entity_outline(&world, &name);
     let first_feed = cached.path.moves.iter().find(|m| m.kind == MoveKind::Feed).expect("first cut");
@@ -332,7 +348,9 @@ fn outside_containment_clearing_kinds_and_enclosed_pockets() {
             _ => {}
         }
         let (t, warns) = run(&bw, &op(bsrc.clone(), kp, out_area.clone())).unwrap_or_else(|e| panic!("{kind}: {e}"));
-        assert_eq!(warns, 0, "{kind} verifies clean");
+        // #3035: an Adaptive area cut by the rings is one advisory warning.
+        let fell = usize::from(camcraft_app::machining2d::rings_fallbacks(&t.notes) > 0);
+        assert_eq!(warns, fell, "{kind} verifies clean");
         let reach = max_by(&feeds(&t), |q| q.x.abs().max(q.y.abs()));
         assert!((reach - (35.0 + R)).abs() < 0.1, "{kind} reaches stock + R: {reach}");
     }
@@ -346,7 +364,7 @@ fn outside_containment_clearing_kinds_and_enclosed_pockets() {
         (*top_z, *bottom_z, *stepdown) = (Height::fixed(20.0), Height::fixed(10.0), 12.0);
     }
     let (et, ewarns) = run(&ew, &op(sel("part", floor), ep, out_area.clone())).expect("enclosed pocket cuts");
-    assert_eq!(ewarns, 0);
+    assert_eq!(ewarns, usize::from(camcraft_app::machining2d::rings_fallbacks(&et.notes) > 0), "{:?}", et.notes);
     assert!(max_by(&feeds(&et), |q| q.x.abs().max(q.y.abs())) <= 12.0 - R + 0.05, "enclosed pocket stays inside walls");
 
     // Enclosed circular recess on STEP model (Milling-test.step at Z 0) also stays inside its walls.
@@ -354,7 +372,8 @@ fn outside_containment_clearing_kinds_and_enclosed_pockets() {
     let (rc, rr) = recess(&mw, &mname);
     let rfloor = top_face(&mw, &mname, 0.0);
     let (rt, rwarns) = run(&mw, &op(sel(&mname, rfloor), adaptive(Height::fixed(0.0)), out_area)).expect("STEP recess cuts");
-    assert_eq!(rwarns, 0, "STEP recess verifies clean");
+    let rfell = usize::from(camcraft_app::machining2d::rings_fallbacks(&rt.notes) > 0);
+    assert_eq!(rwarns, rfell, "STEP recess verifies clean");
     assert!(
         feeds(&rt).into_iter().all(|q| (q.x - rc.0).hypot(q.y - rc.1) <= rr - R + 0.05),
         "STEP circular recess stays inside walls"

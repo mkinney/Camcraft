@@ -19,7 +19,7 @@ the property table there is the vocabulary, this file is the grammar.
 
 Manifest: top-level assignments only — `description`, `vendor`, `legal`,
 `certificationLevel`, `minimumRevision`, `extension`, `setCodePage`,
-`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`, `rotariesBeforeTraverse`. All but `serves` and the last eleven are
+`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`, `rotariesBeforeTraverse`, `uprightReturn`. All but `serves` and the last twelve are
 text the engine reads none of; `serves = ["plasma"];` (#1266; one word or a list of kind words: mill, lathe, mill-turn, plasma, wire_edm, sinker_edm) names the machine kinds a script of the user's own posts to - the app refuses it by name on any other kind, and a script that states none is accepted only on a mill (non-turning dialect), a lathe (turning) or a mill-turn, never on a plasma table or an EDM; shipped posts are judged by registry name and need no `serves`; `programUnits = "mm inch"` (#902) says
 the script writes the program in the document's unit -
 `postOptions.Units`, `"mm"` or `"inch"`, absent = mm: the dialect's
@@ -61,7 +61,7 @@ and tormach-lathe.cps: the LinuxCNC G-code reference's G59.1-G59.3);
 `threadHands = true` (#629) says the script
 reads `PARAM SpindleDirection` and states a thread's hand (M04 when the
 helix needs the spindle reversed) - without it the engine refuses a
-reverse-spindle thread section by name (fanuc-lathe.cps and tormach-lathe.cps set it); `rotariesBeforeTraverse = true` (#3100) says the script turns the rotaries to each section's pose at the safe Z before its first X/Y traverse - the first-traverse law then reads the work at the operation's own pose, not at every pose the previous program can leave; a script without it is read the strict way, a user's own script that declares it is taken at its word with a note on the path, and each shipped post that declares it has a posting test of the real order (tormach.cps sets it); `liveTooling = true` (issue #33) says the
+reverse-spindle thread section by name (fanuc-lathe.cps and tormach-lathe.cps set it); `rotariesBeforeTraverse = true` (#3100) says the script turns the rotaries to each section's pose at the safe Z before its first X/Y traverse - the first-traverse law then reads the work at the operation's own pose, not at every pose the previous program can leave; a script without it is read the strict way, a user's own script that declares it is taken at its word with a note on the path, and each shipped post that declares it has a posting test of the real order (tormach.cps sets it); `uprightReturn = true` (#3477) says the script retracts to a safe height and commands the rotaries to zero at the start of each section that follows a tilted section, before its first X/Y traverse - without it the engine refuses by name a section that opens with no stated angle after a section that left a rotary off zero, and each shipped post that declares it has a posting test of the real order (`crates/post/tests/upright_after_tilt.rs`; fanuc, doosan-dnm, mach4 and tormach set it); `liveTooling = true` (issue #33) says the
 script voices a `PARAM LiveTool` section - C-axis live-tool work, the
 stream's X Y Z the part-frame tip and C the stated spindle angle - and
 without it the engine refuses such a section by name (only
@@ -128,12 +128,32 @@ argument semantics in `docs/CNC-INTERMEDIATE.md`):
 | `onComment(text)` | per `WARN` (the PRELUDE default echoes it verbatim) |
 | `onRadiusCompensation(side)` | per `COMP` (M13.11): `"left"` / `"right"` engage G41 / G42 on the NEXT motion record (a straight lead at least a radius long, by the generator's law; `properties.CompensationRadius` is the register's radius), `"off"` cancels (G40) on the next one. The records between are the PART contour - or, when `properties.CompensationType` is `"wear"` (#38), the cutter-centre path with the register holding only the wear delta - so a post that cannot write the words must `message()` a refusal — the engine refuses a script that lacks the hook outright |
 | `onPlasma` / `onTorchOn` / `onTorchOff` | per `PLASMA` header / `TORCH ON` / `TORCH OFF` (#671): a plasma section's kerf and stated heights (`PlasmaKerf`, `PierceHeight`, ... - absent = the controller's AutoFS), then the torch struck before the next motion record and put out after the previous. The engine refuses a script lacking either torch hook when a header arrives, and keeps the torch law (no torch without a header, no ON while lit, no rapid while lit, nothing left lit) - only `tormach-plasma.cps` defines them |
+| `onJetOn` / `onJetOff` | per `JET ON` / `JET OFF` (#1882): the jet opened before the next motion record and closed after the previous, under the section's `WATERJET` header (`WaterjetAbrasive`, `PierceDwell`, `ValveLagDwell` - a dwell is absent when unstated). The engine refuses a script lacking either jet hook when a header arrives, and keeps the jet law (no jet without a header, no ON while open, no rapid while open, nothing left open). It shares no state with the torch law - only `waterjet-iso.cps` defines them |
 | `onThreadCycle` / `onThreadCycleEnd` | per `THREAD` / `THREAD END` (issue #34): a threading cycle's numbers bracket its explicit passes; a script that writes the cycle (G76) skips the passes itself, one that does not define the hooks posts them. `postOptions` (global) carries the document's post options plus resolved `declaredOptions` |
 | `onClose` | once, after all records (retract + `%`-end here) |
 
 ### Declared options (`declaredOptions`) and `programTools` (#258)
 
 A script may define a top-level `declaredOptions` map so the host renders typed per-post properties and validates CLI / MCP / script overrides by name and range. Each entry declares `type` (`"boolean"`, `"integer"`, `"number"`, `"string"`, `"enum"`), required matching `default`, optional `title`, `description`, `group`, bounds (`min`/`max`), and non-empty `choices` (`string` or `{ id, title }`) for `"enum"`. Built-in host keys (`Units`, `Threading`, `Smoothing`, `EndUnits`, `Explain`, `BetweenSetups`) are reserved. Defaults must preserve existing golden output byte-for-byte. Before `onOpen`, the engine also publishes `programTools`, an array of `{ number, name, diameter, kind }` for tools in the stream, so header tool-list comments can summarize every tool up front.
+
+### Sheet-cutting seams (#1882)
+
+- `lineEnding = "lf"` (the default) or `"crlf"`: the end of each program
+  line. The engine reads it when it writes the program, after `onClose`,
+  so `onOpen` may set it from a declared option. Any other value is
+  refused by name.
+- `linearizeArcs = true` writes every arc record as straight chords
+  through `onLinear` (for a control without G2/G3), at the sagitta
+  `chordTolerance` (mm, 0.01 when unstated; a value that is not a
+  positive number is refused by name). The engine reads both after
+  `onOpen`. The chords are `cl::Move::segments3`; the last one ends on
+  the arc's own end point, and every chord line maps to the arc record.
+- `programBounds` (global, before `onOpen`): the XY box of every cutting
+  record (feeds, plunges, arcs at the quarter points they pass, cycle
+  centres) as `{minX, maxX, minY, maxY}` in mm, or `null` when nothing
+  is cut. Rapids do not count.
+- `machine.travel`: the linear axes' stated strokes, `{X, Y, Z}`, each
+  `[min, max]` in mm or `null` when the machine file states none.
 
 Output is only what `writeln`/`write`/`writeBlock` push into `OUT`;
 `message(s)` is a COUNTED WARNING, not text — in-app it blocks the
@@ -185,6 +205,9 @@ write (the gate), so the released program never carries one.
   Doosan posts write every length, angle, lead and feed-per-rev word with
   its point (`Z14.`); only the words the control documents as "no decimal
   point" (lathe G76 P Q, G83 Q) stay in whole least increments.
+  The Haas post writes each feed-per-minute word with its point too
+  (#3681, `F600.`): Haas Setting 77 (Scale Integer F) scales an F with no
+  point, and at its default an mm control reads `F600` as 0.6 mm/min.
 - **Refuse, never lie.** A record you cannot honor in this dialect
   gets a counted `message()` naming why (Fanuc's `tilt()` returns null
   after one refusal per program — a per-line refusal is noise, a
@@ -276,6 +299,24 @@ and any machine not declared `kind: plasma` (`machine.kind`). Its
 goldens ride under `nc/tormach-plasma/` (`plasma_post.rs`), not the
 milling matrix.
 
+## The waterjet post
+
+`waterjet-iso.cps` (#1882, "Generic ISO abrasive waterjet") serves a
+waterjet table only (`serves = ["waterjet"]`, `machine.kind`). It is not
+a registry entry yet: the app offers it with the Waterjet operation that
+writes the `WATERJET` records (#1883). It writes XY only (a waterjet
+machine states X and Y), opens the water with a declared M number,
+dwells the valve lag (`G4`), starts the abrasive, dwells the pierce,
+cuts, then stops the abrasive before the water. The M numbers, the G4
+word form, G2/G3 or chords, and LF or CR LF are declared options; the
+default M numbers are placeholders. It refuses by name every op with no
+`WATERJET` header, any rpm (S, G95) or surface speed (G96), coolant,
+rotary, cycle or Z cutting move, a cut outside the stated
+`machine.travel`, and any machine not declared `kind: waterjet`. Its
+goldens ride under `crates/post/tests/golden/waterjet/`
+(`waterjet_iso_post.rs`); the decision record is
+`docs/decisions/1882-waterjet-post.md`.
+
 ## The wire EDM post
 
 `wire-iso.cps` (#533, "Generic ISO Wire EDM") is the one
@@ -315,6 +356,17 @@ operation's C word. It was not run on a control; what is unconfirmed is
 in `docs/decisions/617-sodick-wire-post.md` and
 `docs/decisions/2649-sodick-ln-pass-structure.md`. Its goldens ride
 under `nc/sodick-wire/` (`sodick_wire_post.rs`, `sodick_wire_passes.rs`).
+
+`g-edm.cps` (#2700, "G-EDM Wire EDM") is the fourth `WIRE_POSTS` entry,
+never the default. It serves G-EDM builds on G-RBLv3 (a Grbl derivative):
+Grbl-family words only (`G21` / `G20 G90 G17`, `G0`, `G1`, `G2` / `G3`
+with `I J`, `M30`), no `%` fence, no `O` word, no `F` (the gap servo sets
+the rate), and no `edm.codes` (the spark power is set at the controller;
+the condition id is a comment). It writes one vertical 2-axis wire section
+per program and refuses by name taper, 4-axis, any `COMP` record, skims,
+`edm.awt`, an offset other than G54, and every stop or home ask. It was not
+run on a control; `docs/decisions/2700-g-edm-post.md` lists what is not
+confirmed. Its golden rides under `nc/g-edm/` (`g_edm_post.rs`).
 
 ## Adding a post to the app
 

@@ -80,6 +80,29 @@ fn relief_modes_and_direction_controls_edit_each_supported_passes_page() {
     }
 }
 
+/// #2410: corner relief is a router option. A mill hides the row; a router
+/// shows it; a relief already stated stays shown on the mill.
+#[test]
+fn relief_row_shows_on_a_router_and_not_on_a_mill() {
+    let _guard = snapshot_guard();
+    let mount = |h: &mut Harness<'static, ShellUi>, name: &str| {
+        let st = &mut h.state_mut().state;
+        let cmd = camcraft_app::commands::LoadMachine::builtin(&st.world, name).unwrap_or_else(|e| panic!("{name}: {e}"));
+        st.history.execute(&st.world, cmd);
+        h.run_steps(2);
+    };
+    for ty in [OpType::Pocket, OpType::Adaptive2D, OpType::Offset2D] {
+        let mut h = passes(ty);
+        mount(&mut h, "VMC 3-axis");
+        assert!(h.query_by_label("Corner relief").is_none(), "{ty:?}: a mill offers no corner relief");
+        mount(&mut h, "Tormach 24R");
+        assert_eq!(h.query_all_by_label("Corner relief").count(), 1, "{ty:?}: a router offers it");
+        choose(&mut h, "Corner relief", "None", "Dogbone");
+        mount(&mut h, "VMC 3-axis");
+        assert_eq!(h.query_all_by_label("Corner relief").count(), 1, "{ty:?}: a stated relief stays shown");
+    }
+}
+
 #[test]
 fn relief_mode_and_direction_apply_as_one_undoable_command() {
     let _guard = snapshot_guard();

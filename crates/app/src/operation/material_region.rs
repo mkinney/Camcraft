@@ -125,14 +125,16 @@ fn region_turn_core(
                 // The deburr ride's edges ARE the model's own exposed
                 // boundary (M2.5 E B); its picks name which of them to
                 // break, they bound no area (#1888, `deburr_picks`).
-                | OpParams::Deburr { .. }
+                | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
                 // The drive-curve contour's picks are the PATH, not a
                 // boundary: the 2D selection walk below would try to
                 // bound an area with them (and refuse an open run),
                 // where the honest preview is the material's shadow -
                 // what the ball rides is the 3D chain itself, visible
-                // once generated (M5.1 J).
+                // once generated (M5.1 J). So are the flow band's
+                // guide chains (#2826): the picks bound nothing.
                 | OpParams::MultiAxisContour { .. }
+                | OpParams::RotaryFlow { .. }
         )
     {
         return controlled(selection_region(world, op.setup.as_deref(), items, &op.params, &op.area).ok()).map(|(r, t)| (r, t, None));
@@ -209,25 +211,28 @@ pub fn chains_of(world: &World, op: &Operation) -> Vec<Vec<Point2>> {
 }
 
 /// The drive chains of one operation as the world stands now, in
-/// WORLD 3D (M5.1 J): the Multi-Axis Contour's source must be a
-/// selection of edge-chain picks - the picks ARE the path, machined
-/// where they stand. Any other source is a named refusal, never a
-/// silent whole-model guess: a Stock or Entity source spells "cut
-/// the model's own pattern", which is what the mesh-driven 5-axis
-/// kinds exist for. The facet geometry the ball rests ON is NOT read
-/// here: it is `material_of`'s union of the picked entities, whole -
-/// the curve tells the ball where to go, the model says how high it
-/// sits there.
+/// WORLD 3D (M5.1 J): the Multi-Axis Contour's and the Rotary Flow
+/// band's source must be a selection of edge-chain picks - the picks
+/// ARE the path, machined where they stand. Any other source is a
+/// named refusal, never a silent whole-model guess: a Stock or Entity
+/// source spells "cut the model's own pattern", which is what the
+/// mesh-driven 5-axis kinds exist for. The facet geometry the ball
+/// rests ON is NOT read here: it is `material_of`'s union of the
+/// picked entities, whole - the curve tells the ball where to go, the
+/// model says how high it sits there.
 pub(super) fn drive_chains_of(world: &World, op: &Operation) -> Result<Vec<Vec<Point3>>, GenError> {
+    let kind = match &op.params {
+        OpParams::RotaryFlow { .. } => "Rotary Flow",
+        _ => "Multi-Axis Contour",
+    };
     match &op.src {
-        SrcRef::Selection(items) => drive_chains(world, op.setup.as_deref(), items),
-        SrcRef::Stock => Err(GenError::Invalid(
-            "Multi-Axis Contour machines picked edge chains - pick them in the Geometry section, \
+        SrcRef::Selection(items) => drive_chains(world, op.setup.as_deref(), items, kind),
+        SrcRef::Stock => Err(GenError::Invalid(format!(
+            "{kind} machines picked edge chains - pick them in the Geometry section, \
              or use 5-Axis Contour to machine the stock's own pattern"
-                .into(),
-        )),
+        ))),
         SrcRef::Entity(name) => Err(GenError::Invalid(format!(
-            "Multi-Axis Contour machines picked edge chains, not a whole entity ('{name}') - \
+            "{kind} machines picked edge chains, not a whole entity ('{name}') - \
              pick edges in its Geometry section, or use 5-Axis Contour for that model's pattern"
         ))),
     }
@@ -255,7 +260,7 @@ pub(crate) fn selection_drives_region(params: &OpParams) -> bool {
             // The deburr loci are the model's own exposed edges - the
             // weld finds them (E B). Its picks are edges to break, not
             // a region: the drive-curve contour's answer (#1888).
-            | OpParams::Deburr { .. }
+            | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
             // The 5-axis kinds are mesh-driven like the finish: the
             // rings and raster lines chase the model at every plane,
             // so a picked loop could only disagree with the path
@@ -286,8 +291,11 @@ pub(crate) fn selection_drives_region(params: &OpParams) -> bool {
             // The drive-curve contour is the one kind whose picks ARE
             // the path: the region is still the material's shadow - a
             // picked loop could not disagree with the pattern because
-            // the picks ARE it (M5.1 J).
+            // the picks ARE it (M5.1 J). The flow band's guide chains
+            // answer the same way (#2826): the band between them is
+            // the model's own skin, never a pick's bound.
             | OpParams::MultiAxisContour { .. }
+            | OpParams::RotaryFlow { .. }
             // The facing ladder's limit is the turned profile's own
             // silhouette at every station: the meridian projection
             // authors it from the mesh, and a pick could only

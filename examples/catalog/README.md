@@ -9,8 +9,9 @@ Every case folder `<family>/<case>/` contains:
 - `model/` — clean-room geometry generator script and generated mesh (`.obj`, `.stl`, or `.step`).
 - `build.camscript` — headless CamCraft script (`camcraft-cli script build.camscript` from the case directory) that creates the document via undoable commands, generates, verifies, saves `<case>.camproj`, and posts `<case>.nc`.
 - `<case>.camproj` — committed project file.
-- `<case>.nc` — committed NC program.
-- `case.toml` — operation kinds, machine and expected result for the guide's example links.
+- `<case>.nc` — committed NC program (a case with `expect = "post"`).
+- `refusal.txt` — committed refusal lines, in place of `<case>.nc` (a case with `expect = "refusal"`).
+- `case.toml` — operation kinds, machine and expected result; the kinds drive the guide's example links.
 - `README.md` — what the case shows, its operations/tools, and what to inspect.
 
 ## Case metadata
@@ -20,7 +21,7 @@ Keep the case's explanation in its README. Put its machine-readable metadata in 
 ```toml
 kinds = ["Face", "2D Pocket", "Drill"]
 machine = "3-axis mill"
-expect = "Face the plate, pocket the shelf and peck-drill the four through-holes."
+expect = "post"
 ```
 
 `kinds` lists the exact display names from `KindInfo::ALL` in
@@ -29,9 +30,18 @@ heading on the operation guide pages. A case can list several kinds; the seed
 case appears below Face, 2D Pocket and Drill. The case folder's family does not
 choose its kinds: an indexed 2D Pocket is still a 2D Pocket.
 
-`machine` describes the machine used by the case. `expect` describes what the
-case should show. These fields are required, nonempty descriptions; they do
-not configure the machine or replace the script's verification checks.
+`machine` describes the machine used by the case. It is a required, nonempty
+description; it does not configure the machine.
+
+`expect` is `"post"` or `"refusal"` (#2856). A post case posts `<case>.nc`, and
+the tests compare it with the committed file byte for byte. A refusal case
+shows a program that CamCraft refuses to post. It has no `<case>.nc`. Its
+script saves `<case>.camproj` and then runs the refused step without a catch,
+so the script run ends with an error. `refusal.txt` holds the refusal lines
+that the script host records, one line each: the stderr lines of the run that
+start with `camcraft-cli: `, without that prefix. The log lines on stderr are
+not part of it. The tests and `--check` compare
+them with the committed file byte for byte. A refusal case that posts fails.
 
 The supported flat TOML format has quoted strings without escapes and an array
 of quoted strings for `kinds`. Single or double quotes, comments and multiline
@@ -55,8 +65,8 @@ strings are not supported.
 
 ## Catalog commands
 
-- `cargo xtask catalog` — generate the operation pages' Example cases lists and rebuild every case's `<case>.camproj` and `<case>.nc` from its `build.camscript`.
-- `cargo xtask catalog --check` — validate metadata and guide links, then verify all case layouts and check that every `build.camscript` reproduces the committed `<case>.nc` without modifying tracked files.
+- `cargo xtask catalog` — generate the operation pages' Example cases lists and rebuild every case's `<case>.camproj` and `<case>.nc` (or `refusal.txt`) from its `build.camscript`.
+- `cargo xtask catalog --check` — validate metadata and guide links, then verify all case layouts and check that every `build.camscript` reproduces the committed `<case>.nc` (or `refusal.txt`) without modifying tracked files.
 - `cargo xtask catalog --screenshots` — render PNG images via `camcraft-ui` and publish the images-only branch to `origin` (`catalog-screenshots` by default).
 - `cargo xtask catalog --pdf` — build per-case PDFs into `target/catalog-pdf/` using `pandoc` and headless Chrome.
 

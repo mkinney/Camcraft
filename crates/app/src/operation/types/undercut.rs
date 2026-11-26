@@ -2,11 +2,12 @@
 
 use super::height::Height;
 use crate::geo2d::Point2;
+use crate::path_picks::PathPicks;
 
 /// One slot's undercut: the centreline `a` -> `b` (straight, or a
 /// circular arc by `bulge`), cut at one depth by radial passes, entered
 /// and left sideways through the station `run_in` behind `a`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SlotUndercutOp {
     pub a: Point2,
     pub b: Point2,
@@ -36,6 +37,8 @@ pub struct SlotUndercutOp {
     pub feed: f64,
     pub plunge_feed: f64,
     pub climb: bool,
+    /// The operation's start and exit picks (#3339).
+    pub picks: PathPicks,
 }
 
 impl SlotUndercutOp {
@@ -80,5 +83,6 @@ impl SlotUndercutOp {
             && self.top_z.is_sane()
             && self.bottom_z.is_sane()
             && self.refusal().is_none()
+            && self.picks.refusal().is_none()
     }
 }

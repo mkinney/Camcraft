@@ -28,7 +28,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             holes,
             cross,
             break_through,
-            break_through_from,
+            break_through_from, picks: _,
         } => {
             if tab == SEC_GEO {
                 field(ui, "Holes");
@@ -124,6 +124,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             tolerance,
             holes,
             break_through,
+            pass_start, picks: _,
         } => {
             if tab == SEC_LEADS {
                 // Each hole opens with the dive at its centre; the
@@ -160,6 +161,9 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 });
             }
             if tab == SEC_PASSES {
+                // #3360: the shared pass-order row; the rings of a level.
+                super::pass_start_row::pass_start_row(ui, "bore", pass_start);
+                hint(ui, super::pass_start_row::BORE_PASS_START_HINT);
                 prop_row(ui, "Stock to leave", |ui| num(ui, u, stock_to_leave));
                 prop_row(ui, "Tolerance", |ui| num(ui, u, tolerance));
                 hint(ui, "the ring is chords to this tolerance - the same fit law the pocket walls keep");
@@ -190,7 +194,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             hand,
             external,
             passes,
-            break_through,
+            break_through, picks: _,
         } => {
             if tab == SEC_GEO {
                 // #985: holes, or bosses for an external thread.

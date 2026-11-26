@@ -222,7 +222,7 @@ mod tests {
     fn face(clearance_z: Height) -> OpParams {
         OpParams::Face { holes: Default::default(),
             tilt: None,
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             stepover: 8.0,
             clearance_z,
             cut_z: Height::fixed(-0.5),
@@ -231,6 +231,7 @@ mod tests {
             feed: 500.0,
             plunge_feed: 100.0,
             climb: true,
+            picks: Default::default(),
         }
     }
 

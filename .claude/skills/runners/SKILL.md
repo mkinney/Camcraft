@@ -102,6 +102,17 @@ Safety:
 - The next green run closes the issue. The workflow closes only an issue
   with `source:agent`.
 - If the runner is down, use the local batch gate (`gate` skill).
+- Stalls (#3303). The step "Batch gate tier" has `timeout-minutes: 75`; the
+  job cap of 90 stays. The xtask watchdog (`gate` skill, "Stall watchdog")
+  kills a step that is silent for 15 minutes (`CAMCRAFT_GATE_STALL_MIN`).
+- A red run with no `FAIL` row, but with a `STALL` row or the line `gate
+  step TIMEOUT`, is a runner stall. The report opens and comments on no
+  issue. It writes one warning: `runner stall: <step> on <runner>`.
+- A red run with a `FAIL` row, or with a `FAIL in` line of a step that
+  ended before the gate stopped, is a red main. This is true also when it
+  has a `STALL` row or the timeout line. A red run with no summary and no timeout line (xtask did not build)
+  is a red main too.
+- AGENTS.md **Runner stops** says what the coordinator does with a stall.
 
 ## The PR test runner (#1420)
 

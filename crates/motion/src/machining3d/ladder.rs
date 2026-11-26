@@ -8,8 +8,10 @@ use super::descent::{self, Ask, descend};
 use super::hsm;
 use super::level_ctx::{LevelCtx, feed_leg, walk_pass};
 use super::params::{Entry3D, Pocket3DParams};
+use super::reentry;
 use super::rest::level_target;
 use super::shell::Field;
+use super::short_moves;
 use super::troch;
 
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
@@ -18,7 +20,6 @@ use crate::geo2d::{Point2, Region};
 use crate::geometry::{Point3, Triangle};
 use crate::links::{Link, LinkTally, NOT_PROVED, TOO_LONG};
 use crate::machining2d::{chord_clears, AdaptiveMethod, GenError};
-use crate::plunge_law;
 use crate::stock_sim::Columns;
 
 /// Half the width, in lattice cells, of the narrowest standing strip
@@ -96,6 +97,7 @@ pub(super) fn ladder(
     stock: Option<&Region>,
     avoid: Option<&AvoidSpec>,
     method: AdaptiveMethod,
+    axial_leave: f64,
 ) -> Result<Toolpath, GenError> {
     let r = p.tool_diameter * 0.5;
     let hop_z = p.retract_z.unwrap_or(p.clearance_z).min(p.clearance_z);
@@ -137,13 +139,10 @@ pub(super) fn ladder(
             prev_passes.clear();
         }
         // The level law, in two region ops: the footprint minus the part
-        // material standing above the plane - its cross-section and the
-        // shadow of anything hanging over it (a blind floor's underside,
-        // an overhang), so a level under a closed floor has no area
-        // there - then the cutter-center area by one erosion. The shadow
-        // is what keeps the superset law below true: target(z) only
-        // grows as z falls, so a center point at z is open from above.
-        let target = level_target(facets, footprint, z)?;
+        // material standing above `z - axial_leave` - its cross-section and
+        // the shadow of anything hanging over it - so tops, shallow slopes,
+        // and floors keep their axial stock allowance too.
+        let target = level_target(facets, footprint, z - axial_leave)?;
         let target = match rest {
             // The level law on rest terms: only columns the simulated
             // state still has standing above this plane. The islands
@@ -228,9 +227,9 @@ pub(super) fn ladder(
             first_pass,
             prev_z,
             prev_cut: prev_state.as_ref().map(|(q, _)| *q),
-            // #1950: a tool that is not centre-cutting keeps its own
-            // entry law (the plunge law cannot read the air as air).
+            // #1950: non-centre-cutting tool keeps own entry law.
             air: lp.air_entry && p.links.approach.center_cutting,
+            restart: false,
         };
         let mut lvl = LevelCtx {
             cen: &center,
@@ -360,10 +359,8 @@ pub(super) fn ladder(
                 None => feed_leg(&mut b, &lvl, next_entry, 0.0),
                 Some(hz) => {
                     b.push(MoveKind::Rapid, Point3::new(prev.x, prev.y, hz), None);
-                    // M11.3: a tool that is not centre-cutting enters a
-                    // pass start its neighbours have not cleared like a
-                    // level (helix, ramp along the pass) or the op is
-                    // refused by name (`plunge_law`).
+                    // M11.3, #3670: Uncleared pass start entered like a level
+                    // (helix, ramp along the pass, or refused by plunge law).
                     let again = Ask {
                         arm: Entry3D::Plunge,
                         transition: false,
@@ -373,24 +370,20 @@ pub(super) fn ladder(
                         prev_z: prev_state.as_ref().map_or(hz, |(q, _)| *q),
                         prev_cut: prev_state.as_ref().map(|(q, _)| *q),
                         air: false,
+                        restart: true,
                     };
-                    let (tip, top) = (lvl.tip(next_entry, 0.0), descent::mat_top(&lvl, &again));
-                    if !p.links.approach.center_cutting && plunge_law::into_solid(&b, next_entry, tip, top, r) {
-                        lvl.tz = hz;
-                        let why = "a pass start inside the level";
-                        if let Some(d) = descent::fallback(&mut b, &lvl, &again, why, false) {
-                            restarts.push(vec![d, next_entry]);
-                        }
-                        lvl.tz = p.clearance_z;
+                    lvl.tz = hz;
+                    let re = reentry::reenter(&mut b, &lvl, &again, p.entry);
+                    lvl.tz = p.clearance_z;
+                    if let Some(dove) = re {
+                        restarts.extend(dove.map(|d| vec![d, next_entry]));
                         walk_pass(&mut b, pass, &lvl, pi, /*skip_first=*/ true);
                         continue;
                     }
+                    // #3852: rapid to the plunge height over the material
+                    // first, as a level entry does; feed only the rest.
                     b.push(MoveKind::Rapid, Point3::new(next_entry.x, next_entry.y, hz), None);
-                    b.push(
-                        MoveKind::Plunge,
-                        Point3::new(next_entry.x, next_entry.y, lvl.tip(next_entry, 0.0)),
-                        Some(p.plunge_feed),
-                    );
+                    descent::feed_down(&mut b, &lvl, &again, next_entry, lvl.tip(next_entry, 0.0), p.plunge_feed);
                 }
             }
             walk_pass(&mut b, pass, &lvl, pi, /*skip_first=*/ true);
@@ -418,7 +411,10 @@ pub(super) fn ladder(
         ));
     }
     b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
-    let path = b.finish();
+    let mut path = b.finish();
+    if path.comps.is_empty() {
+        short_moves::merge_short_feeds(&mut path.moves); // #3852
+    }
     if let Some(why) = crate::approach::refusal(&path) {
         // #261 part 3: the moves built so far ride the refusal, display-only.
         return Err(GenError::Invalid(why).with_ghost(&path));

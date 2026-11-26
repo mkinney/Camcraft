@@ -30,13 +30,13 @@ fn dir(tag: &str) -> PathBuf {
 #[test]
 fn the_preferences_survive_a_restart() {
     let path = dir("restart").join(FILE_NAME);
-    let chosen = ViewPrefs { theme: ThemeRef::Named("light".into()), color_vision: ColorVision::Tritan, skip_tool_holders: false, ai_offline_only: false, cadmpeg_path: None };
+    let chosen = ViewPrefs { theme: ThemeRef::Named("light".into()), color_vision: ColorVision::Tritan, ..ViewPrefs::default() };
     prefs::save(&path, &chosen).expect("save");
     let (back, note) = prefs::load(&path);
     assert_eq!(back, chosen);
     assert_eq!(note, None);
     // A theme file rides its path; Dark and Off write no key.
-    let file = ViewPrefs { theme: ThemeRef::File("C:/themes/mine.json".into()), color_vision: ColorVision::Off, skip_tool_holders: false, ai_offline_only: false, cadmpeg_path: None };
+    let file = ViewPrefs { theme: ThemeRef::File("C:/themes/mine.json".into()), color_vision: ColorVision::Off, ..ViewPrefs::default() };
     prefs::save(&path, &file).expect("save");
     assert_eq!(prefs::load(&path).0, file);
     prefs::save(&path, &ViewPrefs::default()).expect("save");
@@ -76,7 +76,7 @@ fn an_unknown_value_falls_back_alone_and_is_named() {
     )
     .expect("write fixture");
     let (p, note) = prefs::load(&path);
-    assert_eq!(p, ViewPrefs { theme: ThemeRef::Dark, color_vision: ColorVision::Tritan, skip_tool_holders: false, ai_offline_only: false, cadmpeg_path: None }, "the rest survives");
+    assert_eq!(p, ViewPrefs { theme: ThemeRef::Dark, color_vision: ColorVision::Tritan, ..ViewPrefs::default() }, "the rest survives");
     assert!(note.expect("named").contains("theme 'solarpunk' is not a built-in"));
     std::fs::write(&path, r#"{"format": "camcraft-prefs/1", "colorVision": "sepia"}"#).expect("write fixture");
     let (p, note) = prefs::load(&path);
@@ -148,6 +148,8 @@ fn offline_only_survives_and_the_file_stores_zero_keys() {
         skip_tool_holders: true,
         ai_offline_only: true,
         cadmpeg_path: Some("/opt/CAD tools/cadmpeg".into()),
+        check_for_updates: false,
+        last_update_check_utc: Some(1_795_348_000),
     };
     prefs::save(&path, &all).expect("save");
     let (back, note) = prefs::load(&path);
@@ -157,7 +159,19 @@ fn offline_only_survives_and_the_file_stores_zero_keys() {
     let v: serde_json::Value = serde_json::from_str(&text).expect("json");
     let mut keys: Vec<&str> = v.as_object().expect("object").keys().map(String::as_str).collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["aiOfflineOnly", "cadmpegPath", "colorVision", "format", "importToolHolders", "theme"]);
+    assert_eq!(
+        keys,
+        [
+            "aiOfflineOnly",
+            "cadmpegPath",
+            "checkForUpdates",
+            "colorVision",
+            "format",
+            "importToolHolders",
+            "lastUpdateCheckUtc",
+            "theme",
+        ]
+    );
     let lower = text.to_lowercase();
     for word in ["key", "token", "secret", "password", "bearer"] {
         assert!(!lower.contains(word), "prefs.json names '{word}': {text}");
@@ -183,4 +197,42 @@ fn cadmpeg_path_survives_a_restart_and_old_preferences_still_load() {
     let blank = format!("{{\"format\":\"{FORMAT}\",\"cadmpegPath\":\"  \"}}");
     let (p, _) = ViewPrefs::from_json(&blank).expect("a blank path reads");
     assert_eq!(p.cadmpeg_path, None, "a blank path is not set");
+}
+
+/// #2428: update check preference defaults to enabled (omitted from JSON),
+/// disabled and timestamp values survive a restart, and a malformed timestamp
+/// falls back without dropping theme/other preferences.
+#[test]
+fn update_check_preference_and_timestamp_survive_a_restart() {
+    let def = ViewPrefs::default();
+    assert!(def.check_for_updates);
+    assert_eq!(def.last_update_check_utc, None);
+    assert!(!def.to_json().contains("checkForUpdates"));
+    assert!(!def.to_json().contains("lastUpdateCheckUtc"));
+
+    let older = format!("{{\"format\":\"{FORMAT}\",\"colorVision\":\"tritan\"}}");
+    let (p, notes) = ViewPrefs::from_json(&older).expect("an older file reads");
+    assert!(p.check_for_updates);
+    assert_eq!(p.last_update_check_utc, None);
+    assert!(notes.is_empty());
+
+    let path = dir("updates").join(FILE_NAME);
+    let disabled = ViewPrefs {
+        check_for_updates: false,
+        last_update_check_utc: Some(1_795_348_123),
+        ..ViewPrefs::default()
+    };
+    prefs::save(&path, &disabled).expect("save");
+    let (back, note) = prefs::load(&path);
+    assert_eq!(note, None);
+    assert_eq!(back, disabled);
+
+    let bad_ts = format!(
+        "{{\"format\":\"{FORMAT}\",\"colorVision\":\"deutan\",\"checkForUpdates\":false,\"lastUpdateCheckUtc\":\"not-a-number\"}}"
+    );
+    let (recovered, notes) = ViewPrefs::from_json(&bad_ts).expect("partial recovery");
+    assert_eq!(recovered.color_vision, ColorVision::Deutan);
+    assert!(!recovered.check_for_updates);
+    assert_eq!(recovered.last_update_check_utc, None);
+    assert_eq!(notes.len(), 1);
 }

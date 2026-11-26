@@ -225,9 +225,9 @@ mod tests {
         let text = w.to_string();
         assert_eq!(
             text,
-            "the first rapid (move 0) comes from an unknown position at the clearance height 30.000 mm, under the \
-             fixture top at 31.114 mm (both measured along the tilted tool axis) - raise the clearance height by at \
-             least 1.114 mm"
+            "the first rapid (move 0) comes from an unknown position at the clearance height 30.000 mm, \
+             under the fixture top at 31.114 mm (both measured along the tilted tool axis) - raise the \
+             clearance height by at least 1.114 mm"
         );
         let json = serde_json::to_string(&w).expect("serializes");
         assert_eq!(serde_json::from_str::<Warning>(&json).expect("round trip"), w);

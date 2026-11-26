@@ -196,7 +196,8 @@ Read the plan before asking:
   again without the one to defer, and say so.
 - A stacked child whose base is not `main` is retargeted
   (`gh pr edit B --base main`) before its parent merges with
-  `--delete-branch`; otherwise GitHub closes it.
+  `--delete-branch`; otherwise GitHub closes it. A sub-PR whose base is a
+  side branch (`side/*`) keeps that base (AGENTS.md **Side branch**).
 - Process PRs no longer touch `.claude/PROCESS_VERSION` (#1153), so they do
   not conflict with each other on it. A PR that still edits that file is
   sent back: the merging session is its one writer (see "After all merges").
@@ -230,6 +231,67 @@ approved set before merging: the plan changes.
 
 ## 4. Merge the approved ones, as one batch
 
+### 4a. Optional: one heavy run for wave 1 (#3460)
+
+AGENTS.md "Heavy lanes at review": no merge waits for a heavy lane result
+(#3556). The full heavy lanes run at the cut, in the cut gate on the cut
+runner. This step is an optional tool. Skip it by default. Run it only
+when a session chooses to check a wave before the merges. A missing
+`heavy-wave` record never holds a merge. A PR is never "owed heavy"
+(**Owed heavy result** is retired).
+
+1. Read the current head of each wave-1 PR:
+   `gh pr view N --json headRefOid --jq .headRefOid`.
+2. Make the trial tree in the main checkout's `.claude/worktrees/`:
+   `git fetch origin` and
+   `git worktree add --detach .claude/worktrees/heavy-wave origin/main`.
+3. In that worktree, merge each wave-1 PR in the planner's order:
+   `git fetch origin pull/N/head` and
+   `git merge --no-ff --no-edit FETCH_HEAD`. Make sure that `FETCH_HEAD` is
+   the head of step 1. Never push the trial tree.
+4. Run the gate there one time, in the foreground or in the background
+   with a completion notice:
+   `cargo xtask gate heavy --base origin/main --covers A:<sha> --covers B:<sha> ...`.
+   Name each wave-1 PR. Do not add `--only` or `--failed`: the tool
+   refuses them with `--covers`. The tool refuses a head that is not in
+   the tree.
+5. Record the result on each PR of the wave with this one comment form.
+   Take the values from `covers.txt` in the run's log directory:
+
+   ```
+   <!-- heavy-wave: <tree hash> -->
+   Heavy wave run (#3460) · tree <tree hash> · base origin/main <merge-base sha>
+   covers: #A <head sha> · #B <head sha> · ...
+   lanes: <crate> heavy: <target> ok (<secs>s) · ... (or: the wave reaches no heavy lane)
+   counts: <planned> planned, <ran> ran, <ok> ok, <failed> failed · verdict PASS | FAIL | INCOMPLETE | VOID | NO LANE
+   known-fail: SKIPPED (known fail, #N): <test> · ... (or: none)
+   wall: <minutes> min · gate-logs/heavy-<stamp>/covers.txt
+   ```
+
+   Only `PASS` covers the heads. `NO LANE` means that the wave reaches no
+   heavy lane: write "the wave reaches no heavy lane" in the `lanes:` line.
+   `INCOMPLETE` (a planned step did not run) and `VOID` are no result: run
+   step 4 again.
+6. A red step: attribute it to one PR. Take the PR whose diff the red test
+   reads. If two or more PRs reach the lane and the cause is not clear,
+   take the last of them in the planner's order. Post the record with
+   `FAIL` on that PR, set `needs-rework` and remove `merge-ready` with one
+   comment (AGENTS.md, #3382). Take that PR out of the wave. Make a new
+   trial tree without it and run step 4 again for the other PRs.
+7. Remove the trial tree after the run:
+   `git worktree remove --force .claude/worktrees/heavy-wave`.
+8. A record covers a PR only for the head that it names. A PR that has a
+   new commit after the run is not covered by it. That PR still merges by
+   its review: the record is not a merge condition.
+9. If `origin/main` moved after the run (its sha is not the `base` of the
+   record), the record is stale. Run `cargo xtask merge-plan` again for the
+   merge order, as usual.
+10. A wave-2 PR merges alone. It needs no heavy result.
+11. The one heavy condition (AGENTS.md "Heavy lanes at review"): a `P1` PR
+    under the safety floor needs its one targeted heavy step, green on its
+    final head, named in the PR body or the review. Without it, the PR is
+    not `merge-ready`: report it. No other PR waits for a heavy result.
+
 **Wave 1**, in the planned order. For each PR:
 
 1. Retarget any stacked child of this PR to `main` first.
@@ -240,6 +302,9 @@ approved set before merging: the plan changes.
      `gh pr merge N --merge --delete-branch`;
    - a fork PR: `gh pr merge N --merge` (the fork's branch is not ours to
      delete).
+   - a PR whose head is a side branch (`side/*`, the switch-over PR):
+     only on the maintainer's word, and `gh pr merge N --merge` without
+     `--delete-branch` (AGENTS.md **Side branch**).
 3. Confirm `gh pr view N --json state` is `MERGED`; note the merge commit.
 4. About 5 seconds, then re-read the next PR's `mergeable` (retry while
    `UNKNOWN`). The simulation said it is clean; if GitHub says `CONFLICTING`
@@ -272,7 +337,10 @@ Do not re-review, re-gate or refresh anything between wave-1 merges.
 
 **After all merges:**
 - For each merged PR, read the issues it closed (`closingIssuesReferences`)
-  and remove `in-review` and `claimed` from those issues.
+  and remove `in-review` and `claimed` from those issues. A sub-PR whose
+  base is a side branch closes no issue: its issue keeps `in-review` and
+  gets the comment `merged to side/<name> in PR #M; closes at the
+  switch-over` (AGENTS.md **Side branch**).
 - **Process files:** if a merged PR changed process files (`AGENTS.md`,
   `.claude/agents/`, `.claude/skills/`, `scripts/gate.*`, `xtask/`), once
   for the whole batch: run `cargo xtask process-bump` in a worktree off the

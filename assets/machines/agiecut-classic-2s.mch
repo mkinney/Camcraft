@@ -3,7 +3,7 @@
     "model": "AGIECUT CLASSIC 2S",
     "vendor": "Camcraft",
     "kind": "wire_edm",
-    "description": "Machine setup template from AGIE technical data C2.1, June 2002, sections 1.1 and 5.2. X/Y/Z stroke lengths are 350/250/256 mm. Set the travel endpoints and guide heights for the installed machine. Add the cutting conditions from its control and select a compatible post before use."
+    "description": "Machine setup template from AGIE technical data C2.1, June 2002, sections 1.1 and 5.2. X/Y/Z stroke lengths are 350/250/256 mm. Set the installed guide heights and cutting conditions. Verify the installed X/Y travel endpoints on Agie Control at the work datum. The native wire EDM post refuses profiles with explicit X/Y travel limits. Keep the physical machine limits active."
   },
   "kinematics": { "default": {
     "units": { "length": "mm", "angle": "degrees" },

@@ -13,6 +13,8 @@ pub mod edm_dielectric;
 mod edm_named;
 pub mod edm_taper;
 pub mod envelope;
+mod operator_side;
+pub use operator_side::OperatorSide;
 mod kind;
 pub(crate) mod installation;
 pub use installation::{ControllerIdentity, ToolChangeMode};
@@ -25,6 +27,7 @@ pub use waterjet::waterjet_refusals;
 mod rows;
 mod swing;
 mod tooling;
+pub mod reservations;
 mod tree;
 mod trunnion;
 

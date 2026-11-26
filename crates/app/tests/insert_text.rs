@@ -204,3 +204,79 @@ fn the_mcp_tool_places_text_reports_it_and_takes_an_engrave_operation() {
     let checks = job["operations"][0]["checks_against"].as_str().expect("an operation on a profile states its checks");
     assert!(checks.contains("'Text SN-0471'") && checks.contains("1 closed, 8 open"), "{checks}");
 }
+
+#[test]
+fn script_verb_places_text_and_undoes_and_checks_inputs() {
+    let dir = std::env::temp_dir().join(format!("camcraft-script-text-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    // Start with a project that has a stock.
+    let mut c = Client { server: Server::new(), next: 1 };
+    c.ok("set_stock", json!({ "box": { "dx": 120.0, "dy": 80.0, "dz": 6.0 } }));
+    let file = dir.join("text_script.camproj").display().to_string();
+    c.ok("save_project", json!({ "path": file }));
+
+    let run = |body: &str| camcraft_app::script::run(&format!("cam.load({file:?}); {body}"));
+
+    // 1. Success with options object
+    let out = run("cam.insertText('SN-0471', { height: 6.0, position: [10.0, 15.0], angle: 45.0 })");
+    assert!(out.ok, "{:?}", out.errors);
+    assert_eq!(out.result["profile"], json!("Text SN-0471"));
+    assert_eq!(out.result["text"], json!("SN-0471"));
+    assert_eq!(out.result["height"].as_f64(), Some(6.0));
+    assert_eq!(out.result["layers"], json!(["text"]));
+    assert_eq!(out.result["units"]["used"], json!("mm"));
+    assert_eq!(out.result["chains"], json!({ "closed": 1, "open": 8, "rejected": 0 }));
+    assert_eq!(out.result["placement"]["x"].as_f64(), Some(10.0));
+    assert_eq!(out.result["placement"]["y"].as_f64(), Some(15.0));
+    assert_eq!(out.result["placement"]["angle"].as_f64(), Some(45.0));
+    assert_eq!(out.result["origin"][0].as_f64(), Some(10.0));
+    assert_eq!(out.result["origin"][1].as_f64(), Some(15.0));
+    assert_eq!(out.result["origin"][2].as_f64(), Some(6.0));
+    let summary = out.result["summary"].as_str().expect("summary");
+    assert!(summary.contains("\"SN-0471\" at a cap height of 6 mm") && summary.contains("1 closed and 8 open chains"), "{summary}");
+
+    // 2. Success with height as 2nd argument
+    let out = run("cam.insertText('REV-B', 8.0, { letter_spacing: 1.0, name: 'PartRev' }).profile");
+    assert!(out.ok, "{:?}", out.errors);
+    assert_eq!(out.result, json!("PartRev"));
+
+    // 3. Success with height as 2nd argument without options object
+    let out = run("cam.insertText('A1', 5.0).profile");
+    assert!(out.ok, "{:?}", out.errors);
+    assert_eq!(out.result, json!("Text A1"));
+
+    // 4. Undo and redo work via MCP / history after script verb calls
+    let out = run("cam.insertText('BATCH-1', { height: 5.0 }); cam.call('undo'); cam.call('get_job')");
+    assert!(out.ok, "{:?}", out.errors);
+    let job = out.result;
+    let profiles = job["profiles"].as_array().expect("profiles");
+    assert!(!profiles.iter().any(|p| p["profile"] == "Text BATCH-1"), "undo removes the profile");
+
+    // 5. Refusals: missing height
+    let out = run("cam.insertText('SN-0471', {})");
+    assert!(!out.ok && out.errors.iter().any(|e| e.contains("\"height\" is required")), "{:?}", out.errors);
+
+    // 6. Refusals: no arguments
+    let out = run("cam.insertText()");
+    assert!(!out.ok && out.errors.iter().any(|e| e.contains("requires a text string")), "{:?}", out.errors);
+
+    // 7. Refusals: bad character (lowercase)
+    let out = run("cam.insertText('sn-0471', { height: 6.0 })");
+    assert!(!out.ok && out.errors.iter().any(|e| e.contains("has no glyph") && e.contains("capital letters")), "{:?}", out.errors);
+
+    // 8. Refusals: unknown option
+    let out = run("cam.insertText('SN-0471', { height: 6.0, unknown_opt: true })");
+    assert!(!out.ok && out.errors.iter().any(|e| e.contains("unknown option \"unknown_opt\"")), "{:?}", out.errors);
+
+    // 9. Refusals: invalid placement (non-finite or wrong arity)
+    let out = run("cam.insertText('SN-0471', { height: 6.0, position: [1.0] })");
+    assert!(!out.ok && out.errors.iter().any(|e| e.contains("must be an array of 2 finite numbers")), "{:?}", out.errors);
+
+    // 10. Refusals: no stock in fresh document
+    let out = camcraft_app::script::run("cam.insertText('SN-0471', { height: 6.0 })");
+    assert!(!out.ok && out.errors.iter().any(|e| e.contains("has no stock - make a stock first")), "{:?}", out.errors);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

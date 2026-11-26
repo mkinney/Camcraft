@@ -207,6 +207,7 @@ fn threading_world(inch: bool, hand: ThreadHand, pitch: f64, depth: f64, free_en
         plunge_feed: 40.0,
         infeed_plan: Default::default(),
         hand,
+        picks: Default::default(),
     };
     create(&world, &mut history, "TH1", "TD-1732-60", params);
     (world, history)

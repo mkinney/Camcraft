@@ -99,6 +99,14 @@ does not verify the control settings, cables or fixtures of a real machine.
    lag at zero.
 5. Run both and read the refusals, if any. Post with the Doosan post.
 
+## Rotary Flow availability
+
+Rotary Flow is a four-axis finishing kernel for a ball-nose tool. It
+uses two or more on-model guide chains that wind in the same direction
+around a stated rotary axis. It makes flow-line passes between adjacent
+guides and checks the swept ball against the part. The desktop and MCP
+operation lists do not offer Rotary Flow yet.
+
 ## Not implemented
 
 - Wrapping a 2D drawing (engraving text or a pattern) around a cylinder.

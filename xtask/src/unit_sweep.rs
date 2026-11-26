@@ -237,7 +237,9 @@ pub fn lines(r: &Report) -> Vec<String> {
 }
 
 /// A path in the form that the process check compares: `/` separators, no verbatim prefix (`\\?\`,
-/// `\\?\UNC\`), no trailing `/`, and on Windows lower case.
+/// `\\?\UNC\`), no trailing `/`, and lower case on a case-insensitive volume (Windows, and the
+/// default APFS/HFS+ volume of macOS #3173). There a link target or a canonical path that differs
+/// only by case is the same path: the process check must not miss it.
 pub fn norm(s: &str) -> String {
     let s = s.replace('\\', "/");
     let s = match s.strip_prefix("//?/UNC/") {
@@ -245,7 +247,7 @@ pub fn norm(s: &str) -> String {
         None => s.strip_prefix("//?/").unwrap_or(&s).to_string(),
     };
     let s = s.trim_end_matches('/').to_string();
-    if cfg!(windows) { s.to_lowercase() } else { s }
+    if cfg!(windows) || cfg!(target_os = "macos") { s.to_lowercase() } else { s }
 }
 
 /// `p` with `.` and `..` removed by text, as a command line shows a clean path.

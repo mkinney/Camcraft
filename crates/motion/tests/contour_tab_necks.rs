@@ -12,6 +12,7 @@ use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::links::Links;
 use camcraft_motion::machining2d::{ContourParams, Lead, Side, contour, contour_on_part};
+use camcraft_motion::path_picks::{PathPick, PathPicks};
 use common::tab_neck::{Neck, tab_necks};
 
 const D: f64 = 6.0;
@@ -44,8 +45,9 @@ fn params(count: u32) -> ContourParams {
         tab_height: TAB_H,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: Links::PLANAR,
+        picks: PathPicks::default(),
     }
 }
 
@@ -108,7 +110,7 @@ fn notch_path(g: f64) -> (Region, Toolpath) {
 fn notch_path_to(g: f64, floor: f64) -> (Region, Toolpath) {
     let part = notched_to(g, floor);
     let mut p = params(2);
-    p.links.approach.start_point = Some(Point2::new(30.0 - g * 0.5 - D * 0.5, 30.0));
+    p.picks.start = vec![PathPick::xy(Point2::new(30.0 - g * 0.5 - D * 0.5, 30.0))];
     let t = contour(&part, &p).unwrap();
     (part, t)
 }
@@ -225,7 +227,7 @@ fn notch_from(at: (f64, f64), count: u32, lead: Lead) -> (Region, Toolpath) {
     let part = notched_to(10.0, 15.0);
     let mut p = params(count);
     p.lead = lead;
-    p.links.approach.start_point = Some(Point2::new(at.0, at.1));
+    p.picks.start = vec![PathPick::xy(Point2::new(at.0, at.1))];
     let t = contour(&part, &p).unwrap();
     (part, t)
 }
@@ -274,7 +276,7 @@ fn a_tab_in_a_v_notch_keeps_its_width_or_holds_the_loop() {
     let part = Region::new(vec![lp(&[(0.0, 0.0), (60.0, 0.0), (60.0, 40.0), (35.0, 40.0), (30.0, 15.0), (25.0, 40.0), (0.0, 40.0)])]).unwrap();
     for count in [1, 2] {
         let mut p = params(count);
-        p.links.approach.start_point = Some(Point2::new(30.392, 32.258));
+        p.picks.start = vec![PathPick::xy(Point2::new(30.392, 32.258))];
         let t = contour(&part, &p).unwrap();
         held_or_whole(&part, &t, count as usize, &format!("V-notch, {count} tabs"));
     }
@@ -308,7 +310,7 @@ fn a_tab_near_a_corner_of_a_plain_part_is_not_held() {
     for count in [1, 2] {
         for at in outside {
             let mut p = params(count);
-            p.links.approach.start_point = Some(Point2::new(at.0, at.1));
+            p.picks.start = vec![PathPick::xy(Point2::new(at.0, at.1))];
             let t = contour(&square, &p).unwrap();
             let what = format!("outside {at:?}, {count} tabs");
             assert!(!held_or_whole(&square, &t, count as usize, &what), "{what}: {:?}", t.notes);
@@ -316,7 +318,7 @@ fn a_tab_near_a_corner_of_a_plain_part_is_not_held() {
         for at in inside {
             let mut p = params(count);
             p.side = Side::Inside;
-            p.links.approach.start_point = Some(Point2::new(at.0, at.1));
+            p.picks.start = vec![PathPick::xy(Point2::new(at.0, at.1))];
             let t = contour(&square, &p).unwrap();
             assert_eq!(held(&t), 0, "inside {at:?}, {count} tabs: {:?}", t.notes);
         }

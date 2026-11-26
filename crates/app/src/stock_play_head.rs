@@ -114,6 +114,10 @@ impl FieldPlay {
             return Ok(());
         }
         let at = self.at;
+        // #2629: the layer cuts its own move in flight (`layer_frame`).
+        if self.layer_holds_move(at) {
+            return Ok(());
+        }
         let Some(op) = self.ops.iter().find(|o| at >= o.start && at - o.start < o.moves.len()) else {
             return Ok(());
         };

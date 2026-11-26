@@ -11,9 +11,9 @@
 
 use super::setup_tools::{cmd_err, obj};
 use super::tools::{opt_str, req_str, Tool};
-use crate::commands::{InsertText, MoveSketch, TextOptions};
+use crate::commands::MoveSketch;
 use crate::model;
-use crate::script::{dxf, Env};
+use crate::script::{dxf, text, Env};
 use crate::sketch;
 
 use serde_json::{json, Map, Value};
@@ -40,31 +40,7 @@ pub(super) const TOOLS: &[Tool] = &[
 ];
 
 fn insert_text(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
-    let num = |key: &str| match a.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => v.as_f64().map(Some).ok_or_else(|| format!("\"{key}\" must be a number, got {v}")),
-    };
-    let [x, y] = super::setup_tools::opt_nums::<2>(a, "position")?.unwrap_or_default();
-    let options = TextOptions {
-        text: req_str(a, "text")?.to_owned(),
-        height: num("height")?.ok_or("\"height\" is required")?,
-        letter_spacing: num("letter_spacing")?.unwrap_or(0.0),
-        x,
-        y,
-        angle_deg: num("angle")?.unwrap_or(0.0),
-        name: opt_str(a, "name")?.map(str::to_owned),
-    };
-    let cmd = InsertText::new(&env.world, opt_str(a, "setup")?, &options).map_err(cmd_err)?;
-    let name = cmd.name().to_owned();
-    env.history.execute(&env.world, cmd);
-    let mut out = dxf::profile_view(&env.world, &name).ok_or_else(|| format!("the text profile '{name}' did not land"))?;
-    out["text"] = json!(options.text);
-    out["height"] = json!(options.height);
-    out["summary"] = json!(format!(
-        "'{name}' placed on the stock top: \"{}\" at a cap height of {} mm, {} closed and {} open chains",
-        options.text, options.height, out["chains"]["closed"], out["chains"]["open"],
-    ));
-    Ok(out)
+    text::v_insert_text(env, vec![Value::String(req_str(a, "text")?.to_owned()), Value::Object(a.clone())])
 }
 
 fn s_insert_text() -> Value {

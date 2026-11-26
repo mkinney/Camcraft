@@ -53,7 +53,8 @@ pub fn hints() -> [String; 4] {
 }
 
 const CONTAINMENT_HINT: &str = "Inside: the tool's edge touches the boundary from inside (its centre a tool radius in). On: the tool centre rides the boundary. Outside: the tool's edge touches it from outside (its centre a tool radius out). As the kind cuts: the kind's own law.";
-const OFFSET_HINT: &str = "+ grows the area outward, - shrinks it inward, before the tool containment applies.";
+pub(super) const OFFSET_HINT: &str = "Moves the picked edge or face loop: + grows the area outward, - shrinks it inward, before the tool containment applies.";
+pub(super) const OUTER_OFFSET_HINT: &str = "Moves only the outer side of an open boundary, the stock side the area runs on to: - pulls the air passes in, + reaches further. The picked edge stays. A closed area has no outer side.";
 const CORNER_HINT: &str = "How the offset treats convex corners: Round arcs them, Sharp keeps them square.";
 const EXTEND_HINT: &str = "Carries the area past its exterior edges - edges with no part material beyond them - by this distance. An open boundary is never crossed.";
 
@@ -111,7 +112,8 @@ fn body(ui: &mut Ui, state: &mut State, u: camcraft_app::units::Unit) {
             3 => Some(Containment::Outside),
             _ => None,
         };
-        prop_row_hint(ui, "Boundary offset", OFFSET_HINT, |ui| num(ui, u, &mut a.offset));
+        prop_row_hint(ui, "Inside boundary offset", OFFSET_HINT, |ui| num(ui, u, &mut a.offset));
+        prop_row_hint(ui, "Outside boundary offset", OUTER_OFFSET_HINT, |ui| num(ui, u, &mut a.outer_offset));
         let mut corner = usize::from(a.corner == CornerStyle::Sharp);
         prop_row_hint(ui, "Offset corners", CORNER_HINT, |ui| combo(ui, "area_corner", &mut corner, &["Round", "Sharp"]));
         a.corner = if corner == 1 { CornerStyle::Sharp } else { CornerStyle::Round };
@@ -378,7 +380,7 @@ mod frame {
         let tool = catalog().into_iter().find(|(n, _)| *n == "EM-0400-2FL").map(|(_, t)| t).expect("tool");
         state.pending.push_back(CommandKind::AddTool { name: "EM-0400-2FL".into(), tool });
         let params = OpParams::Face { holes: Default::default(),
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             tilt: None,
             stepover: 3.0,
             clearance_z: Height::fixed(25.0),
@@ -388,6 +390,7 @@ mod frame {
             feed: 1200.0,
             plunge_feed: 300.0,
             climb: true,
+            picks: Default::default(),
         };
         state.pending.push_back(CommandKind::CreateOperation {
             name: "Face1".into(),

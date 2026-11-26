@@ -1,5 +1,5 @@
 {
-  "version": 73,
+  "version": 76,
   "machine": {
     "path": "built-in: Tilt-head 5-axis",
     "machine": {
@@ -6468,9 +6468,10 @@
             {
               "first_traverse_low": {
                 "at": 0,
-                "height_mm": 10.0,
-                "top_mm": 11.113929111364872,
-                "fixture": false
+                "height_mm": 30.0,
+                "top_mm": 31.11392911136487,
+                "fixture": false,
+                "tilted": true
               }
             },
             {

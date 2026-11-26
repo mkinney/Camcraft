@@ -2,7 +2,9 @@
 //! tool as a label-left row of `layout::form`, in four collapsible
 //! groups - Geometry, Holder, Cutting data and Catalog. Draft fields
 //! only: Apply / Add carry them through `ChangeTool` / `AddTool`, as
-//! before.
+//! before. #3930: Properties draws the grid for a new tool only; a saved
+//! tool's groups are drawn by the tool library window (the Tool tab, its
+//! Body section, the Recipes tab and the Details tab).
 //!
 //! Provenance: our own layout over the tool draft, on the form law in
 //! `layout/form.rs` (the generic pattern of desktop property inspectors).
@@ -17,7 +19,7 @@ use super::fields::{check_row, combo, int_range_row, num_feed, num_plain_row, nu
 use super::layout::{CTRL_W, group_open, prop_row, prop_row_hint, text_row};
 
 /// Tool kind labels, same order as `ToolKind` (mirrors `ToolUi::from_tool`).
-const TOOL_KINDS: [(tools::ToolKind, &str); 22] = [
+const TOOL_KINDS: [(tools::ToolKind, &str); 23] = [
     (tools::ToolKind::EndMill, "End mill"),
     (tools::ToolKind::BallNose, "Ball nose"),
     (tools::ToolKind::BullNose, "Bull nose"),
@@ -46,6 +48,8 @@ const TOOL_KINDS: [(tools::ToolKind, &str); 22] = [
     (tools::ToolKind::Keyseat, "Keyseat cutter"),
     (tools::ToolKind::Dovetail, "Dovetail cutter"),
     (tools::ToolKind::Lollipop, "Lollipop cutter"),
+    // #3369: a router-style cutter whose edge is a drawn or preset form.
+    (tools::ToolKind::FormMill, "Form mill"),
 ];
 
 /// The settings grid: the groups, in the order the tool reads.
@@ -60,8 +64,15 @@ pub(super) fn grid(ui: &mut Ui, state: &mut State) {
     group_open(ui, "Catalog", None, true, |ui| catalog(ui, state));
 }
 
-/// Type, the cutting shape and the tool body's lengths.
-fn geometry(ui: &mut Ui, state: &mut State) {
+/// #3930: the name of the tool kind at `index` (the draft's `kind`), for
+/// the Properties summary.
+pub(super) fn kind_name(index: usize) -> &'static str {
+    TOOL_KINDS.get(index).map_or("Tool", |k| k.1)
+}
+
+/// Type, the cutting shape and the tool body's lengths. #3893: the tool
+/// library window's Tool tab draws these same rows.
+pub(super) fn geometry(ui: &mut Ui, state: &mut State) {
     let u = state.units();
     let exists = state.tool_ui.exists;
     let before = state.tool_ui.kind;
@@ -106,6 +117,8 @@ fn geometry(ui: &mut Ui, state: &mut State) {
                 |ui| num_row(ui, u, &mut state.tool_ui.diameter),
             );
         }
+        // #3369: a form mill's diameter is its form's widest cut.
+        tools::ToolKind::FormMill => form_length_row(ui, state, "Diameter", state.tool_ui.diameter),
         _ => {
             prop_row(ui, "Diameter", |ui| num_row(ui, u, &mut state.tool_ui.diameter));
         }
@@ -138,17 +151,22 @@ fn geometry(ui: &mut Ui, state: &mut State) {
             | tools::ToolKind::Keyseat
             | tools::ToolKind::Dovetail
             | tools::ToolKind::Lollipop
+            | tools::ToolKind::FormMill
     ) {
         prop_row(ui, "Corner radius", |ui| num_row(ui, u, &mut state.tool_ui.corner_r));
     }
-    prop_row(ui, "Flute length", |ui| num_row(ui, u, &mut state.tool_ui.flute_len));
+    if state.tool_ui.tool_kind() == tools::ToolKind::FormMill {
+        form_length_row(ui, state, "Flute length", state.tool_ui.flute_len);
+    } else {
+        prop_row(ui, "Flute length", |ui| num_row(ui, u, &mut state.tool_ui.flute_len));
+    }
     prop_row(ui, "Shank diameter", |ui| num_row(ui, u, &mut state.tool_ui.shank_d));
     prop_row(ui, "Shank length", |ui| num_row(ui, u, &mut state.tool_ui.shank_len));
 }
 
 /// The rows each tool kind reads, shown only where they feed a generator
 /// or the collision profile.
-fn kind_rows(ui: &mut Ui, state: &mut State) {
+pub(super) fn kind_rows(ui: &mut Ui, state: &mut State) {
     let u = state.units();
     let kind = state.tool_ui.kind;
     if kind == 3 {
@@ -203,15 +221,28 @@ fn kind_rows(ui: &mut Ui, state: &mut State) {
         prop_row_hint(ui, "Cone angle (deg)", "the included angle of the taper - 90 cuts a 45-degree face", |ui| {
             num_plain_row(ui, &mut state.tool_ui.tip_angle)
         });
+        // #3368: the tip form, and a flat tip's diameter.
+        super::tool_taper_tip_row::tip_rows(ui, state);
     }
+    // #3369: a form mill's preset, its numbers and the pilot.
+    super::tool_form_mill_row::rows(ui, state);
+}
+
+/// A length a form mill's outline sets: shown, never typed (#3369).
+fn form_length_row(ui: &mut Ui, state: &State, label: &str, v: f64) {
+    let u = state.units();
+    prop_row_hint(ui, label, "set by the form outline", |ui| {
+        ui.label(format!("{} {}", camcraft_app::units::len(v, u, 3), u.suffix()));
+    });
 }
 
 /// The holder's two cylinders. #2016: when the editor's holder is a
-/// library entry, the entry sizes itself - shown, never typed.
-fn holder(ui: &mut Ui, state: &mut State) {
+/// library entry, the entry sizes itself - shown, never typed. #3930: the
+/// tool library window's Body section draws these same rows.
+pub(super) fn holder(ui: &mut Ui, state: &mut State) {
     let u = state.units();
     if let Some((entry, d, len)) = state.editor_library_holder() {
-        let from = format!("from the library holder {entry} (tool shape editor)");
+        let from = format!("from the library holder {entry} (Holder and stick-out)");
         prop_row(ui, "Holder diameter", |ui| {
             ui.label(format!("{} {}", camcraft_app::units::len(d, u, 3), u.suffix()));
             ui.label(&from);
@@ -242,13 +273,36 @@ fn cutting(ui: &mut Ui, state: &mut State) {
     let kind = state.tool_ui.tool_kind();
     let torch = matches!(kind, tools::ToolKind::Torch | tools::ToolKind::Waterjet);
     let wire = kind == tools::ToolKind::Wire;
-    if !torch && kind != tools::ToolKind::Electrode && !wire {
-        prop_row(ui, "Spindle rpm", |ui| num_plain_row(ui, &mut state.tool_ui.rpm));
-    }
-    prop_row(ui, &format!("Feed ({})", u.feed_suffix()), |ui| num_feed(ui, u, &mut state.tool_ui.feed));
+    speeds(ui, state);
     if !wire {
         super::tool_cutting_rows::cutting_rows(ui, &mut state.tool_ui, u, torch);
     }
+    lathe_and_entry(ui, state);
+}
+
+/// The tool's own spindle rpm and feed (the rows' fallback).
+fn speeds(ui: &mut Ui, state: &mut State) {
+    let u = state.units();
+    let kind = state.tool_ui.tool_kind();
+    if !matches!(
+        kind,
+        tools::ToolKind::Torch | tools::ToolKind::Waterjet | tools::ToolKind::Electrode | tools::ToolKind::Wire
+    ) {
+        prop_row(ui, "Spindle rpm", |ui| num_plain_row(ui, &mut state.tool_ui.rpm));
+    }
+    prop_row(ui, &format!("Feed ({})", u.feed_suffix()), |ui| num_feed(ui, u, &mut state.tool_ui.feed));
+}
+
+/// #3930: the Cutting data rows that are not the per-material table - the
+/// tool's own rpm and feed, the lathe rows and centre cutting. The tool
+/// library window's Recipes tab draws them under its table.
+pub(super) fn cutting_base(ui: &mut Ui, state: &mut State) {
+    speeds(ui, state);
+    lathe_and_entry(ui, state);
+}
+
+/// The lathe steel's rows and the centre-cutting flag.
+fn lathe_and_entry(ui: &mut Ui, state: &mut State) {
     // #891: a lathe steel's surface speed, feed per rev, clamp.
     super::tool_turning_row::turning_rows(ui, state);
     // M11.3: an entry may plunge into solid only with a centre-cutting
@@ -257,7 +311,8 @@ fn cutting(ui: &mut Ui, state: &mut State) {
 }
 
 /// The catalog facts, the workpiece material and the tool-table number.
-fn catalog(ui: &mut Ui, state: &mut State) {
+/// #3893: the tool library window's Details tab draws these same rows.
+pub(super) fn catalog(ui: &mut Ui, state: &mut State) {
     text_row(ui, "Material group", &mut state.tool_ui.material_group, "tool_material_group", CTRL_W * 1.3);
     super::layout::hint(ui, "workpiece material these base speeds and feeds are set for");
     super::tool_catalog_rows::catalog_rows(ui, &mut state.tool_ui);

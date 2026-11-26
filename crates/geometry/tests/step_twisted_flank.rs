@@ -56,7 +56,8 @@ fn a_twisted_bspline_flank_reads_at_its_volume() {
 #[test]
 fn a_twisted_flank_with_a_vertex_off_its_curves_is_refused_by_name() {
     // The kernel twin pins the same refusal: the flank's pcurve would have to
-    // move the surface by up to 0.89 mm to reach the vertex.
+    // move the surface by up to 0.89 mm to reach the vertex. Since solidcore
+    // fa67b3f5 (#3767) the vertex check refuses it (0.343 mm off its edges).
     match read("twisted_flank_off.step") {
         Ok(m) => panic!(
             "twisted_flank_off.step must be refused, read {} facets",
@@ -64,8 +65,8 @@ fn a_twisted_flank_with_a_vertex_off_its_curves_is_refused_by_name() {
         ),
         Err(e) => {
             let s = e.to_string();
-            assert!(s.contains("#117 at read: pcurves failed on"), "refusal names the entity: {s}");
-            assert!(s.contains("off the surface's range"), "refusal: {s}");
+            assert!(s.contains("#117 at check: a vertex sits"), "refusal names the entity: {s}");
+            assert!(s.contains("mm off its edges"), "refusal: {s}");
         }
     }
 }

@@ -224,3 +224,38 @@ fn non_finite_input_falls_back_to_the_full_scan() {
     }
     assert!(!SupSet::new(Vec::new()).has_grid(), "an empty set has no grid");
 }
+
+/// The recorded grid that camcraft-gpu's parity test reads (#2620), so the
+/// GPU crate checks its binning against this f64 law without a dependency
+/// on this crate. `CAMCRAFT_BLESS=1` writes the file; otherwise the file
+/// must match the grid byte for byte (line ends aside).
+#[test]
+fn gpu_parity_fixture_matches_the_grid() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../gpu/tests/fixtures/facet_grid_2619.grid");
+    // r 0.5 on integer vertices with a unit cell puts box edges on cell borders.
+    let (grid, _) = twins(&mixed(), 0.5, Some(1.0));
+    let Some((x0, y0, s, nx, ny, lists)) = grid.grid_dump() else {
+        panic!("the fixture mesh must have a grid");
+    };
+    let mut out = String::from(
+        "# camcraft facet grid fixture (#2620): written by camcraft-motion's\n\
+         # gpu_parity_fixture_matches_the_grid (CAMCRAFT_BLESS=1); read by\n\
+         # camcraft-gpu's bin_parity. f64 values round-trip ({:?}).\n",
+    );
+    out.push_str(&format!("grid {x0:?} {y0:?} {s:?} {nx} {ny}\n"));
+    for b in grid.iter() {
+        out.push_str(&format!("box {:?} {:?} {:?} {:?}\n", b.xmin, b.ymin, b.xmax, b.ymax));
+    }
+    for (c, l) in lists.iter().enumerate().filter(|(_, l)| !l.is_empty()) {
+        let ix: Vec<String> = l.iter().map(u32::to_string).collect();
+        out.push_str(&format!("cell {c} {}\n", ix.join(" ")));
+    }
+    if std::env::var("CAMCRAFT_BLESS").is_ok_and(|v| v == "1") {
+        std::fs::write(path, &out).unwrap_or_else(|e| panic!("write {path}: {e}"));
+        return;
+    }
+    let got = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("read {path}: {e} (CAMCRAFT_BLESS=1 writes it)"))
+        .replace("\r\n", "\n");
+    assert!(got == out, "{path} is stale: the grid changed; CAMCRAFT_BLESS=1 writes it again");
+}

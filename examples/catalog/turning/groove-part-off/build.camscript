@@ -44,7 +44,8 @@ cam.call("add_operation", {
   }
 });
 
-// Part at Z15: orientation 2 posts the blade's low edge at Z13.5.
+// Part at Z15, the part's end face: the kerf stands below it (Z12..15),
+// and orientation 2 posts the blade's low edge at Z12.
 cam.call("add_operation", {
   kind: "Parting",
   name: "Part off",

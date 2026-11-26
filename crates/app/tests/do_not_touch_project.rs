@@ -4,7 +4,7 @@
 mod common;
 mod do_not_touch_support;
 
-use camcraft_app::project::{self, PROJECT_VERSION, ProjectError};
+use camcraft_app::project::{self, NEWEST_PROJECT_VERSION, PROJECT_VERSION, ProjectError};
 use camcraft_app::world::new_world;
 use do_not_touch_support::{Client, setup_plate_and_tower};
 use serde_json::{Value, json};
@@ -97,7 +97,7 @@ fn protected_project_roundtrips_and_refuses_a_future_version() {
     assert_eq!(got3["picks"].as_array().map(Vec::len), Some(2));
 
     // A future version is refused with UnsupportedVersion instead of ignoring protection.
-    parsed["version"] = json!(PROJECT_VERSION + 1);
+    parsed["version"] = json!(NEWEST_PROJECT_VERSION + 1);
     let future_path = dir.join("future.camproj");
     std::fs::write(&future_path, serde_json::to_string(&parsed).unwrap()).unwrap();
     c.refused(
@@ -108,7 +108,7 @@ fn protected_project_roundtrips_and_refuses_a_future_version() {
     let err =
         project::load(&future_world, &future_path).expect_err("newer version must be refused");
     assert!(
-        matches!(err, ProjectError::UnsupportedVersion(v) if v == PROJECT_VERSION + 1),
+        matches!(err, ProjectError::UnsupportedVersion(v) if v == NEWEST_PROJECT_VERSION + 1),
         "{err:?}"
     );
 

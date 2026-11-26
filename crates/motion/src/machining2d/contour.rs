@@ -13,7 +13,8 @@ use super::arcs::push_segs;
 use super::contour_depth::Ladder;
 use super::contour_entry::{Engage, crosses, flatten, say, seam_leads, wall_arc, wall_arc_top};
 use super::contour_comp::{self, SpanCtx};
-use super::contour_link::{plan_links, push_stay, ring_link};
+use super::contour_link::{plan_links, push_stay, ring_entry, ring_link, tab_window_dive, wall_arc_hop};
+use super::contour_peck::uncut_floor;
 use super::contour_step::{Said, Step, engage_level};
 use super::levels::{Cert, Motion};
 use super::ring::Ring;
@@ -26,7 +27,6 @@ use super::lead_ext::{extend_leads, push_lead_down, retrace};
 
 pub use super::contour_params::{ContourParams, Lead, Side};
 pub use super::contour_region::{contour, contour_on_bodies, contour_on_part, contour_on_picked};
-
 
 /// Offset loops, programmed region and walking polylines prepared for one
 /// contour band; shared with `contour_whole`.
@@ -156,16 +156,17 @@ pub(super) fn emit_band(
         // it reversed; eroded (Inside), it is the bore's air and the
         // material already stands right of the stored walk.
         let pts: Vec<Point2> = super::ring::walked(l.points(), p.climb == inside, inside);
-        // A closed ring whose start leaves the lead no room (a bore
-        // inset's corner) starts mid-run instead; tabbed levels keep the
-        // start their windows are measured from.
-        // M11.3 C: an axis-aligned start first (an arc entry tangent to
-        // it posts as a true G18/G19), then the lead room's own reseat.
-        // A control-compensated ring seams mid-run (contour_comp). #1448:
-        // the user's start point re-sequences its ring instead.
+        // The ring's start (contour_start::seat): the pick, or an axis start,
+        // a comp seam, the lead room's reseat; tabbed levels keep the start
+        // their windows are measured from; #3453 starts the untabbed levels
+        // of a tabbed ring that shares no level (no other ring or band) at
+        // its first window, so a shared level keeps its seam.
         let ap = &p.links.approach;
         let picked = pick.filter(|&(pi, _)| pi == li).map(|(_, q)| q);
-        let ring = Ring::new(contour_start::seat(pts, picked, tabbed, prog.is_some(), p, &legal, lead_notes));
+        let seated = contour_start::seat(pts.clone(), picked, tabbed, prog.is_some(), p, &legal, lead_notes);
+        let alone = !tabbed && picked.is_none() && band.room.is_none() && !(0..band.loops.len()).any(|lj| lj != li && rz.iter().any(|&q| lad.walks(lj, q)));
+        let seated = super::tab_clear::level_start(seated, pts, fits.get(&li).filter(|_| alone && !tab_levels[li].is_empty()));
+        let ring = Ring::new(seated);
         // The overlap past the start on closed rings (M11.3 C): not on
         // tabbed levels (their windows are the tab law's) and not under a
         // keep-down level link (the next level descends from the seam).
@@ -246,14 +247,16 @@ pub(super) fn emit_band(
             // pre-M11.2 shape) - unless the pass link keeps down, which
             // feeds straight over where proved (contour_link::ring_link).
             let ring_to_ring = k == 0 && same_level && !first_entry;
+            // A ring after another one is entered by the user's arm too, never
+            // by the pass link's plunge into material (#3830, #3917 wall side).
+            let ring_in = ring_entry(p, ring_to_ring && !tabbed, inside, rzi == 0, arm, hop_z);
+            let enter_ring = ring_in.is_some();
             let wall_arc_on = !inside
                 && arm == Entry3D::Arc
                 && k == 0
                 && !(ring_to_ring && p.links.pass == Link::KeepDown);
             if wall_arc_on && ring_to_ring && p.links.pass == Link::Clearance {
-                let cur = b.at();
-                b.push(MoveKind::Feed, Point3::new(cur.x, cur.y, hop_z), Some(p.feed));
-                b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
+                wall_arc_hop(b, p, hop_z);
             }
             let mut arced = false;
             // #3132: a None lead-in adds no XY travel at the seam - the
@@ -283,21 +286,23 @@ pub(super) fn emit_band(
                         .into(),
                 );
             }
-            if arced {
-                // Engaged: the arc ends standing at (e2, z).
-            } else if ring_to_ring {
-                // Ring to ring within one level: the pass link, proved
-                // against the rings and this level's dive links.
+            // Ring to ring within one level: the pass link, proved against
+            // the rings and this level's dive links.
+            let linked = !arced && ring_to_ring && {
                 let cut = if dives.0.to_bits() == z.to_bits() { dives.1.as_slice() } else { &[] };
-                ring_link(b, p, &legal, &[&band.plan, cut, &link_leads], e2, z, hop_z, tabbed, &mut lifted);
+                ring_link(b, p, &legal, &[&band.plan, cut, &link_leads], e2, z, hop_z, tabbed, &mut lifted, enter_ring)
+            };
+            if arced || linked {
+                // Engaged: the arc ends standing at (e2, z), or the pass link posted the move.
             } else if k == 0 {
                 // The level's first engagement: a crossing, or the path's
                 // first entry (prev_z falls back to clearance there).
                 let prev_z = if rzi == 0 { p.clearance_z } else { rz[rzi - 1] };
                 // #2004: the column of this descent is open down to prev_z
                 // when the descent one level up was the same arm.
+                let arm = ring_in.as_ref().map_or(arm, |r| r.arm);
                 let opened = rzi >= 2 || (rzi == 1 && arm == p.entry);
-                let step = Step { arm, e2, z, prev_z, first: first_entry, opened, inside, tabbed, lead_top };
+                let step = Step { arm, e2, z, prev_z, first: first_entry, opened, inside, tabbed, lead_top, uncut: uncut_floor(p, rz, rzi), traverse: ring_in.as_ref().map(|r| r.plane) };
                 if let Some(d) = engage_level(b, &eng, &step, &lead, &walk, said) {
                     if dives.0.to_bits() != z.to_bits() {
                         dives = (z, Vec::new());
@@ -305,12 +310,7 @@ pub(super) fn emit_band(
                     dives.1.push(vec![d, e2]);
                 }
             } else {
-                // Tab window to tab window: up over the tab, across, down.
-                let cur = b.at();
-                b.push(MoveKind::Feed, Point3::new(cur.x, cur.y, hop_z), Some(p.feed));
-                b.push(MoveKind::Rapid, Point3::new(e2.x, e2.y, hop_z), None);
-                super::contour_link::guard(b, p, e2, lead_top, p.entry_top(), "the dive past a tab");
-                b.push(MoveKind::Plunge, Point3::new(e2.x, e2.y, lead_top), Some(p.plunge_feed));
+                tab_window_dive(b, p, e2, hop_z, lead_top, uncut_floor(p, rz, rzi));
             }
             first_entry = false;
             let at = b.at();
@@ -344,7 +344,7 @@ pub(super) fn emit_band(
                     .with_ghost_moves(b.moves()));
                 }
                 // #871: a part-way refusal hands back the rings so far.
-                contour_comp::push_span(b, &SpanCtx { prog, p }, walk_at - 1, out_at)
+                contour_comp::push_span(b, &SpanCtx { prog, p, picked }, walk_at - 1, out_at)
                     .map_err(|e| e.with_ghost_moves(b.moves()))?;
             }
         }

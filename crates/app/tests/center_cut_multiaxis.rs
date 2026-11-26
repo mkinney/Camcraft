@@ -136,6 +136,7 @@ fn contour5d_over_a_dome_ramps_or_refuses_a_tool_that_is_not_centre_cutting() {
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
         shank_avoid: false,
+        picks: Default::default(),
     };
     let (cc, nc) = both(&world, params.clone());
     let (again, _) = operation::generate(&world, &op(BALL, params), "").expect("again");
@@ -178,6 +179,7 @@ fn multiaxis_rough_is_judged_on_its_posed_path() {
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
         shank_avoid: false,
+        picks: Default::default(),
     };
     let (cc, nc) = both(&world, params);
     let solid = Solid { top: 0.0, footprint: None };
@@ -244,6 +246,8 @@ fn rotary_offset_on_the_bar() -> (World, OpParams) {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
+        picks: Default::default(),
     };
     (world, params)
 }
@@ -323,6 +327,7 @@ fn the_rotary_twins_under_the_forced_ramp_retry() {
         entry_ramp: false,
         steep_stepover: None,
         pencil_reference: None,
+        waterlines: true,
     };
     let sloped = Finish3DParams { ramp: true, entry_ramp: true, ..base };
     let standing = turned_bar().facets.to_vec();
@@ -382,6 +387,7 @@ fn swarf_first_entry_ramps_under_the_forced_retry() {
         entry_ramp: false,
         steep_stepover: None,
         pencil_reference: None,
+        waterlines: true,
     };
     let sloped = Finish3DParams { ramp: true, entry_ramp: true, ..base };
     let s = |p: Point3| Point3::new(p.z, p.x, p.y);

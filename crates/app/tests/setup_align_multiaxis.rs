@@ -249,6 +249,7 @@ fn turned_contour5d_cuts_and_posts_like_the_baked_part() {
     let params = OpParams::Contour5D {
         tolerance: 0.1, clearance_z: Height::fixed(20.0), retract_z: None, top_z, bottom_z,
         feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 15.0, lag_deg: 0.0, max_tilt_deg: 60.0, shank_avoid: false,
+        picks: Default::default(),
     };
     let stock = box_stock(30.0, 30.0, 10.0, -5.0);
     prove_kind("Contour5D-XZ", unturn_xz(cap_facets(false)), TURN, &stock, BALL, params.clone());
@@ -261,6 +262,7 @@ fn turned_parallel5d_cuts_and_posts_like_the_baked_part() {
     let params = OpParams::Parallel5D {
         tolerance: 0.1, stepover: Some(3.0), clearance_z: Height::fixed(20.0), retract_z: None, top_z, bottom_z,
         feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 15.0, lag_deg: 0.0, max_tilt_deg: 60.0, shank_avoid: false,
+        picks: Default::default(),
     };
     prove_kind("Parallel5D", unturn_xz(cap_facets(true)), TURN, &box_stock(30.0, 30.0, 10.0, -5.0), BALL, params);
 }
@@ -271,6 +273,7 @@ fn turned_flow5d_cuts_and_posts_like_the_baked_part() {
     let params = OpParams::Flow5D {
         tolerance: 0.1, stepover: Some(3.0), clearance_z: Height::fixed(20.0), retract_z: None, top_z, bottom_z,
         feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 15.0, lag_deg: 0.0, max_tilt_deg: 60.0, shank_avoid: false,
+        picks: Default::default(),
     };
     prove_kind("Flow5D", unturn_xz(cap_facets(true)), TURN, &box_stock(30.0, 30.0, 10.0, -5.0), BALL, params);
 }
@@ -282,11 +285,13 @@ fn turned_swarf_and_advanced_swarf_cut_and_post_like_the_baked_part() {
         tolerance: 0.1, stepover: Some(2.0), clearance_z: Height::fixed(25.0), retract_z: None,
         top_z: Height::fixed(11.0), bottom_z: Height::fixed(5.0), feed: 500.0, plunge_feed: 100.0,
         climb: true, lead_deg: 15.0, lag_deg: 0.0, max_tilt_deg: 60.0,
+        picks: Default::default(),
     };
     let adv = OpParams::AdvancedSwarf {
         tolerance: 0.1, stepover: Some(2.0), clearance_z: Height::fixed(25.0), retract_z: None,
         top_z: Height::fixed(11.0), bottom_z: Height::fixed(5.0), feed: 500.0, plunge_feed: 100.0,
         climb: true, lead_deg: 15.0, lag_deg: 0.0, max_tilt_deg: 60.0, passes: 2,
+        picks: Default::default(),
     };
     prove_kind("Swarf", unturn_xz(blade_facets()), TURN, &stock, SWARF_BALL, swarf);
     prove_kind("AdvancedSwarf", unturn_xz(blade_facets()), TURN, &stock, SWARF_BALL, adv);
@@ -302,6 +307,7 @@ fn turned_multiaxis_rough_cuts_and_posts_like_the_baked_part() {
         stepdown: 2.0, feed: 800.0, plunge_feed: 200.0, climb: true,
         strategy: PocketStrategy::Zigzag, entry: Entry3D::Plunge, helix_radius: 1.0,
         optimal_load: DEFAULT_OPTIMAL_LOAD, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 90.0, shank_avoid: false,
+        picks: Default::default(),
     };
     prove_kind("MultiAxisRough", unturn_xz(cap_facets(true)), TURN, &box_stock(30.0, 30.0, 6.0, -3.0), SWARF_BALL, params);
 }
@@ -354,13 +360,13 @@ fn prove_rotary(kind: &str, raw: Vec<Triangle>, stock: &(StockShape, Location), 
 
 #[test]
 fn turned_rotary_contour_cuts_posts_and_fits_axis_like_the_baked_part() {
-    let rc = OpParams::RotaryContour { tolerance: 0.1, clearance_z: Height::fixed(25.0), retract_z: None, top_z: Height::fixed(6.0), bottom_z: Height::fixed(-6.0), feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0 };
+    let rc = OpParams::RotaryContour { tolerance: 0.1, clearance_z: Height::fixed(25.0), retract_z: None, top_z: Height::fixed(6.0), bottom_z: Height::fixed(-6.0), feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0, stated_axis: None, picks: Default::default() };
     prove_rotary("RotaryContour", unturn_xz(bar_facets()), &cyl_stock(12.4, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q), rc, [0.0, 0.0, 1.0], (false, true, OnModelled::CutsAbout([0.0, 1.0, 0.0])));
 }
 
 #[test]
 fn turned_rotary_parallel_cuts_posts_and_fits_axis_like_the_baked_part() {
-    let rp = OpParams::RotaryParallel { tolerance: 0.1, stepover: Some(4.0), clearance_z: Height::fixed(20.0), retract_z: None, top_z: Height::fixed(6.0), bottom_z: Height::fixed(1.0), feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0 };
+    let rp = OpParams::RotaryParallel { tolerance: 0.1, stepover: Some(4.0), clearance_z: Height::fixed(20.0), retract_z: None, top_z: Height::fixed(6.0), bottom_z: Height::fixed(1.0), feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0, stated_axis: None, picks: Default::default() };
     prove_rotary("RotaryParallel", bar_facets(), &cyl_stock(12.4, 32.0, Point3::new(-16.0, 0.0, 0.0), quat_from_axis_angle(1, std::f64::consts::FRAC_PI_2)), rp, [1.0, 0.0, 0.0], (true, false, OnModelled::Refuses));
 }
 
@@ -371,7 +377,8 @@ fn turned_rotary_offset_cuts_posts_and_fits_axis_like_the_baked_part() {
         clearance_z: Height::fixed(20.0), top_z: Height::fixed(14.0), bottom_z: Height::fixed(4.0),
         stepdown: 2.0, feed: 500.0, plunge_feed: 100.0, climb: true,
         strategy: PocketStrategy::Auto, entry: Entry3D::Plunge, helix_radius: 1.0,
-        optimal_load: DEFAULT_OPTIMAL_LOAD, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0,
+        optimal_load: DEFAULT_OPTIMAL_LOAD, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0, stated_axis: None,
+        picks: Default::default(),
     };
     prove_rotary("RotaryOffset", unturn_xz(bar_facets()), &cyl_stock(20.0, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q), ro, [0.0, 0.0, 1.0], (false, false, OnModelled::DiffersOrRefuses));
 }
@@ -409,6 +416,7 @@ fn turned_multiaxis_contour_routes_drive_chains_through_setup_frame() {
             bottom_z: Height::of(HeightReference::TopOfModel, -1.0),
             feed: 500.0, plunge_feed: 120.0, climb: true,
             lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0, shank_avoid: false,
+            picks: Default::default(),
         };
         let (wt, mut ht) = document(raw.clone(), deg, Case::Turned, &stock, true);
         let (p_t, nc_t, _) = generate_and_post(&wt, &mut ht, Case::Turned, BALL, pick_edges(&wt, Case::Turned), params.clone(), false).expect("mac turned");
@@ -421,6 +429,119 @@ fn turned_multiaxis_contour_routes_drive_chains_through_setup_frame() {
     let centered_box = cube(Point3::new(-5.0, -5.0, -2.5), Point3::new(5.0, 5.0, 2.5)).facets.to_vec();
     run(TURN, unturn_xz(centered_box.clone()));
     run(OBLIQUE, tilt_by_inverse(centered_box, OBLIQUE));
+}
+
+#[test]
+fn turned_rotary_flow_routes_its_band_chains_through_setup_frame() {
+    // #2826: the flow band's picked guide chains ride the setup frame
+    // exactly as the drive-curve contour's do - the turned and the
+    // baked part cut identically, and the unaligned as-modelled part
+    // differs or refuses. The posting is held out: the radial field
+    // law's 0.25 mm cell quantization reads the ball resting on the
+    // band's convex crease ring as a gouge past its 0.01 allowance
+    // (the finding is reported on the issue), and that warning blocks
+    // the post of a clean path.
+    let run = |deg: [f64; 3], raw: Vec<Triangle>| {
+        let stock = cyl_stock(12.4, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q);
+        let pick_rings = |w: &World| -> SrcRef {
+            let e = model::find_by_name(w, "part").expect("part");
+            let f = model::features_of(w, &e).expect("features");
+            // The stored entity's features are the same for every
+            // stance, but read in the stance's own frame: the rings are
+            // picked as PLANAR closed 16-point chains (the bar's four
+            // circular rims), and the two farthest apart - the end
+            // rims - are the band. The setup frame resolves the picks.
+            let mut rings: Vec<(f64, [f64; 3], GeoSel)> = feature::chains(&f)
+                .into_iter()
+                .filter_map(|c| {
+                    let pts = feature::chain_points(&f, &c);
+                    if !c.closed || pts.len() != 16 {
+                        return None;
+                    }
+                    // Coplanar: one normal fits every triple.
+                    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+                    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+                    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+                    let n = cross(sub(pts[1], pts[0]), sub(pts[2], pts[0]));
+                    let nn = dot(n, n).sqrt();
+                    let flat = nn > 1e-9 && pts.iter().all(|p| dot(sub(*p, pts[0]), n).abs() / nn < 1e-6);
+                    if !flat {
+                        return None;
+                    }
+                    let len = pts.len() as f64;
+                    let key = pts.iter().fold([0.0f64; 3], |a, p| [a[0] + p[0] / len, a[1] + p[1] / len, a[2] + p[2] / len]);
+                    Some((key[0] * len, key, GeoSel { entity: "part".into(), feature: FeatureSel::Chain(c.id) }))
+                })
+                .collect();
+            rings.sort_by(|a, b| a.0.total_cmp(&b.0));
+            assert!(rings.len() >= 2, "expected the bar's planar rims, got {}", rings.len());
+            // The band's two INTERIOR rings (the step wall's rims): the
+            // cap rims wind opposite the body's crease rings, and the
+            // kernel needs both picks running the same way along the
+            // band. The interior rings sit nearest the part's centre.
+            let mut by_center: Vec<(f64, GeoSel)> = rings
+                .iter()
+                .map(|(_, key, g)| (key[0] * key[0] + key[1] * key[1] + key[2] * key[2], g.clone()))
+                .collect();
+            by_center.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let a = by_center[0].1.clone();
+            let b = by_center[1].1.clone();
+            SrcRef::Selection(vec![a, b])
+        };        let params = OpParams::RotaryFlow {
+            tolerance: 0.05,
+            stepover: Some(2.0),
+            clearance_z: Height::fixed(25.0),
+            retract_z: None,
+            feed: 500.0,
+            plunge_feed: 120.0,
+            climb: true,
+            lead_deg: 0.0,
+            lag_deg: 0.0,
+            max_tilt_deg: 60.0,
+            stated_axis: None,
+        };
+        let generate = |w: &World, h: &mut History, src: SrcRef| -> Toolpath {
+            h.execute(w, ok(CreateOperation::new(w, "OP", BALL, src, params.clone()), "create"));
+            h.execute(w, GenerateOperation::new(w, "OP").expect("generate"));
+            let e = model::find_by_name(w, "OP").expect("op");
+            model::toolpath_of(w, &e).expect("a cached path").path
+        };
+        let (wt, mut ht) = document(raw.clone(), deg, Case::Turned, &stock, false);
+        let p_t = generate(&wt, &mut ht, pick_rings(&wt));
+        let (wb, mut hb) = document(raw.clone(), deg, Case::Baked, &stock, false);
+        let p_b = generate(&wb, &mut hb, pick_rings(&wb));
+        // Same band, same moves, in the two stances.
+        assert_eq!(p_t.moves.len(), p_b.moves.len(), "the turned and baked bands cut the same length");
+        for (i, (a, b)) in p_t.moves.iter().zip(&p_b.moves).enumerate() {
+            let d = (a.to.x - b.to.x).abs().max((a.to.y - b.to.y).abs()).max((a.to.z - b.to.z).abs());
+            assert!(d < 1e-5, "move {i} differs: {:?} vs {:?}", a.to, b.to);
+            assert!((a.axis.unwrap()[0] - b.axis.unwrap()[0]).abs() + (a.axis.unwrap()[1] - b.axis.unwrap()[1]).abs() + (a.axis.unwrap()[2] - b.axis.unwrap()[2]).abs() < 1e-5, "move {i} pose differs: {:?} vs {:?} at {:?} vs {:?}", a.axis, b.axis, a.to, b.to);
+        }
+        // The as-modelled stance cuts the same band: the picks are the
+        // part's own rings, and the kind rides the part's axis - the
+        // invariance under the setup's alignment is the law here.
+    };
+    // The step bar: wall r6, interior step wall r5 - its four planar
+    // rims give two interior crease rings for the band (the caps wind
+    // opposite the body's rings).
+    fn flow_bar_facets() -> Vec<Triangle> {
+        const MERIDIAN: [(f64, f64); 8] = [(0.0, -16.0), (6.0, -16.0), (6.0, -8.0), (5.0, -8.0), (5.0, 8.0), (6.0, 8.0), (6.0, 16.0), (0.0, 16.0)];
+        let pt = |rho: f64, s: f64, j: usize| {
+            let th = std::f64::consts::TAU * j as f64 / 16.0;
+            Point3::new(rho * th.cos(), rho * th.sin(), s)
+        };
+        let mut f = Vec::new();
+        for w in MERIDIAN.windows(2) {
+            for j in 0..16 {
+                let (a1, a2, b1, b2) = (pt(w[0].0, w[0].1, j), pt(w[0].0, w[0].1, (j + 1) % 16), pt(w[1].0, w[1].1, j), pt(w[1].0, w[1].1, (j + 1) % 16));
+                if w[0].0 <= 1e-12 { f.push(Triangle::new(a1, b2, b1)); }
+                else if w[1].0 <= 1e-12 { f.push(Triangle::new(a1, a2, b2)); }
+                else { f.push(Triangle::new(a1, a2, b2)); f.push(Triangle::new(a1, b2, b1)); }
+            }
+        }
+        unturn_xz(f)
+    }
+    run(TURN, flow_bar_facets());
 }
 
 #[test]

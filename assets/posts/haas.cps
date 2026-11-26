@@ -104,7 +104,7 @@ function has(v) { return v !== null && v !== undefined && isFinite(v); }
 // #902: the program's unit is the document's (postOptions.Units, "mm"
 // or "inch"; absent = mm), never the machine file's. The stream speaks
 // mm and mm/min: an inch program writes every length / 25.4 at four
-// decimals and every feed in in/min at two; angles, seconds and rpm
+// decimals and every feed in in/min at four (#3694); angles, seconds and rpm
 // carry no length and are written as they come.
 var inch = false;
 function trimNum(s) {
@@ -122,9 +122,40 @@ function fn(v) {  // a length as text (comments): mm at three decimals, or inch 
 }
 function fu(v) { return pt(fn(v)); }  // a length word, with its point
 function fa(v) { return pt(has(v) ? trimNum(Number(v).toFixed(3)) : "0"); }  // angle (deg) at 3 decimals with point
-function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
-  if (!(has(v) && v > 0)) return "0";
-  return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
+// #3681: a feed word always carries its decimal point too (`F600.`, never
+// `F600`). Haas Setting 77 (Scale Integer F; Haas Mill Operator's Manual
+// 96-8000, Settings, "77 - Scale Integer F") scales an F word with no
+// point: at its default an mm control reads F600 as 0.6 mm/min. With the
+// point, every value of Setting 77 reads the same feed.
+// #3694: a feed keeps its fraction - mm/min at three decimals, in/min at
+// four, trailing zeros trimmed (`F600.`, `F34.5`, `F1.3583`). A G84 tap
+// feeds at pitch x rpm, and the control cuts the pitch F / S: a feed
+// rounded to a whole mm/min (34.5 to F35.) cuts a wrong pitch. The stream
+// carries 0.001 mm/min, so an mm feed posts as the stream states it.
+function ff(v) {
+  if (!(has(v) && v > 0)) return "0.";
+  var s = trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
+  // A feed below one output step is refused, never written as F0.
+  if (Number(s) === 0) msg("feed rate " + v + " mm/min is below the smallest feed this post writes");
+  return pt(s);
+}
+// #3694: the pitch a G84 block cuts is F / S as written. A feed or a speed
+// that the words cannot hold exactly moves that pitch; more than 0.01
+// percent off the stream's pitch (feed / rpm) is refused by name. Returns
+// false when refused.
+function tapPitchHolds(v) {
+  if (!(sRpm > 0)) return true;   // spindleStopped() refuses this case
+  var sOut = Math.round(sRpm);
+  var fOut = Number(ff(v)) * (inch ? 25.4 : 1);
+  var want = v / sRpm;
+  var got = sOut > 0 ? fOut / sOut : 0;
+  var err = Math.abs(got - want) / want;
+  if (err > 1e-4) {
+    msg("canned cycle G84 (tap) feed " + v + " mm/min at " + sRpm + " rpm posts as F" + ff(v) + " S" + sOut +
+      " - refused: the written pitch is " + (err * 100).toFixed(3) + " percent off the tap pitch (limit 0.01 percent)");
+    return false;
+  }
+  return true;
 }
 function eps() { return inch ? "0.0001" : "0.001"; } // one output step, the probe checks' band
 function ni(v) { return has(v) ? String(Math.round(v)) : "0"; } // integer word
@@ -218,6 +249,7 @@ function retractHome(xyToo) {
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative
+function arcWord(k, v) { return wo(k, v, k === "X" ? orgX : (k === "Y" ? orgY : orgZ)); }  // #3442: a position word as written, for arcFate
 function msg(s) {  // counted warning where the host offers message()
   if (typeof message === "function") message(s); else writeln("; " + s);
 }
@@ -833,6 +865,9 @@ function emitArcWithRadius(p, g, fwd) {
 function onCircular() {
   startPreamble();
   compRefuse("an arc");
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (!tiltOk(properties) || chainCut()) return;
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G2" : "G3"))) return;
   var p = properties;
@@ -954,6 +989,7 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
+  if (g === "G84" && !tapPitchHolds(p.FeedRate)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;

@@ -66,7 +66,7 @@ fn setup_world(mesh: Mesh) -> (World, History) {
 fn run_face(world: &World, h: &mut History, cut_z: f64) -> camcraft_app::schema::Toolpath {
     let params = OpParams::Face {
         holes: FaceHoles::Lift,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 4.0,
         clearance_z: Height::fixed(30.0),
@@ -76,6 +76,7 @@ fn run_face(world: &World, h: &mut History, cut_z: f64) -> camcraft_app::schema:
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     };
     h.execute(
         world,

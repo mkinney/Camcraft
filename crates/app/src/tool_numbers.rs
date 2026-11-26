@@ -133,6 +133,9 @@ pub fn clash(world: &World, used: &[String]) -> Option<String> {
 /// prefixes the mount it found the clash on.
 #[must_use]
 pub fn clash_per_machine(world: &World, ops: &[(String, flecs_ecs::prelude::Entity)]) -> Option<String> {
+    if let Some(why) = crate::tool_reservations::program_refusal(world, ops) {
+        return Some(why);
+    }
     let mounts = crate::setup_mount::program_mounts(world, false);
     let setup_of = |e: &flecs_ecs::prelude::Entity| {
         model::operation_of(world, e).map(|op| {

@@ -123,7 +123,7 @@ mod tests {
         };
         let d = Direct { exes: vec![TestExe { exe: exe.into(), label: "crash".into() }], cwd: dir.clone(), args, env: Vec::new() };
         let log_path = dir.join("step.log");
-        let code = run(&d, &dir, std::fs::File::create(&log_path).expect("log")).expect("run");
+        let code = run(&d, &dir, std::fs::File::create(&log_path).expect("log"), std::time::Duration::from_secs(600)).expect("run").0;
         let text = std::fs::read_to_string(&log_path).expect("read log");
         let _ = std::fs::remove_dir_all(&dir);
         assert_ne!(code, 0, "{text}");

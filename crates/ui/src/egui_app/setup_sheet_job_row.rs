@@ -4,14 +4,16 @@
 //! spoilboard (always shown), XY zero (front left by default) and the clamp
 //! clearance. Apply queues `CommandKind::SetSheetJob`, which lands ONE
 //! undoable `SetSheetJob` (stock, WCS and the record); Clear drops the
-//! record. Nothing here writes the world. Shown on a milling setup, and on
-//! any setup that already states a job.
+//! record. Nothing here writes the world. Shown on a milling setup whose
+//! machine offers it (#2410: a router, or no machine), and on any setup
+//! that already states a job.
 //! Provenance: our own page law (issue #3070); no vendor material consulted.
 
 use egui::{ComboBox, DragValue, RichText, Ui};
 
 use camcraft_app::machine::Kind;
 use camcraft_app::sheet_job::{self, SheetCorner, SheetJob, SheetZero, MAX_ALLOWANCE, MAX_CLAMP_CLEARANCE};
+use camcraft_app::router_offer::{self, RouterOption};
 use camcraft_app::{model, setup_mount};
 
 use crate::state::{CommandKind, State};
@@ -26,11 +28,13 @@ pub(crate) const ALLOWANCE_LABEL: &str = "    Through-cut allowance into spoilbo
 /// The allowance a fresh checklist offers, mm (shown, never hidden).
 const DEFAULT_ALLOWANCE: f64 = 0.3;
 
-/// Whether the group is drawn for `name`: a milling setup, or one that
-/// already states a job.
+/// Whether the group is drawn for `name`: a milling setup whose machine
+/// offers the sheet job (a router, or no machine - #2410), or one that
+/// already states a job (a stated job is never hidden).
 pub(super) fn shown(state: &State, name: &str) -> bool {
-    matches!(setup_mount::kind_of_setup(&state.world, Some(name)), Kind::Mill)
-        || sheet_job::of(&state.world, name).is_some()
+    let offered = matches!(setup_mount::kind_of_setup(&state.world, Some(name)), Kind::Mill)
+        && router_offer::offers(&state.world, Some(name), RouterOption::SheetJob);
+    offered || sheet_job::of(&state.world, name).is_some()
 }
 
 /// The checklist a fresh group offers: the stated job, else the setup's

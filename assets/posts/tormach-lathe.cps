@@ -641,6 +641,24 @@ function meridianArc(p) {
   if (r0 === null || r1 === null || rc === null) return;
   if (!has(c.K)) { refuse("arc without a K centre word"); return; }
   if (fedFromG30("an arc")) return;  // #1604
+  // #3442: an arc whose written ends coincide is no arc block (arcFate,
+  // PRELUDE), on this post's own X (radius) and Z words; the stream's
+  // direction seen in the (Z, radius) frame is the block's own.
+  var cwB = p.CircularDirection === "CW";
+  if (yz) cwB = !cwB;
+  var fate = arcFateOf({
+    plane: "XZ", ccw: !cwB, rotary: false,
+    start: { X: r0, Y: 0, Z: p.StartZ }, end: { X: r1, Y: 0, Z: p.Z }, center: { X: rc, Y: 0, Z: c.K }
+  }, function (k, v) { return k === "X" ? xWord(v) : (k === "Z" ? zWord(v) : ""); },
+  // #3474: the centre the control reads: the written start plus the
+  // written I (a radius, doubled to the diameter X scale) and K.
+  function (k, d) { return (k === "X" ? 2 : 1) * _arcWordNum(fu(d)); });
+  if (fate !== "arc") {
+    // #3474: a short arc whose written ends differ on one ray: the feed move.
+    if (fate === "linear") block(["G1", xWord(r1), zWord(p.Z), feedWord(p.FeedRate)]);
+    at(r1, p.Z);
+    return;
+  }
   var cw = p.CircularDirection === "CW";
   if (yz) cw = !cw;                       // the +Y meridian seen from +Y is mirrored
   block([

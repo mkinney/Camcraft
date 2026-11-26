@@ -11,7 +11,9 @@
 //! so a `SketchData` cannot carry chains that its primitives do not give. This module has no
 //! file I/O and no application state.
 
-use crate::dxf::{Document, ImportSummary, LayeredPrimitive, Limits, Primitive, Unit, Units};
+use crate::dxf::{
+    CURVE_TOLERANCE_MM, Document, ImportSummary, LayeredPrimitive, Limits, Primitive, Unit, Units,
+};
 use crate::geo2d::Point2;
 use crate::sketch_chains::{ChainError, ChainOptions, DEFAULT_JOIN_TOLERANCE, SketchChains, chain};
 use std::collections::BTreeSet;
@@ -36,6 +38,13 @@ pub enum SketchError {
     Empty { skipped: usize },
     #[error("invalid DXF import summary: counts or skipped total exceed the import limits")]
     InvalidSummary,
+    /// The drawing's SPLINE or ELLIPSE curves were laid as arcs for a smaller unit than the
+    /// one applied, so their bound in millimetres would pass the stated one (#1865).
+    #[error(
+        "the DXF file's SPLINE and ELLIPSE curves were read within {used_mm} mm in this unit, more \
+         than the {CURVE_TOLERANCE_MM} mm bound: state the unit in the file ($INSUNITS) before its curves"
+    )]
+    CurveTolerance { used_mm: f64 },
     #[error(transparent)]
     Chain(#[from] ChainError),
 }
@@ -103,6 +112,12 @@ impl SketchData {
             (None, Units::Unsupported(code)) => return Err(SketchError::UnsupportedUnits { code }),
         };
         let k = applied.millimeters_per_unit();
+        if let Some(used) = doc.curve_tolerance {
+            let used_mm = used * k;
+            if used_mm.is_nan() || used_mm > CURVE_TOLERANCE_MM * (1.0 + 1e-9) {
+                return Err(SketchError::CurveTolerance { used_mm });
+            }
+        }
         let primitives = doc.primitives.iter().map(|p| scaled(p, k)).collect();
         let layers = doc.layers.into_iter().map(|layer| layer.name).collect();
         let units = SourceUnits {

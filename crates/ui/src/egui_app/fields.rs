@@ -22,7 +22,7 @@ pub(super) use crate::operations::{
 };
 pub(super) use crate::state::State;
 
-pub(super) use super::heights_page::{HEIGHT_SRC_ID, LEVELS, corner_note, height_editor, retract_hop, retract_note};
+pub(super) use super::heights_page::{HEIGHT_SRC_ID, LEVELS, corner_note, height_editor, retract_hop, retract_radius_hop, retract_note};
 pub(super) use super::kind_editors::*;
 pub(super) use super::layout::{
     CTRL_W, auto_opt, auto_value, button, check_row, consequence, group, hint, list_row, prop_row,
@@ -222,8 +222,20 @@ pub(crate) fn int_range_row<N: egui::emath::Numeric>(
 
 /// A lens-free number with its unit as the suffix ("°", "s", "%").
 pub(crate) fn num_unit(ui: &mut Ui, v: &mut f64, unit: &str) {
+    unit_drag(ui, v, unit);
+}
+
+/// [`num_unit`] inside a `prop_row`, named by that row's label.
+pub(crate) fn num_unit_row(ui: &mut Ui, v: &mut f64, unit: &str) {
+    let r = unit_drag(ui, v, unit);
+    if let Some(l) = super::layout::row_label_id(ui) {
+        r.labelled_by(l);
+    }
+}
+
+fn unit_drag(ui: &mut Ui, v: &mut f64, unit: &str) -> egui::Response {
     let r = super::layout::value_with_unit(ui, v, unit, 0.1);
-    ring(ui, r);
+    ring(ui, r)
 }
 
 /// The 3+2 index editor (M5.1 stage B): the group's header checkbox arms

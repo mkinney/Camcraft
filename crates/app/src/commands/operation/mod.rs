@@ -18,6 +18,7 @@ mod gates;
 mod generate;
 mod geometry;
 mod meta;
+mod recipe;
 
 pub(in crate::commands) use create::append_position;
 pub(in crate::commands) use gates::sketch_gate;
@@ -28,3 +29,4 @@ pub use edit::{ChangeOperationKind, EditOperationLinks, EditOperationParams};
 pub use generate::{GenerateOperation, RegenerateAll, StagedGeneration};
 pub use geometry::SetOperationGeometry;
 pub use meta::{MarkOperationReviewed, RenameOperation, ReorderOperation};
+pub use recipe::ApplyCutRecipe;

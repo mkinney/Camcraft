@@ -18,8 +18,13 @@ use std::fs;
 mod support;
 use support::*;
 
+include!("example_catalog/case_probe_face.rs");
+
 #[path = "example_catalog/contract.rs"]
 mod contract;
+
+#[path = "example_catalog/refusal.rs"]
+mod refusal;
 
 /// #2865: three original parts demonstrate the five additional turning kinds.
 #[test]
@@ -97,13 +102,17 @@ mod catalog_multiaxis_indexed {
     }
 }
 
+// These full-case checks exceed the 60 s debug budget. The heavy lane keeps
+// both checks; example_catalog_adaptive pins the committed program in quick.
 mod catalog_2d_adaptive_pocket {
     use super::*;
     #[test]
+    #[ignore = "heavy lane (#3163 2d/adaptive-pocket): exceeds its 60 s debug budget - run with --release -- --ignored"]
     fn regenerates() {
         run_case("2d", "adaptive-pocket", "regenerates", regenerate);
     }
     #[test]
+    #[ignore = "heavy lane (#3163 2d/adaptive-pocket): exceeds its 60 s debug budget - run with --release -- --ignored"]
     fn rebuilds() {
         run_case("2d", "adaptive-pocket", "rebuilds", rebuild);
     }
@@ -159,6 +168,10 @@ mod catalog_2d_hole_work {
 
 // #2861: the case 2d/slots, its two case tests and its program pin.
 include!("example_catalog/case_2d_slots.rs");
+
+// #2856: the refusal case 2d/drill-overfeed and its two case tests.
+include!("example_catalog/case_2d_drill_overfeed.rs");
+include!("example_catalog/case_3d_rough_finish.rs"); // #2866: 3d/rough-finish
 
 mod catalog_turning_bushing {
     use super::*;
@@ -295,8 +308,12 @@ fn turning_cone_thread_case_posts_the_taper_and_the_thread() {
     assert!(!program.contains("G76"), "this case posts G32 passes, not the G76 cycle");
 
     // The neck and the part-off: the 3 mm blade, to X8 and to the axis.
+    // The part-off plane is Z15, the end face of the part. The whole 3 mm
+    // kerf is on the bar side (Z12 to Z15), so the orientation 2 blade
+    // posts its low edge at Z12 (#3452).
     assert!(section(&program, "Neck").contains(&"G01 X8. Z60. F0.02"), "the neck is 8 mm at Z60");
-    assert!(section(&program, "Part off").iter().any(|l| l.starts_with("G01 X0. Z13.5")), "the part-off reaches the axis");
+    assert!(section(&program, "Part off").contains(&"G01 X0. Z12. F0.02"),
+        "the part-off reaches the axis at the low edge Z12, its kerf Z12..15 below the part (#3452)");
 }
 
 /// The G word and the Z word of each motion block of a posted program.
@@ -329,9 +346,15 @@ fn contour_tabs_case_posts_the_lead_moves_and_the_tab_lifts() {
     assert_eq!(lead_ins(0.0), 4, "one lead-in arc for each run between two tabs at Z0");
 
     // A lift goes from a cut level to a height above the stock top (Z6).
-    // The block before it is the end of the linear lead-out.
-    let lifts: Vec<usize> =
-        (1..blocks.len()).filter(|&i| blocks[i - 1].1 <= 4.0 && blocks[i].1 > 6.0).collect();
+    // The block before it is the end of the linear lead-out. #3678: a rise
+    // after a G01 that went down is a peck retract, not a lift. Tab windows
+    // 1 to 3 start where the levels above left stock under the disc, so
+    // each dive pecks Z4, Z2, Z0: two retracts each.
+    let rises: Vec<usize> =
+        (2..blocks.len()).filter(|&i| blocks[i - 1].1 <= 4.0 && blocks[i].1 > 6.0).collect();
+    let peck = |i: usize| blocks[i - 1].0 == "G01" && blocks[i - 2].1 > blocks[i - 1].1;
+    let (pecks, lifts): (Vec<usize>, Vec<usize>) = rises.into_iter().partition(|&i| peck(i));
+    assert_eq!(pecks.len(), 6, "tab windows 1 to 3 each peck to Z0 with two retracts");
     assert_eq!(lifts.len(), 6, "two whole rings and four tab runs each end with a lift");
     for &i in &lifts {
         assert_eq!(blocks[i - 1].0, "G01", "the block before lift {i} is the linear lead-out");
@@ -366,7 +389,7 @@ fn hole_work_case_posts_drilling_cycles_and_thread_helix() {
         assert!(section(name).iter().any(|line| line.starts_with("G03 ")),
             "{name} must retain circular interpolation");
     }
-    assert!(section("Tap drill").contains(&"G81 X0. Y0. Z4. R20. F80"));
+    assert!(section("Tap drill").contains(&"G81 X0. Y0. Z4. R20. F80."));
     let thread = section("Thread");
     let helix: Vec<_> = thread.iter().filter(|line| {
         let words: Vec<_> = line.split_whitespace().collect();

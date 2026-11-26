@@ -34,6 +34,17 @@ class AiGuide(unittest.TestCase):
             with self.subTest(word=word):
                 self.assertIn(word, text)
 
+    def test_provider_setup_explains_ollama_options_and_gemini_subscription(self):
+        text = self.guide()
+        for instruction in [
+                "A Gemini app subscription does not include an API key",
+                "ollama serve", "curl http://localhost:11434/api/version",
+                "ollama list", "OLLAMA_HOST=127.0.0.1:11500",
+                "OLLAMA_HOST=0.0.0.0:11434", "Anyone on that network can use it",
+                "OLLAMA_CONTEXT_LENGTH=32768", "OLLAMA_KEEP_ALIVE=30m"]:
+            with self.subTest(instruction=instruction):
+                self.assertIn(instruction, text)
+
     def test_indexes_and_mcp_page_link_the_guide(self):
         self.guide()
         for path in ["guide/_index.md", "guide/automate/_index.md",

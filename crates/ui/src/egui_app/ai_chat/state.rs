@@ -21,6 +21,7 @@ use super::worker::{
 
 /// UI-side state for the AI Chat dock tab, isolated from the CAM document.
 pub struct AiChatState {
+    pub(crate) settings: super::settings::Settings,
     presets: Vec<ProviderPreset>,
     selected_preset: usize,
     pub(crate) model_input: String,
@@ -66,6 +67,7 @@ impl AiChatState {
             .first()
             .map_or_else(String::new, |p| p.default_model.clone());
         Self {
+            settings: super::settings::Settings::default(),
             presets,
             selected_preset: 0,
             model_input,

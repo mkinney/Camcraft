@@ -78,11 +78,13 @@ fn drill(x: f64, radius: f64, bottom: f64) -> OpParams {
         plunge_feed: 100.0,
         holes: vec![hole(x, radius)],
         cross: Vec::new(),
+        picks: Default::default(),
     }
 }
 
 fn bore(x: f64, radius: f64) -> OpParams {
     OpParams::Bore {
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
         break_through: None,
         links: camcraft_app::links::Links::PLANAR,
         clearance_z: Height::fixed(30.0),
@@ -96,6 +98,7 @@ fn bore(x: f64, radius: f64) -> OpParams {
         climb: true,
         tolerance: 0.01,
         holes: vec![hole(x, radius)],
+        picks: Default::default(),
     }
 }
 
@@ -115,6 +118,7 @@ fn thread(radius: f64) -> OpParams {
         hand: camcraft_app::cl::ThreadHand::Right,
         external: false,
         passes: camcraft_app::machining2d::ThreadPasses::default(),
+        picks: Default::default(),
     }
 }
 

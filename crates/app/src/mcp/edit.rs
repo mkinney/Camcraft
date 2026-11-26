@@ -7,9 +7,7 @@
 //! Provenance: our own tool surface over this repo's command layer.
 
 use super::tools::{opt_str, req_str};
-use crate::commands::{
-    AddTool, CommandError, HolderPick, CreateOperation, DeleteOperation, EditOperationLinks, EditOperationParams,
-};
+use crate::commands::{AddTool, CommandError, CreateOperation, DeleteOperation, EditOperationLinks, EditOperationParams, HolderPick};
 use crate::model;
 use crate::operation::{self, KindInfo, OpParams, SrcRef};
 use crate::project;
@@ -62,6 +60,20 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     let Some((key, Value::Object(mut fields))) = tagged.into_iter().next() else {
         return Err("the operation's parameters could not be read".into());
     };
+    let mut patch_owned = patch.clone();
+    project::migrate_legacy_patch(&key, &mut patch_owned);
+    let patch = &patch_owned;
+    if patch.contains_key("pass_start") {
+        let reason = match base {
+            OpParams::Face { .. } => Some("Face has no pass order: its rows run edge to edge across the face, so there is no inside or outside to start from"),
+            OpParams::Slot { .. } => Some("Slot has no pass order. Each depth has one continuous pass. A tool-width cut follows the centerline. A wider cut connects rows."),
+            OpParams::TrochoidalSlot { .. } => Some(operation::TROCHOIDAL_SLOT_NO_PASS_ORDER),
+            _ => None,
+        };
+        if let Some(reason) = reason {
+            return Err(format!("bad params patch: pass_start - {reason}"));
+        }
+    }
     for (k, v) in patch {
         merge(fields.entry(k.clone()).or_insert(Value::Null), v);
         if v.is_null() {
@@ -90,13 +102,29 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     if let OpParams::WireContour(wire) = &next {
         back.insert("taper_deg".into(), json!(wire.taper_deg));
     }
-    // An opt-in flag (`blend_turns`) is written only when ON, so `false`
-    // never comes back: it is kept when `true` would have come back.
+    // Opt-in fields (`blend_turns`, `minimum_cone_radius`) are omitted at
+    // their false/zero default, but a literal patch of that default is
+    // still a known field: it is kept when a true/positive probe would
+    // have come back.
     for (k, v) in patch {
-        if *v == Value::Bool(false) && !back.contains_key(k) && flag_kept(&key, &fields_of(base), k) {
-            back.insert(k.clone(), Value::Bool(false));
-        } else if k == "corner_relief" && !back.contains_key(k) && corner_relief_kept(&key, &fields_of(base)) {
+        let opt_in = (*v == Value::Bool(false) || v.as_f64() == Some(0.0))
+            && opt_in_kept(&key, &fields_of(base), k, v.is_boolean());
+        let corner_relief =
+            k == "corner_relief" && corner_relief_kept(&key, &fields_of(base));
+        if !back.contains_key(k) && (opt_in || corner_relief) {
             back.insert(k.clone(), v.clone());
+        } else if k == "pass_start" && *v == json!("auto") && !back.contains_key(k) && pass_start_kept(&key, &fields_of(base)) {
+            // #3316: `auto` is never written, so it never comes back.
+            back.insert(k.clone(), v.clone());
+        } else if k == "picks" && base.kind() != operation::OpType::Probe && let Some(req) = v.as_object() {
+            // #3339: empty `picks` / empty role lists are skipped on save.
+            let mut bp = back.get("picks").and_then(Value::as_object).cloned().unwrap_or_default();
+            for role in ["start", "exit"] {
+                if req.get(role) == Some(&json!([])) && !bp.contains_key(role) {
+                    bp.insert(role.into(), json!([]));
+                }
+            }
+            back.insert("picks".into(), Value::Object(bp));
         }
     }
     if let Some(path) = lost(patch, &back, "") {
@@ -134,26 +162,43 @@ fn fields_of(p: &OpParams) -> Map<String, Value> {
     .unwrap_or_default()
 }
 
-/// True when the kind `key` has a boolean field `k`: set to `true`, it
-/// survives the typed round-trip. A misspelled key never does.
-fn flag_kept(key: &str, fields: &Map<String, Value>, k: &str) -> bool {
+fn probe_kept(key: &str, fields: &Map<String, Value>, k: &str, val: Value) -> bool {
     let mut probe = fields.clone();
-    probe.insert(k.to_owned(), Value::Bool(true));
-    let mut tagged = Map::new();
-    tagged.insert(key.to_owned(), Value::Object(probe));
-    project::params_from_json(&Value::Object(tagged))
-        .map(|p| fields_of(&p).get(k) == Some(&Value::Bool(true)))
+    probe.insert(k.to_owned(), val);
+    project::params_from_json(&json!({ key: probe }))
+        .map(|p| fields_of(&p).contains_key(k))
+        .unwrap_or(false)
+}
+
+/// True when `key` has an opt-in field `k`: a true (boolean) or positive
+/// (number) probe survives the typed round-trip. A boolean flag must come
+/// back `true`. A misspelled key never does.
+fn opt_in_kept(key: &str, fields: &Map<String, Value>, k: &str, boolean: bool) -> bool {
+    let mut probe = fields.clone();
+    probe.insert(
+        k.to_owned(),
+        if boolean { Value::Bool(true) } else { Value::from(1.0) },
+    );
+    project::params_from_json(&json!({ key: probe }))
+        .map(|p| {
+            let back = fields_of(&p);
+            if boolean {
+                back.get(k) == Some(&Value::Bool(true))
+            } else {
+                back.contains_key(k)
+            }
+        })
         .unwrap_or(false)
 }
 
 fn corner_relief_kept(key: &str, fields: &Map<String, Value>) -> bool {
-    let mut probe = fields.clone();
-    probe.insert("corner_relief".into(), serde_json::json!({ "kind": "dogbone" }));
-    let mut tagged = Map::new();
-    tagged.insert(key.to_owned(), Value::Object(probe));
-    project::params_from_json(&Value::Object(tagged))
-        .map(|p| fields_of(&p).contains_key("corner_relief"))
-        .unwrap_or(false)
+    probe_kept(key, fields, "corner_relief", json!({ "kind": "dogbone" }))
+}
+
+/// True when the kind `key` has the `pass_start` field (#3316): a value
+/// off `auto` survives the typed round-trip.
+fn pass_start_kept(key: &str, fields: &Map<String, Value>) -> bool {
+    probe_kept(key, fields, "pass_start", json!("outside"))
 }
 
 /// The first key path of `patch` (dotted, e.g. `clearance_z.ofset`) the
@@ -220,7 +265,7 @@ pub(super) fn add_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, S
             if d.get("holder").is_some_and(|h| !h.is_null()) {
                 return Err("bad tool definition: its \"holder\" reference is not read by add_tool - name the library holder in add_tool's own \"holder\" (set_tool_holder sets the gauge length and projection)".into());
             }
-            (None, project::tool_from_json(d).map_err(|e| format!("bad tool definition: {e}"))?)
+            (None, project::tool_from_json(d).map(super::tool_edit::settled).map_err(|e| format!("bad tool definition: {e}"))?)
         }
         _ => return Err("give exactly one of \"catalog\" or \"definition\"".into()),
     };
@@ -274,14 +319,16 @@ pub(super) fn add_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Val
     // The seed helix follows the tool, as the app's quick-add does.
     if let Some(t) = model::find_by_name(&env.world, tool).and_then(|e| model::tool_of(&env.world, &e)) {
         operation::seed_helix_for_tool(&mut params, t.diameter);
+        operation::seed_slot_for_tool(&mut params, t.diameter);
         // #890: the feed from the tool's row for the document material;
         // an explicit params patch below still wins.
         crate::cutting_rows::seed_feed_for_tool(&env.world, &mut params, &t);
     }
+    let named_entry = a.get("params").and_then(Value::as_object).is_some_and(|p| p.contains_key("entry"));
     if let Some(patch) = a.get("params") {
         params = patched(&params, patch)?;
     }
-    let cmd = CreateOperation::new(&env.world, &name, tool, src, params).map_err(cmd_err)?;
+    let cmd = CreateOperation::with_named_entry(&env.world, &name, tool, src, params, named_entry).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     let mut out = json!({ "operation": name, "kind": label, "status": "never" });
     clearance_warning(env, &name, &mut out);
@@ -293,8 +340,9 @@ pub(super) fn edit_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Va
     let patch = a.get("params").ok_or("\"params\" is required")?;
     let e = model::find_by_name(&env.world, &key).ok_or_else(|| format!("no operation named '{key}'"))?;
     let op = model::operation_of(&env.world, &e).ok_or_else(|| format!("'{key}' is not an operation"))?;
+    let named_entry = patch.as_object().is_some_and(|p| p.contains_key("entry"));
     let next = patched(&op.params, patch)?;
-    let cmd = EditOperationParams::new(&env.world, &key, next).map_err(cmd_err)?;
+    let cmd = EditOperationParams::with_named_entry(&env.world, &key, next, named_entry).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     let params = model::operation_of(&env.world, &e).map(|o| project::params_to_json(&o.params));
     let mut out = json!({ "operation": key, "status": "stale", "params": params });
@@ -305,10 +353,13 @@ pub(super) fn edit_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Va
 /// #2121: a clearance plane set inside raw stock is said when the
 /// operation is made or edited (`operation::clearance_in_stock_advice`),
 /// as the answer's `warning` - the rapid law holds the post at Generate.
-fn clearance_warning(env: &Env, key: &str, out: &mut Value) {
+/// #3631: a 2D Pocket whose tool fits nowhere in its region is said too.
+pub(super) fn clearance_warning(env: &Env, key: &str, out: &mut Value) {
     let op = model::find_by_name(&env.world, key).and_then(|e| model::operation_of(&env.world, &e));
-    if let Some(w) = op.and_then(|o| operation::clearance_in_stock_advice(&env.world, o.setup.as_deref(), &o.src, &o.params, Some(key))) {
-        out["warning"] = json!(w);
+    let clearance = op.and_then(|o| operation::clearance_in_stock_advice(&env.world, o.setup.as_deref(), &o.src, &o.params, Some(key)));
+    let said: Vec<String> = clearance.into_iter().chain(operation::pocket_fit_advice(&env.world, key)).collect();
+    if !said.is_empty() {
+        out["warning"] = json!(said.join("; "));
     }
 }
 
@@ -348,7 +399,9 @@ pub(super) fn set_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, S
     let tool = req_str(a, "tool")?;
     let cmd = EditOperationLinks::new(&env.world, &key, Some(tool), None).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
-    Ok(json!({ "operation": key, "tool": tool }))
+    let mut out = json!({ "operation": key, "tool": tool });
+    clearance_warning(env, &key, &mut out);
+    Ok(out)
 }
 
 fn history_state(env: &Env) -> Value {

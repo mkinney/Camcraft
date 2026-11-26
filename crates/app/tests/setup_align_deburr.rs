@@ -90,7 +90,7 @@ fn document(case: Case) -> (World, History) {
 
 fn deburr() -> OpParams {
     OpParams::Deburr {
-        width: 1.0,
+        width: 1.0 * std::f64::consts::SQRT_2, // #1890: the chord of a 1.0 mm setback
         clearance_z: Height::fixed(30.0),
         top_z: Height::of(HeightReference::TopOfModel, -1.0),
         bottom_z: Height::of(HeightReference::TopOfModel, -1.5),
@@ -103,6 +103,8 @@ fn deburr() -> OpParams {
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
         unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
+        sizing: camcraft_app::finishing3d::DeburrBreak::default(),
+        picks: Default::default(),
     }
 }
 

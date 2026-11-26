@@ -47,6 +47,7 @@ fn generated_contour_and_face() -> flecs_ecs::prelude::World {
     let face = OpParams::Face {
         holes: Default::default(),
         blend_turns: false,
+        blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
@@ -56,6 +57,7 @@ fn generated_contour_and_face() -> flecs_ecs::prelude::World {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     };
     history.execute(
         &world,
@@ -89,7 +91,9 @@ fn generated_contour_and_face() -> flecs_ecs::prelude::World {
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
         blend_turns: false,
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
+        picks: Default::default(),
     };
     history.execute(
         &world,

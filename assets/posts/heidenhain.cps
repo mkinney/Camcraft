@@ -104,6 +104,7 @@ function motion(g, words) {
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? sgn(letter, v - o) : ""; }
+function arcWord(k, v) { return wo(k, v, k === "X" ? orgX : (k === "Y" ? orgY : orgZ)); }  // #3442: a position word as written, for arcFate
 function msg(s) {  // counted warning where the host offers message()
   if (typeof message === "function") message(s); else writeln("; " + s);
 }
@@ -562,6 +563,9 @@ function verticalArc(p) {
   var ccw = p.CircularDirection !== "CW";
   var d = ccw ? a1 - a0 : a0 - a1;
   d = ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  // #3442: equal ends are a full turn stated as one record (the form the
+  // stream reader takes), never a zero-length chord.
+  if (u1 === u0 && v1 === v0) d = 2 * Math.PI;
   var n = 1;
   if (has(r) && has(d) && r > 1e-12 && d > 0) {
     var step = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - Math.min(ARC_CHORD_TOL / r, 1))));
@@ -583,6 +587,9 @@ function onCircular() {
   startPreamble();
   if (!tiltOk(properties)) return;
   if (inCycle) { msg("native drilling cycle cannot replace an arc cutting chain"); return; }
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord);
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G02" : "G03"))) return;
   if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   var p = properties;

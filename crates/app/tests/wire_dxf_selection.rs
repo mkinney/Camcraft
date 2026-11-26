@@ -1,5 +1,5 @@
 //! A single selected DXF wire profile through the ordinary command and post doors.
-//! Gate map (M4.4): covers app::operation (wire_sketch, wire_verify, job, stamp),
+//! Gate map (M4.4): covers app::operation (wire_sketch, wire_sketch_arcs, wire_verify, job, stamp),
 //! app::sketch_model, app::commands::SetOperationGeometry, app::posting.
 //! Provenance: original synthetic geometry and the existing fictional wire machine fixture.
 
@@ -18,6 +18,15 @@ use camcraft_app::{
 };
 use flecs_ecs::prelude::World;
 
+#[path = "wire_dxf_selection/arcs.rs"]
+mod arcs;
+// #3991: the tangent arc lead on a selected chain.
+#[path = "wire_dxf_selection/arc_lead.rs"]
+mod arc_lead;
+// #3332: the exit pick on a selected chain.
+#[path = "wire_dxf_selection/exit_pick.rs"]
+mod exit_pick;
+
 const FIXTURE: &str = include_str!("edm/wire-iso-fixture.mch");
 const DXF: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
     0\nLWPOLYLINE\n8\noutline\n90\n4\n70\n1\n10\n-8\n20\n-3\n10\n8\n20\n-3\n10\n8\n20\n3\n10\n-8\n20\n3\n\
@@ -34,18 +43,22 @@ fn pick(world: &World, layer: &str) -> GeoSel {
 
 fn wire_op() -> WireContourOp {
     WireContourOp {
+        lead_arc_radius: None,
         condition: "C110".into(),
         top_z: Height::of(HeightReference::TopOfStock, 0.0),
         bottom_z: Height::of(HeightReference::BottomOfStock, 0.0),
         side: WireSide::Punch,
-        start: Some([-4.0, 5.0]),
+        picks: camcraft_app::path_picks::PathPicks { start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(-4.0, 5.0))], exit: Vec::new() },
         tabs: None,
         capture: true,
+        both_pieces_restrained: false,
+        stock_centered_in_xy_travel: false,
         taper_deg: 0.0,
         four_axis: None,
         burnout: None,
         clearance: operation::DEFAULT_CLEARANCE,
         skims: Vec::new(),
+        sharp_corners: false,
     }
 }
 
@@ -193,14 +206,30 @@ fn placed_chain_posts_one_offset_and_retains_its_identity_on_reopen() {
 }
 
 #[test]
-fn curved_pick_survives_but_generic_generation_refuses_and_undo_restores_the_pick() {
+fn curved_pick_survives_and_is_judged_on_its_arcs_and_undo_restores_the_pick() {
     let (world, mut h) = document(DXF);
     h.execute(
         &world,
         SetOperationGeometry::new(&world, "Cut", vec![pick(&world, "other")])
             .expect("select circle"),
     );
-    assert!(refusal(&world).contains("contains an arc or circle"));
+    // #2022: a punch reads a selected circle as a round profile. This lead
+    // from (-4, 5) to the R1 circle crosses the unselected outline.
+    let why = refusal(&world);
+    assert!(why.contains("cannot clear unselected DXF primitive"), "{why}");
+    // #3937: a die on the circle is cut on its arcs; this start hole lies
+    // outside the circle, so the die is refused by name.
+    let die = WireContourOp {
+        side: WireSide::Die,
+        ..wire_op()
+    };
+    h.execute(
+        &world,
+        EditOperationParams::new(&world, "Cut", OpParams::WireContour(die)).expect("die"),
+    );
+    let why = refusal(&world);
+    assert!(why.contains("lies outside the profile"), "{why}");
+    assert!(h.undo(&world));
     assert!(h.undo(&world));
     h.execute(
         &world,
@@ -223,27 +252,29 @@ fn selected_chain_requires_clear_stock_a_stated_start_and_slug_capture() {
         (
             WireContourOp {
                 capture: false,
+                both_pieces_restrained: false,
+                stock_centered_in_xy_travel: false,
                 ..wire_op()
             },
             "slug capture",
         ),
         (
             WireContourOp {
-                start: None,
+                picks: Default::default(),
                 ..wire_op()
             },
             "no start hole",
         ),
         (
             WireContourOp {
-                start: Some([6.0, 5.0]),
+                picks: camcraft_app::path_picks::PathPicks { start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(6.0, 5.0))], exit: Vec::new() },
                 ..wire_op()
             },
             "inside the profile",
         ),
         (
             WireContourOp {
-                start: Some([-50.0, 5.0]),
+                picks: camcraft_app::path_picks::PathPicks { start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(-50.0, 5.0))], exit: Vec::new() },
                 ..wire_op()
             },
             "inside the box stock",

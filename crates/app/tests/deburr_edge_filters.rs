@@ -55,7 +55,7 @@ fn job_of(mesh: Mesh) -> (World, History) {
 /// top (z 10) and nothing else. Every filter at rest.
 fn params() -> OpParams {
     OpParams::Deburr {
-        width: 1.0,
+        width: 1.0 * std::f64::consts::SQRT_2, // #1890: the chord of a 1.0 mm setback
         clearance_z: Height::fixed(25.0),
         top_z: Height::fixed(9.5),
         bottom_z: Height::fixed(8.5),
@@ -67,6 +67,8 @@ fn params() -> OpParams {
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
         unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
+        sizing: camcraft_app::finishing3d::DeburrBreak::default(),
+        picks: Default::default(),
     }
 }
 
@@ -165,7 +167,7 @@ fn an_excluded_edge_stays_sharp() {
     let (world, mut h) = job();
     let skip = top_edge(&world, -20.0);
     let p = match params() {
-        OpParams::Deburr { exclude_edges: _, width, clearance_z, top_z, bottom_z, feed, plunge_feed, min_edge_angle_deg, exclude_holes, hole_min_diameter, hole_max_diameter, unreachable } => OpParams::Deburr {
+        OpParams::Deburr { exclude_edges: _, width, clearance_z, top_z, bottom_z, feed, plunge_feed, min_edge_angle_deg, exclude_holes, hole_min_diameter, hole_max_diameter, unreachable, sizing, .. } => OpParams::Deburr {
             exclude_edges: vec![skip],
             width,
             clearance_z,
@@ -178,6 +180,8 @@ fn an_excluded_edge_stays_sharp() {
             hole_min_diameter,
             hole_max_diameter,
             unreachable,
+            sizing,
+            picks: Default::default(),
         },
         other => other,
     };

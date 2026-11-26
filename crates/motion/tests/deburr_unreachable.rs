@@ -25,7 +25,7 @@ fn p3(x: f64, y: f64, z: f64) -> Point3 {
 /// the tip window -4..-2: an edge at z = 0 is the one level in reach.
 fn params(unreachable: UnreachableEdges) -> DeburrParams {
     DeburrParams {
-        width: 2.0,
+        width: 2.0 * std::f64::consts::SQRT_2, // #1890: the chord of a 2 mm setback
         tip_angle_deg: 90.0,
         clearance_z: 20.0,
         top_z: -2.0,
@@ -37,6 +37,7 @@ fn params(unreachable: UnreachableEdges) -> DeburrParams {
         exclude_holes: false,
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
+        sizing: camcraft_motion::finishing3d::DeburrBreak::default(),
     }
 }
 

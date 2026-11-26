@@ -171,7 +171,7 @@ fn a_rapid_has_no_mark_to_make() {
     // A rapid 0.2 mm under the surface, inside a 0.3 mm budget.
     let rapid = Toolpath::new(vec![Move::new(MoveKind::Rapid, p(15.0, 10.0, 9.8), p(15.0, 30.0, 9.8), None)]);
     let (found, w) = found_on(&stepped(), &rapid, &cutter(), 0.3);
-    assert_eq!((found, w), (Marked { deep: 0, through: 0, stack: 1 }, vec![Warning::RapidInStock { at: 0 }]));
+    assert_eq!((found, w), (Marked { deep: 0, through: 0, stack: 1 }, vec![Warning::RapidInPart { at: 0 }]));
     // On the surface it touches nothing.
     let over = Toolpath::new(vec![Move::new(MoveKind::Rapid, p(15.0, 10.0, 10.0), p(15.0, 30.0, 10.0), None)]);
     assert_eq!(found_on(&stepped(), &over, &cutter(), 0.3), (Marked::default(), Vec::new()));
@@ -186,7 +186,7 @@ fn only_the_retract_up_the_marks_own_kerf_is_a_rapid_under_the_surface() {
     assert_eq!(found_on(&stepped(), &lift, &cutter(), 0.3), (Marked::default(), Vec::new()));
     // Sideways out of the kerf, down into the part, or up from a place
     // no cut left the tool: each is a rapid in the part.
-    let hit = |at: usize| (Marked { deep: 0, through: 0, stack: 1 }, vec![Warning::RapidInStock { at }]);
+    let hit = |at: usize| (Marked { deep: 0, through: 0, stack: 1 }, vec![Warning::RapidInPart { at }]);
     let side = Toolpath::new(vec![feed, rapid(p(15.0, 30.0, 9.7), p(20.0, 30.0, 9.7))]);
     assert_eq!(found_on(&stepped(), &side, &cutter(), 0.3), hit(1));
     let down = Toolpath::new(vec![feed, rapid(p(15.0, 30.0, 9.7), p(15.0, 30.0, 9.5))]);
@@ -204,7 +204,7 @@ fn the_retract_out_of_the_kerf_is_judged_past_where_the_cut_left_the_tool() {
     let lift = Toolpath::new(vec![feed, Move::new(MoveKind::Rapid, p(15.0, 30.0, 9.7), p(15.0, 30.0, 130.0), None)]);
     let mut roofed = stepped();
     roofed.extend(cube(p(5.0, 22.0, 105.0), p(25.0, 38.0, 110.0)).facets.iter().copied());
-    assert_eq!(found_on(&roofed, &lift, &cutter(), 0.3), (Marked { deep: 0, through: 0, stack: 1 }, vec![Warning::RapidInStock { at: 1 }]));
+    assert_eq!(found_on(&roofed, &lift, &cutter(), 0.3), (Marked { deep: 0, through: 0, stack: 1 }, vec![Warning::RapidInPart { at: 1 }]));
     // No overhang: the same retract is the kerf's own, and clean.
     assert_eq!(found_on(&stepped(), &lift, &cutter(), 0.3), (Marked::default(), Vec::new()));
 }

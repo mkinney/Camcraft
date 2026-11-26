@@ -8,7 +8,8 @@ aliases = ["guide/operations-multiaxis/"]
 This page is the reference for the kinds in the **Multi-axis** group of
 the [operations](@/guide/operations/_index.md) ribbon: 5-Axis Contour, 5-Axis
 Parallel, 5-Axis Flow, Multi-Axis Contour, Swarf, Advanced Swarf, Rotary
-Contour, Rotary Parallel, Rotary Offset and Multi-Axis Rough. For the
+Contour, Rotary Parallel, Rotary Offset, Multi-Axis Rough and Multi-Axis
+Deburr. For the
 tabs themselves and what a click picks, see that page; for what a refusal
 means in general, see [Reading a refusal](@/guide/reference/refusals.md).
 
@@ -349,3 +350,41 @@ Other parts remain protected by the same checks.
 | Lead in / Lead out | Entry | Plunge |
 
 Its refusals are the 3D Pocket's, plus the pose checks above.
+
+## Multi-Axis Deburr
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
+{{ <icon name="op-multiaxis-deburr" /> }} ![Section of a chamfer tool tilted onto an edge break, with one flank on the chamfer plane.](../../../operation-paths.svg#MultiAxisDeburr)
+
+**For:** the [Deburr](@/guide/operations/operations-3d.md#deburr) edge
+break with the tool axis tilted onto each break. One flank of the cone
+lies on the chamfer plane, so edges that a vertical cone cannot reach get
+the same break.
+
+**Picks:** none; like the Deburr it finds the exposed edges of the model,
+with the same edge filters and break size. The stock must be the source
+model itself, and the setup can hold no other part: the tilted tool is
+checked against this model only.
+
+**Tool:** a chamfer mill. Another tool kind is refused ("Multi-Axis Deburr
+lays a cone flank on the break - it needs a chamfer mill, ...").
+
+| Tab | Setting | Default |
+|---|---|---|
+| Geometry | Break width | 0.5 |
+| Geometry | Minimum edge angle | 40 |
+| Geometry | Unreachable edges | Skip with note (or Refuse) |
+| Passes | Axis mode | 5-axis tilt (or 4-axis rotary, A about X) |
+| Passes | Lead / lag / max tilt | 0 / 0 / 30 |
+| Passes | Shank and holder guard | Always on |
+
+**Reach.** Here the max tilt is measured from the natural pose of the
+edge, and lead minus lag must stay inside it. An edge with no clear pose
+inside the max tilt is out of reach: **Skip with note** leaves it and
+breaks the others, **Refuse** stops the operation. The cone, shank and
+holder are checked against the part on every pose.

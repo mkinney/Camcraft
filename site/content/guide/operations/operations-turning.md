@@ -250,10 +250,21 @@ the last rung puts the tip on the axis. Choose it last.
 | Heights | Clearance Z / Parting Plane Z | 25 above stock top / model bottom |
 | Heights | Stepdown (radial infeed per rung) | 0.5 |
 | Passes | Tolerance | 0.05 |
+| Passes | The part is | Cut-off piece |
+| Passes | Back stock | 0 |
 | Feeds | Plunge feed | 300 |
 | Bar feeder | Load bar before the cut / Bar advance | off / Feeder stop |
 | Bar feeder | Unload part after the cut / Transfer to sub-spindle | off / off |
 | Bar feeder | Probe budget | Off |
+
+**The part is** selects which piece is the finished part. **Cut-off piece**
+keeps the piece cut off the free end. **Chuck piece** keeps the piece in the
+chuck and cuts a stub off the free end. The whole kerf stays on the scrap
+side of the parting plane.
+
+**Back stock** moves the whole kerf away from the parting plane. The part
+keeps this much material on its end face for a later facing pass. Zero puts
+the blade's flank on the plane.
 
 The Bar feeder tab shapes no toolpath: it says what the posted program
 signals around the cut. **Transfer to sub-spindle** is refused at the

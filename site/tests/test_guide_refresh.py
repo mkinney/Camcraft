@@ -3,6 +3,8 @@
 from pathlib import Path
 import unittest
 
+from test_guide_icons import section_lead
+
 
 GUIDE = Path(__file__).resolve().parents[1] / "content/guide"
 
@@ -45,8 +47,8 @@ class GuideRefresh(unittest.TestCase):
 
     def test_plasma_profile_starts_with_icon_and_schematic(self):
         page = (GUIDE / "operations/operations-plasma.md").read_text()
-        profile = page.split("## Plasma Profile\n", 1)[1].lstrip()
-        first_paragraph = profile.split("\n\n", 1)[0]
+        profile = page.split("## Plasma Profile\n", 1)[1]
+        first_paragraph = section_lead(profile).split("\n\n", 1)[0]
         self.assertTrue(first_paragraph.startswith('{{ <icon name="op-plasma-profile" /> }}'))
         self.assertIn("../../../operation-paths.svg#PlasmaProfile", first_paragraph)
         self.assertIn("### Stored torch recipes", profile)

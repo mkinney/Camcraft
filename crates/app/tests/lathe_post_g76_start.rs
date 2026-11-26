@@ -135,6 +135,7 @@ fn build_world(bar: Mesh, stock_dia: f64, stock_z0: f64, stock_z1: f64, top_z: f
         plunge_feed: 40.0,
         infeed_plan: Default::default(),
         hand: ThreadHand::Right,
+        picks: Default::default(),
     };
     history.execute(&world, CreateOperation::new(&world, "TH1", "TD-1732-60", SrcRef::Entity("bar".into()), params).expect("create"));
     history.execute(&world, GenerateOperation::new(&world, "TH1").expect("generate"));
@@ -217,6 +218,7 @@ fn g76_refuses_on_cone_thread_start_inside_end_face() {
         plunge_feed: 40.0,
         infeed_plan: Default::default(),
         hand: ThreadHand::Right,
+        picks: Default::default(),
     };
     history.execute(&world, CreateOperation::new(&world, "TH1", "TD-1200-60", SrcRef::Entity("cone".into()), params).expect("create"));
     history.execute(&world, GenerateOperation::new(&world, "TH1").expect("generate"));
@@ -285,6 +287,7 @@ fn g76_refuses_uncut_stock_in_front_of_end_face_and_posts_after_facing() {
         stepdown: 0.5,
         feed: 150.0,
         plunge_feed: 80.0,
+        picks: Default::default(),
     };
     history.execute(&world, CreateOperation::new(&world, "F1", "TN-1600-0R8", SrcRef::Entity("bar".into()), face).expect("face"));
     history.execute(&world, GenerateOperation::new(&world, "F1").expect("gen face"));
@@ -300,6 +303,7 @@ fn g76_refuses_uncut_stock_in_front_of_end_face_and_posts_after_facing() {
         plunge_feed: 40.0,
         infeed_plan: Default::default(),
         hand: ThreadHand::Right,
+        picks: Default::default(),
     };
     history.execute(&world, CreateOperation::new(&world, "TH1", "TD-1732-60", SrcRef::Entity("bar".into()), th).expect("thread"));
     history.execute(&world, GenerateOperation::new(&world, "TH1").expect("gen thread"));

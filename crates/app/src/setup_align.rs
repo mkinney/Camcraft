@@ -62,6 +62,61 @@ pub fn alignment(world: &World, declared: Option<&str>) -> Option<Location> {
     crate::setup::effective(world, declared).and_then(|s| stored(world, &s))
 }
 
+/// The least share of the part's turning axis that must lie along the
+/// document Z (to count as modelled standing) and along the spindle (to
+/// count as held up it): a clear limit, never a decision at 0.
+pub const PART_OFF_UP: f64 = 0.5;
+
+/// Why this setup cannot say which end of the part is free (#3452).
+/// The Part arm refuses with it only where the model goes on past the
+/// parting plane on both sides: there the chuck-side rule decides which
+/// piece is the part, and that rule means "the piece at the free end, as
+/// modelled". At an end of the model the model itself is the part, and
+/// no setup can turn that wrong.
+///
+/// What fixes the sign: the part AS MODELLED is the as-modelled setup
+/// (no alignment), which holds the document +Z up the spindle. The
+/// part's own turning axis is fitted on `facets` (the setup frame) and
+/// read back into the document frame:
+/// - modelled standing (the axis at least [`PART_OFF_UP`] along the
+///   document Z): the setup holds it as modelled when the document-up end
+///   of the axis points up the spindle by [`PART_OFF_UP`] or more; end
+///   for end when it points down by as much; anything between is no
+///   clear hold;
+/// - modelled lying down (along X or Y): no setup is "as modelled", so
+///   nothing says which end the user means as free.
+///
+/// `None` with no alignment (as modelled), or where no axis can be
+/// fitted (the kernel refuses that by name).
+#[must_use]
+pub fn part_off_problem(facets: &[Triangle], a: Option<Location>) -> Option<String> {
+    let a = a?;
+    let d = crate::multiaxis::axis::fit(facets).ok()?.dir;
+    let n = d.dot(d).sqrt();
+    if !n.is_finite() || n <= 0.0 {
+        return None;
+    }
+    let doc = quat_rotate_point(quat_conjugate(a.rot), d);
+    let why = if doc.z.abs() / n < PART_OFF_UP {
+        "the part is modelled lying down, so the setup cannot say which end of it is the free end"
+    } else {
+        let up = doc.z.signum() * d.z / n;
+        if up >= PART_OFF_UP {
+            return None;
+        }
+        if up <= -PART_OFF_UP {
+            "the setup holds the part end for end, so the chuck holds the end that is free as modelled"
+        } else {
+            "the setup does not stand the part's axis along the spindle, so its free end cannot be read"
+        }
+    };
+    Some(format!(
+        "a part-off cannot run here: the model goes on past the parting plane on both sides, and {why}. \
+         Which piece to keep cannot be chosen yet - put the parting plane at an end of the model, or part \
+         off in a setup that holds the part as modelled"
+    ))
+}
+
 /// Does any setup of the document hold the part aligned?
 #[must_use]
 pub fn any_aligned(world: &World) -> bool {
@@ -391,7 +446,10 @@ fn verified_multiaxis(params: &crate::operation::OpParams) -> bool {
         OpParams::Contour5D { .. } | OpParams::Parallel5D { .. } | OpParams::Swarf { .. }
             | OpParams::AdvancedSwarf { .. } | OpParams::RotaryContour { .. } | OpParams::RotaryParallel { .. }
             | OpParams::RotaryOffset { .. } | OpParams::MultiAxisRough { .. } | OpParams::Flow5D { .. }
-            | OpParams::MultiAxisContour { .. }
+            | OpParams::MultiAxisContour { .. } | OpParams::MultiAxisDeburr { .. }
+            // The flow band verifies under the same radial law
+            // (#2826).
+            | OpParams::RotaryFlow { .. }
     )
 }
 

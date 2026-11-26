@@ -9,6 +9,9 @@ use crate::cl::{Move, MoveKind, Toolpath};
 use crate::geo2d::{Loop, Point2};
 
 mod radius;
+pub(super) mod wall;
+
+use wall::edge_is_wall;
 
 /// Sample spacing of the solid law (b2) along each move, mm - the
 /// operation layer's containment step.
@@ -49,7 +52,7 @@ const ARC_READ_SHARE: f64 = 0.25;
 pub(super) fn judged(mode: Mode) -> bool {
     !matches!(
         mode,
-        Mode::Engrave | Mode::Envelope | Mode::Revolve | Mode::Radial | Mode::Cone | Mode::Rotary | Mode::Undercut
+        Mode::Engrave | Mode::Carve | Mode::Envelope | Mode::Revolve | Mode::Radial | Mode::Cone | Mode::Rotary | Mode::Undercut
     )
 }
 
@@ -127,9 +130,10 @@ pub(super) fn tangency(
             let floor = floor_of(l);
             chords.iter().any(|&(a, b)| dist2_segs(a, b, p, q) < floor * floor)
         };
+        // #3831: the cheap distance test first; both are pure, so no verdict moves.
         let region_gouged = edges(cx.region).any(|e| {
-            (!boundary_with_model || section.as_ref().is_some_and(|s| edge_is_wall(e.0, e.1, s)))
-                && near_chords(e)
+            near_chords(e)
+                && (!boundary_with_model || section.as_ref().is_some_and(|s| edge_is_wall(e.0, e.1, s)))
         });
         let section_gouged = !on_relief && section.as_ref().is_some_and(|s| edges(s).any(near_chords));
         let gouged = region_gouged || section_gouged;
@@ -146,26 +150,6 @@ pub(super) fn tangency(
     }
 }
 
-/// How far off a region edge's midpoint the wall probe stands, mm: well
-/// past float dust on a section that shares the edge, well inside any
-/// feature the tolerance could care about.
-const WALL_PROBE: f64 = 0.05;
-
-/// Whether region edge `p`-`q` is a wall in `section` (#43, #2657):
-/// part material stands [`WALL_PROBE`] off its midpoint on either side.
-/// An open rim over air has no material beside it and returns `false`.
-fn edge_is_wall(p: Point2, q: Point2, section: &crate::geo2d::Region) -> bool {
-    let (dx, dy) = (q.x - p.x, q.y - p.y);
-    let len = dx.hypot(dy);
-    if len <= f64::EPSILON {
-        return false;
-    }
-    let (nx, ny) = (-dy / len * WALL_PROBE, dx / len * WALL_PROBE);
-    let (mx, my) = (0.5 * (p.x + q.x), 0.5 * (p.y + q.y));
-    section.contains(Point2::new(mx + nx, my + ny))
-        || section.contains(Point2::new(mx - nx, my - ny))
-}
-
 /// The Boundary-mode whole-move reading (issue #43): a straight move, an
 /// XY arc on its true circle (#905, [`super::arc_wall`]), or an XZ / YZ
 /// arc on its true XY footprint (#946, [`super::arc_wall_plane`]), measured
@@ -177,7 +161,7 @@ fn edge_is_wall(p: Point2, q: Point2, section: &crate::geo2d::Region) -> bool {
 /// - every edge of the model section is a wall (part material on its
 ///   one side, by construction);
 /// - with a model, a region edge is a wall when the section holds a
-///   probe [`WALL_PROBE`] off its midpoint on either side - a Face's
+///   probe `WALL_PROBE` off its midpoint on either side - a Face's
 ///   rim over air (or stock) is open, a Contour's outline at a level
 ///   the part still stands is a wall;
 /// - without a model there is no material to probe: a move that
@@ -196,7 +180,8 @@ fn wall_gouge(
         return true;
     }
     if has_model {
-        edges(region).any(|e| section.is_some_and(|s| edge_is_wall(e.0, e.1, s)) && near(e))
+        // #3831: the cheap distance test first; both are pure.
+        edges(region).any(|e| near(e) && section.is_some_and(|s| edge_is_wall(e.0, e.1, s)))
     } else {
         !crosses_rim(trace, region) && edges(region).any(near)
     }

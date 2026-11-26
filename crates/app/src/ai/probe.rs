@@ -25,6 +25,23 @@ pub fn show_request(model: &str) -> Value {
     json!({ "model": model })
 }
 
+/// Read installed names in server order from `GET /api/tags`.
+pub fn parse_tags(answer: &Value) -> Result<Vec<String>, String> {
+    let models = answer.get("models").and_then(Value::as_array)
+        .ok_or_else(|| "Ollama /api/tags did not answer a models list".to_owned())?;
+    let mut names = Vec::new();
+    for entry in models {
+        let name = entry.get("name").and_then(Value::as_str)
+            .ok_or_else(|| "Ollama /api/tags contains a model without a name".to_owned())?;
+        super::wire::check_model(name)
+            .map_err(|e| format!("Ollama /api/tags contains an invalid model name: {e}"))?;
+        if !names.iter().any(|n| n == name) {
+            names.push(name.to_owned());
+        }
+    }
+    Ok(names)
+}
+
 /// Read an `/api/show` answer.
 pub fn parse_show(answer: &Value) -> Result<Capabilities, String> {
     if !answer.is_object() {

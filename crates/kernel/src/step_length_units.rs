@@ -178,7 +178,7 @@ fn unstated_length_unit(ex: &Exchange) -> Option<u64> {
 
 /// Items and context of a representation entity (plain or complex): the
 /// `representation` attributes (name, items, context_of_items).
-fn representation(e: &Entity) -> Option<(Vec<u64>, Option<u64>)> {
+pub(crate) fn representation(e: &Entity) -> Option<(Vec<u64>, Option<u64>)> {
     let p = if e.is_complex() {
         e.record("REPRESENTATION").or_else(|| {
             e.records

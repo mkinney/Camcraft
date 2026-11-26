@@ -24,6 +24,8 @@ pub mod play_keys;
 pub mod play_precalc;
 pub mod play_precalc_mailbox;
 pub mod sim;
+// #2608: the operation steps of the simulation timeline.
+mod sim_steps;
 pub mod solid_rest;
 pub mod stock_sim;
 pub mod verify;

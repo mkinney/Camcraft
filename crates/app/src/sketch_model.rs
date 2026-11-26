@@ -22,9 +22,8 @@
 //!   solid to cut to.
 //! - **Nothing passes silently.** An operation on a profile states what
 //!   it is checked against ([`checked_against`]): the stock and the
-//!   profile's chains. This build does not yet make a toolpath from the
-//!   chains, so generation refuses by name ([`generation_problem`]) and
-//!   no check can pass for want of a solid.
+//!   profile's chains. Kinds that cannot yet machine those chains refuse
+//!   generation by name ([`generation_problem`]).
 
 use flecs_ecs::prelude::World;
 
@@ -72,7 +71,7 @@ pub fn model_loaded(world: &World, declared: Option<&str>) -> bool {
 /// Can this kind take a profile as its source? The 2D cut kinds only.
 #[must_use]
 pub fn admits(params: &OpParams) -> bool {
-    matches!(params.kind().info().section, Section::Mill2D | Section::Plasma | Section::WireEdm)
+    matches!(params.kind().info().section, Section::Mill2D | Section::Plasma | Section::WireEdm | Section::Waterjet)
 }
 
 /// Does this kind cut to a solid model's surface in 3D?
@@ -110,6 +109,12 @@ pub fn source_problem(world: &World, declared: Option<&str>, src: &SrcRef, param
                     ));
                 }
             }
+            if matches!(params, OpParams::Trace { .. } | OpParams::Engrave { .. })
+                && let Some(g) = items.iter().find(|g| !matches!(g.feature,
+                    crate::operation::FeatureSel::SketchChain(_) | crate::operation::FeatureSel::SketchLayer(_)))
+            {
+                return Some(format!("'{}' is a DXF profile - pick a sketch chain or layer to mark", g.entity));
+            }
             if matches!(params, OpParams::WireContour(_)) {
                 if let Err(why) = crate::operation::wire_sketch::pick(world, src) {
                     return Some(why);
@@ -117,6 +122,7 @@ pub fn source_problem(world: &World, declared: Option<&str>, src: &SrcRef, param
             } else if !matches!(
                 params,
                 OpParams::Contour { .. } | OpParams::Slot { .. } | OpParams::TrochoidalSlot { .. }
+                    | OpParams::Engrave { .. } | OpParams::Trace { .. }
             ) {
                 return Some(format!(
                     "'{}' is a DXF profile - an operation takes the whole profile as its source; picked chains of a profile are not supported yet",
@@ -186,7 +192,7 @@ pub fn generation_problem(world: &World, op: &Operation) -> Option<String> {
     if let Some(why) = source_problem(world, op.setup.as_deref(), &op.src, &op.params) {
         return Some(why);
     }
-    if matches!(op.params, OpParams::Contour { .. }) || crate::operation::wire_sketch::selected(&op.src, &op.params) {
+    if matches!(op.params, OpParams::Contour { .. } | OpParams::Engrave { .. } | OpParams::Trace { .. }) || crate::operation::wire_sketch::selected(&op.src, &op.params) {
         return None;
     }
     // #1868: a slot kind reads one picked chain of a profile; the whole

@@ -34,6 +34,7 @@ fn face(clear: f64, tilt: Option<Tilt>, cut: f64) -> OpParams {
     OpParams::Face {
         holes: Default::default(),
         tilt,
+        blend_radius: None,
         blend_turns: false,
         stepover: 3.0,
         clearance_z: Height::fixed(clear),
@@ -43,6 +44,7 @@ fn face(clear: f64, tilt: Option<Tilt>, cut: f64) -> OpParams {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     }
 }
 

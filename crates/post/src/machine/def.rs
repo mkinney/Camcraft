@@ -11,7 +11,7 @@
 use super::direction::AxisDirection;
 // #669: the kind moved to its own seam; re-exported so `def::*` (and
 // every `machine::Kind` path) reads as before.
-pub use super::kind::{can_tilt, kind, Kind};
+pub use super::kind::{can_tilt, is_router, is_router_word, kind, Kind};
 pub use super::trunnion::RotarySignConvention;
 use serde::{Deserialize, Serialize};
 
@@ -228,6 +228,9 @@ pub struct Machine {
     /// post that needs it refuses rather than guess where up is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub safe_retract_z: Option<f64>,
+    /// `general.operator_side` (#2632): the stated side; `None` takes the kind's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_side: Option<super::operator_side::OperatorSide>,
     /// The `edm` section of a wire or sinker EDM machine (#530), or
     /// None: unstated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -247,6 +250,9 @@ pub struct Machine {
     /// tool with no holder body, as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_holder: Option<String>,
+    /// Controller pockets and names reserved for probes or tool setters (#2604).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reserved_tools: Vec<super::reservations::ReservedTool>,
     /// #760: whether the controller supports work-plane / coordinate
     /// rotation (`G68 X0 Y0 R` / `ROT RPL`) via `controller.coordinate_rotation`.
     /// Absent or false (the unstated-limit law) keeps `Control` mode refused
@@ -305,6 +311,7 @@ impl Machine {
     #[must_use]
     pub fn tooling_refusal(&self, lookup: Option<super::HolderLookup>) -> Option<String> {
         super::mount_check(self.spindle_mount.as_deref(), self.default_holder.as_deref(), lookup).err()
+            .or_else(|| super::reservations::validate(&self.reserved_tools).err())
     }
 
     fn limits_sane(&self) -> bool {

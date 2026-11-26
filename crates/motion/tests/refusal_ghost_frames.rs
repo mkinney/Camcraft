@@ -50,6 +50,7 @@ fn finish(top_z: f64, bottom_z: f64, d: f64, steep: Option<f64>) -> Finish3DPara
         entry_ramp: false,
         steep_stepover: steep,
         pencil_reference: None,
+        waterlines: true,
     }
 }
 

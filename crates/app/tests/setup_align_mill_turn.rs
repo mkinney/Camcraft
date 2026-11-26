@@ -170,14 +170,17 @@ fn mill_turn_turning_and_cross_drill_match_baked() {
             ("FC1", OpParams::Facing {
                 tolerance: 0.05, clearance_z: Height::fixed(26.0),
                 top_z: Height::fixed(22.0), bottom_z: Height::fixed(20.0), stepdown: 1.0, feed: 150.0, plunge_feed: 80.0,
+                picks: Default::default(),
             }),
             ("PR1", OpParams::ProfileRough {
                 tolerance: 0.05, clearance_z: Height::fixed(25.0),
                 top_z: Height::fixed(20.0), bottom_z: Height::fixed(-2.0), stepdown: 1.0, stock_to_leave: 0.25, feed: 150.0, plunge_feed: 80.0,
+                picks: Default::default(),
             }),
             ("PF1", OpParams::ProfileFinish {
                 tolerance: 0.05, clearance_z: Height::fixed(25.0),
                 top_z: Height::fixed(20.0), bottom_z: Height::fixed(-2.0), feed: 120.0, plunge_feed: 60.0,
+                picks: Default::default(),
             }),
         ];
         for (name, params) in ops {

@@ -91,7 +91,7 @@ impl Drop for Dir {
 fn face() -> OpParams {
     OpParams::Face {
         holes: Default::default(),
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
@@ -101,6 +101,7 @@ fn face() -> OpParams {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     }
 }
 
@@ -189,6 +190,66 @@ fn a_missing_file_keeps_the_model_and_is_said_one_time() {
     dir.write(10.0, 10.0, 9.0);
     tick(&mut state, &mut at, 2);
     assert_eq!(rev(&state), 2, "the file came back changed: {}", state.status);
+}
+
+/// Rewrite the link of "part" to `text`, as a project file can hold it.
+fn relink(state: &State, text: &str) {
+    let w = &state.world;
+    let e = model::find_by_name(w, "part").expect("part");
+    let mut source = model_source::of(w, &e).expect("linked");
+    source.path = text.to_string();
+    model_source::set(w, &e, Some(&source));
+}
+
+fn link_text(state: &State) -> Option<String> {
+    model::find_by_name(&state.world, "part").and_then(|e| model_source::of(&state.world, &e)).map(|s| s.path)
+}
+
+/// #3686: a relative link is read against the folder of the open project,
+/// not the working directory of the test process (`crates/ui`). A change
+/// of the file imports it again and the link stays relative.
+#[test]
+fn a_relative_link_resolves_against_the_project_folder() {
+    let dir = Dir::new("relative");
+    let mut state = linked_job(&dir.part());
+    relink(&state, "part.stl");
+    assert!(!Path::new("part.stl").exists(), "the working directory must not hold the file");
+    state.project_path = Some(dir.0.join("job.camproj"));
+    state.status = String::from("opened job");
+    let mut at = Instant::now() + INTERVAL;
+    tick(&mut state, &mut at, 2);
+    assert_eq!(state.status, "opened job", "no link error for a file next to the project");
+    assert_eq!(rev(&state), 1, "an unchanged file is not imported again");
+
+    dir.write(10.0, 10.0, 8.0);
+    tick(&mut state, &mut at, 2);
+    assert_eq!(rev(&state), 2, "{}", state.status);
+    assert!(state.status.starts_with("updated part"), "{}", state.status);
+    assert_eq!(link_text(&state).as_deref(), Some("part.stl"), "the link stays relative");
+}
+
+/// #3686: without a saved project, a relative link keeps the old reading
+/// (the working directory); an absolute link is read as it is wherever the
+/// project is.
+#[test]
+fn an_absolute_link_ignores_the_project_folder_and_an_unsaved_project_keeps_the_path() {
+    let dir = Dir::new("absolute");
+    let other = Dir::new("absolute-other");
+    let mut state = linked_job(&dir.part());
+    state.project_path = Some(other.0.join("job.camproj"));
+    state.status = String::from("opened job");
+    let mut at = Instant::now() + INTERVAL;
+    tick(&mut state, &mut at, 2);
+    assert_eq!(state.status, "opened job", "an absolute link is read as it is");
+    dir.write(10.0, 10.0, 8.0);
+    tick(&mut state, &mut at, 2);
+    assert_eq!(rev(&state), 2, "{}", state.status);
+    assert_eq!(link_text(&state), Some(dir.part().to_string_lossy().into_owned()));
+
+    relink(&state, "part.stl");
+    state.project_path = None;
+    tick(&mut state, &mut at, 2);
+    assert!(state.status.starts_with("part kept as it is: its linked file part.stl"), "{}", state.status);
 }
 
 #[test]

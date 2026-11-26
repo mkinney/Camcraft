@@ -105,19 +105,23 @@ fn punch(machine: &str, mesh: Mesh, pick: bool, four_axis: Option<WireFourAxis>)
     h.execute(&world, ImportModel::from_mesh("part", mesh));
     let src = if pick { SrcRef::Selection(vec![top_face(&world)]) } else { SrcRef::Entity("part".into()) };
     let op = WireContourOp {
+        lead_arc_radius: None,
         top_z: Height::fixed(H),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),
         side: WireSide::Punch,
-        start: Some([-30.0, 0.0]),
+        picks: camcraft_app::path_picks::PathPicks { start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(-30.0, 0.0))], exit: Vec::new() },
         tabs: None,
         // The punch drops into a stated capture (#539's hold law).
         capture: true,
+        both_pieces_restrained: false,
+        stock_centered_in_xy_travel: false,
         taper_deg: if four_axis.is_some() { 0.0 } else { 3.0 },
         burnout: None,
         clearance: camcraft_app::operation::DEFAULT_CLEARANCE,
         four_axis,
         skims: Vec::new(),
+        sharp_corners: false,
     };
     let c = CreateOperation::new(&world, "Punch1", "EDM-W025", src, OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);

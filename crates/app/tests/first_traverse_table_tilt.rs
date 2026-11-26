@@ -105,6 +105,7 @@ fn face_posted(rig: Rig, a_deg: f64, b_deg: f64, over: f64, post: Option<PostRef
         holes: Default::default(),
         tilt: Some(Tilt { basis_version: 1, a_deg, b_deg, origin: [0.0, 0.0, ORIGIN_Z] }),
         blend_turns: false,
+        blend_radius: None,
         stepover: 3.0,
         clearance_z: Height::fixed(ORIGIN_Z + over),
         cut_z: Height::fixed(19.5),
@@ -113,6 +114,7 @@ fn face_posted(rig: Rig, a_deg: f64, b_deg: f64, over: f64, post: Option<PostRef
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     };
     h.execute(&world, CreateOperation::new(&world, "Face1", "EM-0400-2FL", SrcRef::Stock, p).expect("create"));
     h.execute(&world, GenerateOperation::new(&world, "Face1").expect("generate"));

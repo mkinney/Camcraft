@@ -57,11 +57,11 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
         if let Some(f) = a.feed {
             speeds.insert("normal".to_owned(), json!(f));
         }
-        axes.push(json!({
-            "letter": a.name,
-            "direction": direction,
-            "speeds": Value::Object(speeds),
-        }));
+        let mut axis = json!({ "letter": a.name, "direction": direction, "speeds": Value::Object(speeds) });
+        if let (Some((lo, hi)), Some(o)) = (a.travel, axis.as_object_mut()) {
+            o.insert("travel".to_owned(), json!([lo, hi])); // #1882
+        }
+        axes.push(axis);
     }
     // Rates the script reads as ceilings: the fastest stated axis -
     // and stated axes are LINEAR only. A rotary's deg/min is not a
@@ -153,12 +153,19 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
     {
         o.insert("kind".to_owned(), json!("plasma"));
     }
+    // #1882: a vendor-tree waterjet keeps its kind through the CLI mirror.
+    if crate::machine::kind(Some(m)) == crate::machine::Kind::Waterjet
+        && let Some(o) = out.as_object_mut()
+    {
+        o.insert("kind".to_owned(), json!("waterjet"));
+    }
     // #533: a wire or sinker EDM says its kind and its `edm` words (the
     // control's codes, D5, and whether it threads by itself) for the
     // EDM posts' machine check; every other mirror is unchanged. #542:
     // a sinker's `edm` also carries what the sinker post reads - its
     // orbit words, pickup and condition table (lengths already mm) - so
-    // a wire mirror keeps exactly main's two keys.
+    // a wire mirror keeps main's two keys, plus its condition table when
+    // the file states one (#3214).
     let k = crate::machine::kind(Some(m));
     if matches!(k, crate::machine::Kind::WireEdm | crate::machine::Kind::SinkerEdm)
         && let Some(o) = out.as_object_mut()
@@ -171,6 +178,14 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
         {
             eo.insert("orbits".to_owned(), json!(e.orbits));
             eo.insert("pickup".to_owned(), json!(e.pickup));
+            eo.insert("conditions".to_owned(), serde_json::to_value(&e.conditions).unwrap_or_else(|_| json!([])));
+        } else if let (Some(e), Some(eo)) = (m.edm.as_ref(), edm.as_object_mut())
+            && !e.conditions.is_empty()
+        {
+            // #3214: a wire's stated condition table (gaps already mm), so
+            // the Sodick post can state the gap the kerf used and flag an
+            // EXAMPLE row. Only when stated: a wire file with no table
+            // mirrors exactly as before.
             eo.insert("conditions".to_owned(), serde_json::to_value(&e.conditions).unwrap_or_else(|_| json!([])));
         }
         // #1499: a wire's stated tank and flushing, as their words - only
@@ -292,6 +307,8 @@ pub(super) fn flatten(m: &Value) -> Value {
         "spindleMin": f64_or(m.pointer("/kinematics/static/head/spindle/min").or(m.get("spindleMin")), 0.0),
         "coolants": coolants,
         "rotaries": rotaries,
+        // #1882: the linear axes' stated strokes, mm ([min, max] or null).
+        "travel": super::machine_travel::linear(m),
         "rtcp": rtcp,
         "signConvention": sign_convention,
         "spindles": spindles.map_or(Value::Null, |n| json!(n)),

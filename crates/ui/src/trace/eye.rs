@@ -48,6 +48,8 @@ pub use super::eye_geom::{encode, fit, preview_camera};
 use super::TracePass;
 use crate::viewport::Camera;
 
+mod layer_state;
+
 /// GPU trace budget per frame: past it the trace runs at an integer
 /// fraction of the viewport (a 4K panel traces at half resolution).
 pub(crate) const GPU_PIXELS: u64 = 1 << 21;

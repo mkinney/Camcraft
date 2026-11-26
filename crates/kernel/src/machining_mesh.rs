@@ -297,7 +297,14 @@ pub(crate) fn planned(
         }
         let tol = MeshTolerance::chord(chord);
         let planned = catch_unwind(AssertUnwindSafe(|| {
-            solidcore_tess::plan(record, &tol, size)
+            let planned = solidcore_tess::plan(record, &tol, size)?;
+            // The display planner can exhaust its face refinement budget.
+            // Try the constrained mesh path; all acceptance checks still apply.
+            if planned.1.over_tolerance.iter().any(|o| !o.within) && !stop.is_cancelled() {
+                solidcore_tess::mesh(record, &solidcore_tess::MeshSpec::chord(chord), size, None)
+            } else {
+                Ok(planned)
+            }
         }))
         .map_err(|_| MeshRefusal::Planner("the planner panicked".into()))?;
         let (mut plan, stats) = planned.map_err(|e| MeshRefusal::Planner(e.to_string()))?;

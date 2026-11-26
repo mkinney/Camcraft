@@ -25,7 +25,8 @@ impl OpParams {
             | OpParams::Chamfer2D { tilt, .. }
             | OpParams::Circular { tilt, .. }
             | OpParams::Slot { tilt, .. }
-            | OpParams::Trace { tilt, .. } => Some(tilt),
+            | OpParams::Trace { tilt, .. }
+            | OpParams::VCarve { tilt, .. } => Some(tilt),
             _ => None,
         }
     }

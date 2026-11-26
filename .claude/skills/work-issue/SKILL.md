@@ -34,6 +34,9 @@ order of the steps. Load the `gh-issues` skill for the `gh` mechanics.
 - A worktree agent never switches, pulls, merges, resets, checks out or
   stashes in the main checkout. Its only git there is
   `git fetch origin && git worktree add --no-track -b issue/N-<slug> .claude/worktrees/issue-N origin/main`.
+  A sub-PR of a side branch (the brief names it, e.g. a path kernel issue
+  of #4023) uses `origin/side/path-kernel` in place of `origin/main`
+  (AGENTS.md **Side branch**).
   Reason: the main checkout may be running a gate, which reads HEAD and the
   tree at start and end and voids the run if they moved (#1201); a worker's
   pull would void that run for everyone. Work only in the worktree, with the worktree's own default `target/` (not a `CARGO_TARGET_DIR` env var: sccache hashes it, so the shared compile cache would miss across worktrees; AGENTS.md "Testing"). Never build
@@ -82,11 +85,19 @@ reads. This keeps the worker's context for the change.
   UI suites with CWD `crates/ui`. Run test executables only from cargo's
   JSON artifact list - never glob `*.exe` (it launches the GUI).
 
-- Heavy lanes (AGENTS.md "Heavy lanes at review"): `cargo xtask gate heavy
-  --dry-run` lists the release `--ignored` lanes that the diff reaches. If
-  it lists a lane, run `cargo xtask gate heavy` on the final head and name
-  the lanes and their results in the PR body. A red reached heavy test is a
-  gate failure.
+- Review tests (AGENTS.md "Heavy lanes at review"): the PR needs its
+  pinning tests, the quick plan, the example catalog suites by name
+  (`example_catalog*` of `camcraft-app`) where a post or a toolpath
+  changed, and `cargo xtask gate light`. Name each one and its result in
+  the PR body. Do not run the full heavy lanes: they run at the cut, in
+  the cut gate on the cut runner. A diff that reaches a heavy lane is not
+  "not ready" for that reason.
+- Only a `P1` PR under the safety floor runs one targeted heavy step on the
+  final head: the binary that holds the named heavy tests of the changed
+  code (`cargo xtask gate heavy --dry-run` shows it), with
+  `cargo xtask gate heavy --only "<crate> heavy: <target>"`. Name it and its
+  result in the PR body. A red targeted step is a gate failure. A `P2` or
+  lower PR runs no heavy step.
 
 ## 4. Escalate instead of flailing
 Stop and escalate when the quick gate fails **twice** after your fixes, or
@@ -106,6 +117,9 @@ something under the safety floor that your label didn't account for):
   session's Co-Authored-By line), push, open a **draft** PR with
   `--body-file`: what changed, how tested (pinning tests named), what was
   not exercised, `Changelog:` line, `Effort: <tier>`, `Fixes #N`.
+  A sub-PR of a side branch: `--base side/path-kernel`, the body starts
+  with `Side branch: side/path-kernel`, the commit and the body end with
+  `Refs #N`, and the quick gate diffs against `origin/side/path-kernel`.
 - Swap `claimed` for `in-review`; comment
   `fix on issue/N-<slug> · PR #M · pinned by <tests> · merges when reviewed`.
 - Remove the worktree and its target dir.

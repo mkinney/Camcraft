@@ -119,6 +119,7 @@ fn read(chunk: &[Record]) -> Result<Stated, PostError> {
                 _ => {}
             },
             Record::Plasma(_) | Record::Torch(_) => st.foreign = Some("a plasma section"),
+            Record::Waterjet(_) | Record::Jet(_) => st.foreign = Some("a waterjet section"),
             Record::Move(_) => st.motion = true,
             Record::Cycle(_) => {
                 st.motion = true;

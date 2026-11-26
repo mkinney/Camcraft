@@ -370,8 +370,9 @@ fn wall(entry: Entry3D, links: Links) -> ContourParams {
         tab_height: 0.0,
         entry,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links,
+        picks: Default::default(),
     }
 }
 
@@ -488,6 +489,7 @@ fn box_facets(min: [f64; 3], max: [f64; 3]) -> Vec<Triangle> {
 
 fn p3(links: Links) -> Pocket3DParams {
     Pocket3DParams {
+        pass_start: Default::default(),
         tool_diameter: 8.0,
         stepover: 3.0,
         stock_to_leave: 0.0,

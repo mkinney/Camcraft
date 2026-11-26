@@ -314,3 +314,40 @@ fn sketch_frame_caches_skip_still_frames_and_track_changed_inputs() {
     harness.run_steps(2);
     assert_fresh(&harness);
 }
+
+#[test]
+fn start_exit_marks_read_the_sketch_height_through_the_display_memo() {
+    // #3161: the Lead tab's start/exit marks are a display read. A still
+    // frame must not resample a DXF sketch's Z span.
+    let mut st = sketch_shell().state;
+    if let OpParams::Contour { top_z, .. } = &mut st.op_ui.params {
+        *top_z = Height::of(HeightReference::TopOfSelection, 0.0);
+    }
+    st.ui_target = UiTarget::Operation("Contour1".into());
+    st.sync_ops_ui();
+    st.op_tab = crate::egui_app::op_tabs::SEC_LEADS;
+    st.properties_shown = true;
+
+    let z_prime = operation::sketch_z_builds();
+    let _ = crate::start_exit_pick::marks(&st, 1.5);
+    assert!(
+        operation::sketch_z_builds() > z_prime,
+        "the marks resolve the sketch height through the memo"
+    );
+
+    let z0 = operation::sketch_z_builds();
+    let f0 = operation::sketch_z_fresh_reads();
+    for _ in 0..3 {
+        let _ = crate::start_exit_pick::marks(&st, 1.5);
+    }
+    assert_eq!(
+        operation::sketch_z_builds() - z0,
+        0,
+        "a still frame resamples no sketch Z span"
+    );
+    assert_eq!(
+        operation::sketch_z_fresh_reads() - f0,
+        0,
+        "a still frame takes no authoritative sketch Z read"
+    );
+}

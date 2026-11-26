@@ -1,3 +1,3 @@
 kinds = ["Slot", "Trochoidal slot"]
 machine = "3-axis mill"
-expect = "Cut the two closed slots with Slot and Trochoidal slot using the same tool and floor."
+expect = "post"

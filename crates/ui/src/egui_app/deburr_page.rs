@@ -5,9 +5,36 @@
 //! Provenance: our own UI over the Deburr parameter model
 //! (`OpParams::Deburr`); no vendor material or text.
 
+use camcraft_app::finishing3d::{BreakMode, BreakProfile, DeburrBreak};
 use camcraft_app::operation::{FeatureSel, GeoSel};
 
 use super::fields::*;
+
+/// The Geometry tab's break size rows (#1890): the mode with its width
+/// or depth, the profile, and the passes.
+pub(super) fn sizing(ui: &mut Ui, u: Unit, width: &mut f64, sizing: &mut DeburrBreak) {
+    let mut m = usize::from(sizing.mode == BreakMode::ConstantDepth);
+    prop_row(ui, "Break mode", |ui| combo(ui, "deburr.mode", &mut m, &["Constant width", "Constant depth"]));
+    sizing.mode = if m == 1 { BreakMode::ConstantDepth } else { BreakMode::ConstantWidth };
+    if sizing.mode == BreakMode::ConstantDepth {
+        prop_row(ui, "Break depth", |ui| num(ui, u, &mut sizing.depth));
+        hint(ui, "the depth from the edge to the chamfer face, the same on every edge; edges flatter than 150 degrees are skipped with a note");
+    } else {
+        prop_row(ui, "Break width", |ui| num(ui, u, width));
+        hint(ui, "the chamfer's width across the edge, the same on every edge; edges sharper than 30 degrees are skipped with a note");
+    }
+    let mut p = usize::from(sizing.profile == BreakProfile::Round);
+    prop_row(ui, "Break profile", |ui| combo(ui, "deburr.profile", &mut p, &["Chamfer", "Round"]));
+    sizing.profile = if p == 1 { BreakProfile::Round } else { BreakProfile::Chamfer };
+    if sizing.profile == BreakProfile::Round {
+        hint(ui, "a round break needs a ball-tipped cutter; a chamfer mill refuses it");
+    }
+    let h = ui.spacing().interact_size.y;
+    prop_row(ui, "Number of passes", |ui| {
+        ui.add_sized([CTRL_W, h], DragValue::new(&mut sizing.passes).range(1..=DeburrBreak::MAX_PASSES));
+    });
+    hint(ui, "the break is cut in this many passes, from a small break to the full size");
+}
 
 /// The Geometry tab rows under the break width.
 #[allow(clippy::too_many_arguments)]

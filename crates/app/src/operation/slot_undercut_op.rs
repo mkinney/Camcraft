@@ -28,6 +28,7 @@ pub(super) fn seed_slot_undercut(c: &Carried) -> OpParams {
         feed: c.feed,
         plunge_feed: c.plunge,
         climb: c.climb,
+        picks: crate::path_picks::PathPicks::default(),
     })
 }
 

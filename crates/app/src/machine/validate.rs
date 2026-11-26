@@ -141,7 +141,7 @@ fn general(v: &Value, out: &mut Vec<Refusal>) {
     match g.and_then(|g| g.get("kind")) {
         None | Some(Value::Null) => {}
         Some(Value::String(w)) if w.is_empty() || Kind::from_word(w).is_some() => {}
-        Some(other) => out.push(Refusal::new("general.kind", format!("{other} is not mill, lathe, mill-turn, plasma, waterjet, wire_edm or sinker_edm"))),
+        Some(other) => out.push(Refusal::new("general.kind", format!("{other} is not mill, router, lathe, mill-turn, plasma, waterjet, wire_edm or sinker_edm"))),
     }
 }
 
@@ -382,7 +382,11 @@ fn required_by_kind(v: &Value, text: &str, axes: &[(String, &Value, bool)], out:
         return;
     };
     // #2374: the named post is a built-in one that serves this kind.
-    let known = |n: &str| crate::posting::BUILTINS.iter().any(|(b, _)| *b == n).then(|| crate::posting::post_serves(n, k));
+    // #3537: a hidden alias name counts as the registry name it selects.
+    let known = |n: &str| {
+        let n = crate::posting::agie::current_name(n);
+        crate::posting::BUILTINS.iter().any(|(b, _)| *b == n).then(|| crate::posting::post_serves(n, k))
+    };
     if let Some(rule) = super::post_name_refusal(v, k.word(), known) {
         out.push(Refusal::new("controller.post", rule));
     }

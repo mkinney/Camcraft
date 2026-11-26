@@ -26,7 +26,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         stepover,
         feed,
         plunge_feed,
-        climb,
+        climb, picks: _,
     }) = params
     else {
         return;

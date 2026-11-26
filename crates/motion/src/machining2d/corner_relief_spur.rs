@@ -18,11 +18,16 @@ fn dist(a: Point2, b: Point2) -> f64 {
 }
 
 /// Splice corner relief spurs `[start, end, start]` into pocket passes (or runs).
+///
+/// A relief that gets no spur (no pass vertex at its start and no legal
+/// detour) is a miss (#3249): its boundary corner is pushed onto
+/// `misses` so the caller can name the corner in a note.
 pub(super) fn inject_relief_spurs(
     passes: &mut [Vec<Point2>],
     runs: &mut Option<Vec<Vec<Seg>>>,
     center: &Region,
     reliefs: &[ResolvedRelief],
+    misses: &mut Vec<Point2>,
 ) {
     let find_v = |passes: &[Vec<Point2>], target: Point2| -> Option<(usize, usize)> {
         let mut best: Option<(usize, usize, f64)> = None;
@@ -117,6 +122,8 @@ pub(super) fn inject_relief_spurs(
                     segs.push(Seg::Line(detour.to_vec()));
                 }
             }
+        } else {
+            misses.push(r.corner);
         }
     }
 }
@@ -139,4 +146,46 @@ pub fn pocket_relief_plan(
         return Err(GenError::Invalid("pocket is narrower than the tool".into()));
     }
     plan_corner_reliefs(region, &center, off, relief)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geo2d::Loop;
+
+    /// #3249: a relief with no pass vertex at its start and no legal detour
+    /// is reported in `misses`, not dropped silently.
+    #[test]
+    fn a_relief_no_pass_reaches_is_reported_as_a_miss() {
+        let square = Loop::new(vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(10.0, 0.0),
+            Point2::new(10.0, 10.0),
+            Point2::new(0.0, 10.0),
+        ])
+        .expect("square loop");
+        let center = Region::new(vec![square]).expect("square region");
+        // One pass far from the relief corner: no exact vertex and no chord
+        // from it to the corner stays inside the center area.
+        let mut passes = vec![vec![Point2::new(50.0, 50.0), Point2::new(50.0, 52.0)]];
+        let mut runs: Option<Vec<Vec<Seg>>> = None;
+        let reliefs = [ResolvedRelief {
+            corner: Point2::new(0.0, 0.0),
+            start: Point2::new(3.0, 3.0),
+            end: Point2::new(2.0, 3.0),
+            radius: 3.0,
+        }];
+        let mut misses = Vec::new();
+        inject_relief_spurs(&mut passes, &mut runs, &center, &reliefs, &mut misses);
+        assert_eq!(misses, vec![Point2::new(0.0, 0.0)], "the skipped relief is named");
+        assert_eq!(passes[0].len(), 2, "no spur is spliced in");
+
+        // The same relief with a pass vertex at its start gets its spur, and
+        // reports no miss.
+        let mut passes = vec![vec![Point2::new(5.0, 3.0), Point2::new(3.0, 3.0), Point2::new(3.0, 5.0)]];
+        let mut misses = Vec::new();
+        inject_relief_spurs(&mut passes, &mut None, &center, &reliefs, &mut misses);
+        assert!(misses.is_empty(), "a reached relief is not a miss: {misses:?}");
+        assert!(passes[0].iter().any(|p| *p == Point2::new(2.0, 3.0)), "the spur end is in the pass");
+    }
 }

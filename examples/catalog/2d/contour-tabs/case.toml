@@ -1,3 +1,3 @@
 kinds = ["2D Contour"]
 machine = "3-axis mill"
-expect = "Cut the plate outline with lead-in, lead-out and four retaining tabs."
+expect = "post"

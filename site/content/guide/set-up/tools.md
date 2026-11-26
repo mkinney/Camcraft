@@ -56,6 +56,31 @@ plunge into material. Set it from the real tool's specification. Turning
 tools also have orientation or touched-off corner settings. These describe
 the point touched off on the machine; see [Turning](@/guide/operations/operations-turning.md).
 
+## Cutting data for wood and plastics
+
+On an operation's **Feeds** tab, open **Cutting data** and select
+**Workpiece material**. The choices include **Softwood**, **Hardwood**,
+**MDF**, **Plywood**, **Acrylic (PMMA)** and **HDPE**. State the tool's
+**Tool material** and **Flutes** too. The suggestion shows cutting speed,
+chip load, spindle rpm and feed. **Apply suggestion** writes the spindle
+and feed as one undoable change; first apply or revert any other edits
+on the operation page.
+
+For example, for a plywood pocket with a carbide end mill, select
+Plywood, Carbide and the cutter's actual flute count. Read the suggested
+rpm and feed and any machine-limit notes before applying. The router
+material tables use the cutter diameter to choose chip load. A spindle
+limit changes the suggested rpm and recomputes feed at that rpm to keep
+the chip load; the readout says when it does so. These are starting
+suggestions: check them against the cutter and machine specifications.
+
+A missing material, tool material or flute count produces **No
+suggestion** with the reason. Supply the named input; CamCraft does not
+guess it. The tool editor's **Cutting data** group also has **Add material
+row** for storing your own rpm and feed for each material. **Apply** saves
+those rows. A repeated material or a non-positive rpm or feed is refused
+by the tool's name. Rows and the material choice travel with the project.
+
 ## Holders and profiles
 
 A milling tool without a custom body uses the holder cylinder stated by its
@@ -242,7 +267,7 @@ WinMax 9.01 control still requires verification on the machine.
 
 ## Tool numbering
 
-**Tool number (0 = list position)** sets the machine's controller number.
+**Tool number** sets the machine's controller number.
 Zero means the tool's position in the document tool list, starting at one.
 An explicit number must be between 1 and 99999. A post can impose a smaller
 controller limit. The tool number supplies the posted `T` word and the

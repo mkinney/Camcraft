@@ -54,19 +54,28 @@ fn an_inch_file_meshes_at_twice_its_converted_tolerance() {
 
 #[test]
 fn without_a_stated_tolerance_or_a_measured_gap_there_is_no_looser_mesh() {
-    for file in ["edge_gap/edge_gap_009_unstated.step", "edge_gap/edge_gap_021_stated_5mm.step"] {
-        match read(file) {
-            Ok(m) => panic!("{file} must be refused, meshed at {} mm", m.chord_mm),
-            Err(e) => {
-                let s = e.to_string();
-                assert!(s.contains("capped at") && s.contains("tolerance 5e-3 mm"), "{file}: {s}");
-            }
+    // Since solidcore fa67b3f5 (#3767) edge_gap_021_stated_5mm.step is refused
+    // at the read by the kernel's gap check (the second list), not at the
+    // chord by the mesh: the cap stays at 0.02 mm, not at twice 5 mm.
+    let file = "edge_gap/edge_gap_009_unstated.step";
+    match read(file) {
+        Ok(m) => panic!("{file} must be refused, meshed at {} mm", m.chord_mm),
+        Err(e) => {
+            let s = e.to_string();
+            assert!(s.contains("capped at") && s.contains("tolerance 5e-3 mm"), "{file}: {s}");
         }
     }
-    for file in ["edge_gap/edge_gap_021_stated_010.step", "edge_gap/edge_gap_011_unstated.step", "bspline_discontinuous.step"] {
+    for file in [
+        "edge_gap/edge_gap_021_stated_010.step",
+        "edge_gap/edge_gap_021_stated_5mm.step",
+        "edge_gap/edge_gap_011_unstated.step",
+        "bspline_discontinuous.step",
+    ] {
         let s = read(file).map(|m| m.chord_mm).expect_err(file).to_string();
         assert!(s.contains("off the face's surface, over the cap of"), "{file}: {s}");
     }
+    let s = read("edge_gap/edge_gap_021_stated_5mm.step").map(|m| m.chord_mm).expect_err("5 mm").to_string();
+    assert!(s.contains("over the cap of 0.02 mm; the file states a tolerance of 5 mm"), "{s}");
 }
 
 #[test]

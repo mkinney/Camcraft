@@ -47,6 +47,7 @@ fn params(pattern: FinishPattern, clearance_z: f64, top_z: f64, bottom_z: f64) -
         entry_ramp: false,
         steep_stepover: None,
         pencil_reference: None,
+        waterlines: true,
     }
 }
 

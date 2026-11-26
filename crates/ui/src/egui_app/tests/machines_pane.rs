@@ -14,6 +14,9 @@ use super::super::layout;
 use super::super::machines_pane::{row_label, verdict, USE_FOR_SETUP};
 use super::*;
 
+#[path = "machines_pane/assign.rs"]
+mod assign;
+
 fn blank_harness() -> Harness<'static, ShellUi> {
     harness_with_user_dir(None)
 }

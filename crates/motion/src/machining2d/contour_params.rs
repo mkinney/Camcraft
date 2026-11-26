@@ -6,6 +6,7 @@
 
 use crate::entry::Entry3D;
 use crate::links::Links;
+use crate::path_picks::PathPicks;
 
 use super::face::GenError;
 
@@ -70,7 +71,7 @@ pub enum Side {
 const TAB_LEVEL_TOL: f64 = 1e-6;
 
 /// 2D contouring: trim a material region's boundary at successive depths.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ContourParams {
     pub tool_diameter: f64,
     /// Thickness of material deliberately left on the finished faces for
@@ -125,6 +126,10 @@ pub struct ContourParams {
     /// stay sharp and are named in the notes with the worst corner
     /// rest. `false` - every pre-M11.1 file - is unchanged to the byte.
     pub blend_turns: bool,
+    /// The corner arc's radius (#1759), read only with `blend_turns`:
+    /// `None` is the tool radius every earlier file blends at; a radius
+    /// is held to `corner_arc_radius`'s door.
+    pub blend_radius: Option<f64>,
     /// Level transitions and links (M11.2 C/D, `contour_link`): the
     /// descent between levels, and how the tool travels between levels
     /// and between rings - clearance, the retract plane, or keep down
@@ -133,6 +138,8 @@ pub struct ContourParams {
     /// every file before the option (the old `level_link` stay-down ramp
     /// is level Keep down with a Ramp transition).
     pub links: Links,
+    /// The user's start and exit picks (#1448, #3339).
+    pub picks: PathPicks,
 }
 
 impl ContourParams {
@@ -193,6 +200,12 @@ impl ContourParams {
             return Err(GenError::Invalid("tabs need positive width".into()));
         }
         self.links.validate().map_err(|e| GenError::Invalid(e.into()))?;
+        if let Some(why) = self.picks.refusal() {
+            return Err(GenError::Invalid(why));
+        }
+        if self.blend_turns {
+            super::fillet_tally::corner_arc_radius(self.blend_radius, self.tool_diameter).map_err(GenError::Invalid)?;
+        }
         let helix = self.entry == Entry3D::Helix || self.links.transition == Some(Entry3D::Helix);
         if helix && self.helix_radius <= 0.0 {
             // Only positivity: the roughing ladders cap the radius at

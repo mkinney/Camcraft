@@ -25,6 +25,7 @@ pub(super) fn params() -> WireParams {
         tabs: None,
         stock: None,
         clearance: 1.0,
+        sharp_corners: false,
     }
 }
 

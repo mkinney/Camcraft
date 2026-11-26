@@ -258,6 +258,45 @@ fn the_sweep_never_reads_or_deletes_through_a_link() {
 }
 
 #[test]
+fn a_link_at_the_package_level_is_skipped() {
+    let base = tmp("pkglink");
+    let root = base.join("tree");
+    let start = SystemTime::now();
+    // A real package with one old unit, and a second package that is a link to it: the scan must not
+    // enter the link, the sweep must remove nothing through it, and the link itself must stay (#3173).
+    let real_pkg = unit(&root, "debug", "camcraft-app", "aaaa", T, start - Duration::from_secs(3600));
+    unit(&root, "debug", "camcraft-app", "bbbb", T, start + Duration::from_secs(5));
+    let build = root.join("target").join("debug").join("build");
+    // A link name distinct from the real package names: on a case-insensitive
+    // volume (Windows, macOS) a case-variant name folds to the same directory
+    // and cannot be created next to it (#3173). Every platform links a second
+    // package name, `other-app`.
+    let linked_pkg = build.join("other-app");
+    assert!(dir_link(real_pkg.parent().expect("the package dir"), &linked_pkg), "the test makes the package link");
+    assert!(!plain_dir(&linked_pkg), "a package link is not a plain directory");
+    let units = scan(&root.join("target"));
+    assert!(units.iter().all(|u| !u.dir.starts_with(&linked_pkg)), "the scan does not enter a package link: {units:?}");
+    let r = sweep(&root, start, none);
+    assert!(r.skipped.is_none(), "{r:?}");
+    assert_eq!(r.removed, 1, "only the real old variant is removed: {r:?}");
+    assert!(fs::read_dir(&build).is_ok_and(|d| d.count() == 2), "the package link itself stays");
+    let _ = fs::remove_file(&linked_pkg).or_else(|_| fs::remove_dir(&linked_pkg)); // the link only
+    let _ = fs::remove_dir_all(&base);
+}
+
+#[test]
+fn a_path_that_differs_only_by_case_is_one_form_on_a_case_insensitive_volume() {
+    let a = norm("/w/tree/target");
+    let b = norm("/W/Tree/target");
+    // Windows and the default macOS volume fold case; a case-sensitive Unix volume does not.
+    if cfg!(windows) || cfg!(target_os = "macos") {
+        assert_eq!(a, b, "case folding (#3173)");
+    } else {
+        assert_ne!(a, b);
+    }
+}
+
+#[test]
 fn the_sweep_can_be_turned_off_and_reports_failed_deletes_as_warnings() {
     assert!(opted_out(Some("off")) && opted_out(Some("OFF")) && opted_out(Some("0")));
     assert!(!opted_out(None) && !opted_out(Some("on")));

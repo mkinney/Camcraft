@@ -24,7 +24,7 @@ fn p3(x: f64, y: f64, z: f64) -> Point3 {
 /// minimum angle, no hole filter - what the kernel did before #1888.
 fn params(top_z: f64, bottom_z: f64) -> DeburrParams {
     DeburrParams {
-        width: 2.0,
+        width: 2.0 * std::f64::consts::SQRT_2, // #1890: the chord of a 2 mm setback
         tip_angle_deg: 90.0,
         clearance_z: 20.0,
         top_z,
@@ -36,6 +36,7 @@ fn params(top_z: f64, bottom_z: f64) -> DeburrParams {
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
         unreachable: camcraft_motion::finishing3d::UnreachableEdges::SkipWithNote,
+        sizing: camcraft_motion::finishing3d::DeburrBreak::default(),
     }
 }
 

@@ -94,17 +94,21 @@ fn fan_mesh() -> Mesh {
 
 fn op(pairing: WirePairingRule, sync: Vec<WireSyncPair>) -> WireContourOp {
     WireContourOp {
+        lead_arc_radius: None,
         top_z: Height::fixed(H),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),
         side: WireSide::Punch,
-        start: Some([-30.0, 0.0]),
+        picks: camcraft_app::path_picks::PathPicks { start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(-30.0, 0.0))], exit: Vec::new() },
         tabs: None,
         capture: true,
+        both_pieces_restrained: false,
+        stock_centered_in_xy_travel: false,
         taper_deg: 0.0,
         burnout: None,
         clearance: operation::DEFAULT_CLEARANCE,
         skims: Vec::new(),
+        sharp_corners: false,
         four_axis: Some(WireFourAxis {
             pairing,
             sync,
@@ -345,7 +349,7 @@ fn die_face_reads_its_one_hole_ring_and_verifies() {
     let picks = vec![face_at(&world, H), face_at(&world, 0.0)];
     let wire = WireContourOp {
         side: WireSide::Die,
-        start: Some([0.0, 0.0]),
+        picks: camcraft_app::path_picks::PathPicks { start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(0.0, 0.0))], exit: Vec::new() },
         ..op(WirePairingRule::ArcLength, Vec::new())
     };
     generate(&world, &mut history, picks, wire).expect("the opening of the two faces generates");

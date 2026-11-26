@@ -91,22 +91,20 @@ fn a_gap_just_over_twice_the_stated_tolerance_is_refused_by_name() {
 
 #[test]
 fn a_huge_stated_tolerance_does_not_raise_the_cap_past_its_limit() {
-    // The file states 5 mm: the cap stops at 0.02 mm. The reader fits this
-    // face's pcurves itself at the loose tolerance, so the kernel's gap
-    // check does not run on it; the machining mesh refuses the 0.021 mm
-    // step at the chord, and the importer has no gap measured to loosen
-    // for.
-    let i = import("edge_gap/edge_gap_021_stated_5mm.step").expect("the reader keeps it");
-    assert_eq!(i.edge_gap.cap.stated_mm, Some(5.0));
-    assert!(near(i.edge_gap.cap.cap_mm, EDGE_GAP_LIMIT_MM), "{:?}", i.edge_gap);
-    assert_eq!(i.edge_gap.loose_chord_mm(CHORD), None, "{:?}", i.edge_gap);
-    let stop = solidcore::kernel::CancelToken::new();
-    for chord in [CHORD, EDGE_GAP_LIMIT_MM] {
-        match machining_mesh(&i.solids[0], chord, &stop) {
-            Err(MeshRefusal::FaceCapped { sag, .. }) => assert!(sag > EDGE_GAP_LIMIT_MM, "{sag}"),
-            other => panic!("the 0.021 mm step must not mesh at {chord} mm: {other:?}"),
-        }
-    }
+    // The file states 5 mm: the cap stops at 0.02 mm. Up to solidcore
+    // 2016386 the reader fitted this face's pcurves itself and the machining
+    // mesh refused the 0.021 mm step at the chord. Since fa67b3f5 (#3767)
+    // the face reaches the kernel's pcurves, and the gap check refuses it at
+    // the read, with the gap, the cap and the stated 5 mm.
+    let s = refusal("edge_gap/edge_gap_021_stated_5mm.step");
+    assert!(s.contains("face #46"), "names the face: {s}");
+    assert!(
+        s.contains(
+            "edge 0 lies 0.0210 mm off the face's surface, over the cap of 0.02 mm; \
+             the file states a tolerance of 5 mm, and the reader accepts twice that, from 0.01 mm to 0.02 mm"
+        ),
+        "the cap stops at its limit, not at 10 mm: {s}"
+    );
 }
 
 #[test]

@@ -253,6 +253,11 @@ pub fn op_stamp(world: &World, op: &Operation, op_name: &str) -> Option<GenStamp
         Some(Containment::Outside) => 3,
     });
     w(&mut h, a.offset);
+    // #3338: hashed only when it differs, so an old project's stamp holds.
+    if a.outer_offset != a.offset {
+        h.write(b"outer");
+        w(&mut h, a.outer_offset);
+    }
     h.write_u8(u8::from(a.corner == CornerStyle::Sharp));
     w(&mut h, a.extension);
     let picks = |h: &mut std::hash::DefaultHasher, items: &[GeoSel]| -> Option<()> {

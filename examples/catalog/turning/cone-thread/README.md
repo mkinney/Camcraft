@@ -43,7 +43,7 @@ The 15 mm below the part is the chuck's grip. The part-off plane is Z15.
 - **The taper:** in `Finish profile`, the blocks `G01 X19.812 Z20.` to `G01 X10.212 Z58.4` cut X and Z together. X falls 10 mm over 40 mm of Z. X and Z are the insert's control point (nose orientation 2): one nose radius (0.8 mm) from the nose centre toward the axis and toward the chuck.
 - **The thread:** in `Thread`, each pass is a `G01` plunge at Z77.4 and a run of `G32 Z... F1.5` blocks down to Z63.9. The pass depths are X9.5, X9., X8.5 and X8.16.
 - **The neck:** `G01 X8. Z60.` with the 3 mm blade.
-- **The part-off:** pecks at Z13.5 down to `X0.`.
+- **The part-off:** pecks at Z12 down to `X0.`. The 3 mm kerf is Z12 to Z15, below the part's end face.
 
 ## Limits that shaped this case
 

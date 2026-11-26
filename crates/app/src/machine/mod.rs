@@ -162,6 +162,11 @@ pub fn check_ops(world: &World, machine: &Machine, program: &[(String, flecs_ecs
             .ok_or_else(|| format!("{name}: tool {} is not in the library", op.tool))?;
         let tool = model::tool_of(world, &tool_entity)
             .ok_or_else(|| format!("{name}: tool {} is not in the library", op.tool))?;
+        if let Some(number) = crate::tool_numbers::number_of(world, &op.tool)
+            && let Err(why) = crate::tool_reservations::on_machine(machine, &op.tool, tool.kind, number)
+        {
+            say(&mut out, format!("{name}: {why}"));
+        }
         // #368: a modelled body is the holder the magazine measures.
         let tool = crate::tool_body::judged(world, &tool_entity, tool)
             .map_err(|e| format!("{name}: tool {}: {e}", op.tool))?

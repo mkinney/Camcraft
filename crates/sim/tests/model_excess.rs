@@ -17,6 +17,9 @@ use camcraft_sim::geo2d::{Loop, Point2, Region};
 use camcraft_sim::geometry::{Point3, Triangle};
 use camcraft_sim::verify::{excess_floor, excess_floor_for, verify, Mode, ToolGeom, VerifyContext, Warning};
 
+#[path = "model_excess/bullnose_envelope.rs"]
+mod bullnose_envelope;
+
 /// The importer's promise and the verdict tolerance, mm.
 const CAP: f64 = 0.005;
 const TOL: f64 = 0.01;

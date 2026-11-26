@@ -15,8 +15,11 @@
 
 use thiserror::Error;
 
+mod clip_line;
 mod slivers;
 mod sweep;
+
+pub use clip_line::RingClip;
 
 use clipper2_rust::{
     EndType, FillRule, JoinType, Path64, Paths64, Point64, inflate_paths_64, intersect_64,

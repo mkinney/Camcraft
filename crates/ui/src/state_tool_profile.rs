@@ -34,7 +34,7 @@ pub enum ToolColumn {
 }
 
 /// The editor's profile draft for the tool it is open on.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ToolProfileUi {
     /// The tool the draft belongs to (the editor's `tool_ui.name`).
     pub tool: String,
@@ -57,6 +57,10 @@ pub struct ToolProfileUi {
     pub library: Option<String>,
     pub gauge: f64,
     pub projection: f64,
+    /// #3895 (#808 item 2): the stored tool's stickout the projection was
+    /// last seeded from, and whether a tool length change re-seeded it.
+    pub seeded: Option<f64>,
+    pub reseeded: bool,
 }
 
 /// Is `kind` a milling tool - one a spun profile describes?
@@ -94,6 +98,7 @@ impl State {
                 d.library = self.tool_profile_ui.library.take();
                 d.gauge = self.tool_profile_ui.gauge;
                 d.projection = self.tool_profile_ui.projection;
+                d.seeded = self.tool_profile_ui.seeded;
             }
             // #2016: with no pick of the user's, the picker shows the
             // library holder the tool already sits in.
@@ -111,6 +116,7 @@ impl State {
             d.seen = facets;
             self.tool_profile_ui = d;
         }
+        self.reseed_holder_projection();
         if !self.tool_profile_ui.custom {
             self.tool_profile_ui.points = parametric_points(&self.tool_ui.to_tool());
         }
@@ -211,6 +217,7 @@ impl State {
                 d.library = Some(name);
                 d.gauge = e.gauge_len;
                 d.projection = stickout.unwrap_or(d.projection);
+                (d.seeded, d.reseeded) = (stickout, false);
             }
             None => d.library = None,
         }

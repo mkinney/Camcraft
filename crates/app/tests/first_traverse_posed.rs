@@ -15,6 +15,8 @@
 //! - A work-turning rotary that states no line refuses by name.
 //! - #3127: a table A whose stated pivot moves its line off the WCS
 //!   origin refuses by name; a zero pivot is read as before.
+//! - #3248: the same refusal with two work-turning rotaries; a vertical
+//!   line's stated pivot is accepted, the law drops out.
 //!
 //! Provenance: our own machine files and fixtures (the rotary suite's
 //! turned bar, the first-traverse suite's dome); the shop rule "never
@@ -44,6 +46,8 @@ const BALL: &str = "BN-0600";
 enum Rig {
     /// A and B on the table: both turn the work.
     TwoWork,
+    /// As `TwoWork`, with A's stated `pivot` (#3248).
+    TwoWorkAPivot([f64; 3]),
     /// A on the table turns the work; B rides the head.
     TableA,
     /// A rotary Q on the table turns the work about no stated line; B
@@ -51,6 +55,10 @@ enum Rig {
     Unlined,
     /// As `TableA`, with A's stated `pivot` (#3127).
     TableAPivot([f64; 3]),
+    /// A rotary C on the table turns the work about no stated line (its
+    /// RS-274 line is vertical); B rides the head. With C's stated
+    /// `pivot` (#3248).
+    VerticalCPivot([f64; 3]),
 }
 
 fn machine_text(rig: Rig) -> String {
@@ -62,11 +70,16 @@ fn machine_text(rig: Rig) -> String {
     let y = r#", "axis": [0.0, 1.0, 0.0]"#;
     let head_b = rot("rb", "B", y, &format!(r#", "parts": [ {head} ]"#));
     let (z_parts, table) = match rig {
-        Rig::TwoWork => (head.to_string(), rot("ra", "A", x, &format!(r#", "parts": [ {} ]"#, rot("rb", "B", y, "")))),
+        Rig::TwoWork | Rig::TwoWorkAPivot(_) => (head.to_string(), rot("ra", "A", x, &format!(r#", "parts": [ {} ]"#, rot("rb", "B", y, "")))),
         Rig::TableA | Rig::TableAPivot(_) => (head_b, rot("ra", "A", x, "")),
         Rig::Unlined => (head_b, rot("rq", "Q", "", "")),
+        Rig::VerticalCPivot(_) => (head_b, rot("rc", "C", "", "")),
     };
-    let first = if matches!(rig, Rig::Unlined) { "Q" } else { "A" };
+    let first = match rig {
+        Rig::Unlined => "Q",
+        Rig::VerticalCPivot(_) => "C",
+        _ => "A",
+    };
     format!(
         r#"{{
   "general": {{ "model": "TEST POSED", "vendor": "Camcraft", "kind": "mill" }},
@@ -93,23 +106,15 @@ fn world_on(rig: Rig) -> (World, History) {
     let world = camcraft_app::world::new_world();
     let mut h = History::default();
     let mut m = parse_mch(&machine_text(rig)).unwrap_or_else(|e| panic!("test machine: {e}"));
-    if let Rig::TableAPivot(at) = rig {
-        m.axes.iter_mut().filter(|a| a.name == "A").for_each(|a| a.pivot = Some(at));
+    if let Rig::TableAPivot(at) | Rig::TwoWorkAPivot(at) | Rig::VerticalCPivot(at) = rig {
+        let name = if matches!(rig, Rig::VerticalCPivot(_)) { "C" } else { "A" };
+        m.axes.iter_mut().filter(|a| a.name == name).for_each(|a| a.pivot = Some(at));
     }
     h.execute(&world, LoadMachine::new(&world, "test-posed.mch".into(), Some(m)).expect("machine"));
     h.execute(&world, SetWcsOrigin::new(&world, Location { pos: Point3::ZERO, rot: IDENTITY_Q }).expect("G54 on the lines"));
     let t = catalog().into_iter().find(|(n, _)| *n == BALL).map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, BALL, t).expect("tool"));
     (world, h)
-}
-
-/// Generate "OP" from `src` and read its status and verdicts.
-fn generate(world: &World, h: &mut History, src: &str, p: OpParams) -> (OpStatus, Vec<Warning>) {
-    h.execute(world, CreateOperation::new(world, "OP", BALL, SrcRef::Entity(src.into()), p).expect("create"));
-    h.execute(world, GenerateOperation::new(world, "OP").expect("generate"));
-    let e = model::find_by_name(world, "OP").expect("op");
-    let cached = model::toolpath_of(world, &e).expect("cached path");
-    (camcraft_app::operation::status_of(world, &e), cached.warnings.clone())
 }
 
 fn first_low(warns: &[Warning]) -> Option<(f64, f64, bool)> {
@@ -119,10 +124,12 @@ fn first_low(warns: &[Warning]) -> Option<(f64, f64, bool)> {
     })
 }
 
+
 /// The rotary suite's turned bar laid along X in a 32 x 14 x 14 square
-/// bar of stock (x +-16, y +-7, z +-7), on the two-rotary table.
-fn laid_bar_on_two_rotaries(clearance: f64) -> (World, OpStatus, Vec<Warning>) {
-    let (world, mut h) = world_on(Rig::TwoWork);
+/// bar of stock (x +-16, y +-7, z +-7), on `rig`'s two-rotary table.
+/// `Err` carries the refusal, as [`contour5d_on`] does.
+fn laid_bar_on(rig: Rig, clearance: f64) -> Result<(World, OpStatus, Vec<Warning>), String> {
+    let (world, mut h) = world_on(rig);
     let at = Location { pos: Point3::new(0.0, 0.0, -7.0), rot: IDENTITY_Q };
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 32.0, dy: 14.0, dz: 14.0 }, at).expect("stock"));
     h.execute(&world, ImportModel::from_mesh("bar", Mesh::from_facets(common::rotary_bar::laid())));
@@ -139,9 +146,21 @@ fn laid_bar_on_two_rotaries(clearance: f64) -> (World, OpStatus, Vec<Warning>) {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
+        picks: Default::default(),
     };
-    let (status, warns) = generate(&world, &mut h, "bar", p);
-    (world, status, warns)
+    h.execute(&world, CreateOperation::new(&world, "OP", BALL, SrcRef::Entity("bar".into()), p).expect("create"));
+    let cmd = GenerateOperation::new(&world, "OP").map_err(|e| format!("{e:?}"))?;
+    h.execute(&world, cmd);
+    let e = model::find_by_name(&world, "OP").expect("op");
+    let cached = model::toolpath_of(&world, &e).ok_or_else(|| format!("no path: {:?}", camcraft_app::operation::status_of(&world, &e)))?;
+    let (status, warns) = (camcraft_app::operation::status_of(&world, &e), cached.warnings.clone());
+    Ok((world, status, warns))
+}
+
+/// [`laid_bar_on`] the plain two-rotary rig, where a refusal is a failure.
+fn laid_bar_on_two_rotaries(clearance: f64) -> (World, OpStatus, Vec<Warning>) {
+    laid_bar_on(Rig::TwoWork, clearance).unwrap_or_else(|e| panic!("{e}"))
 }
 
 #[test]
@@ -206,6 +225,7 @@ fn contour5d_on(rig: Rig, clearance: f64) -> Result<(World, OpStatus, Vec<Warnin
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
         shank_avoid: false,
+        picks: Default::default(),
     };
     h.execute(&world, CreateOperation::new(&world, "OP", BALL, SrcRef::Entity("dome".into()), p).expect("create"));
     let cmd = GenerateOperation::new(&world, "OP").map_err(|e| format!("{e:?}"))?;
@@ -262,4 +282,37 @@ fn a_zero_pivot_reads_the_table_line_through_the_wcs_origin() {
     let (_, status, warns) = contour5d_on(Rig::TableAPivot([0.0; 3]), 25.0).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(status, OpStatus::Ok);
     assert_eq!(first_low(&warns), None, "clearance 25 stands over the swept stock: {warns:?}");
+}
+
+#[test]
+fn one_of_two_work_turning_rotaries_off_the_wcs_origin_refuses_by_name() {
+    // #3248: with A and B both turning the work, A's pivot 40 mm over the
+    // WCS origin moves the sphere's centre; the law refuses by name.
+    let refused = match laid_bar_on(Rig::TwoWorkAPivot([0.0, 0.0, 40.0]), 20.0) {
+        Err(e) => e,
+        Ok((_, status, warns)) => panic!("no refusal: {status:?} {warns:?}"),
+    };
+    for text in ["work-turning rotary A", "pivot or offset", "off the WCS origin", "cannot be judged"] {
+        assert!(refused.contains(text), "{text}: {refused}");
+    }
+}
+
+#[test]
+fn a_zero_pivot_on_two_work_turning_rotaries_reads_the_sphere_as_before() {
+    // #3248: the control. A zero pivot is the plain two-rotary rig.
+    let (_, status, warns) = laid_bar_on(Rig::TwoWorkAPivot([0.0; 3]), 20.0).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(status, OpStatus::Ok);
+    assert_eq!(first_low(&warns), None, "clearance 20 stands over the sphere: {warns:?}");
+}
+
+#[test]
+fn a_vertical_work_turning_rotary_with_a_stated_pivot_is_not_refused() {
+    // #3248: the single-rotary branch refuses an off-origin pivot only on
+    // a line that is not vertical. C's RS-274 line is vertical, so its
+    // stated pivot is ignored by design and the law drops out.
+    for pivot in [[0.0, 0.0, 40.0], [0.0; 3]] {
+        let (_, status, warns) = contour5d_on(Rig::VerticalCPivot(pivot), 25.0).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(status, OpStatus::Ok);
+        assert_eq!(first_low(&warns), None, "pivot {pivot:?}: the law drops out: {warns:?}");
+    }
 }

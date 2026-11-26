@@ -42,7 +42,7 @@ pub fn parse_import(
             let entries = camcraft_tools::tool_table::parse_controller_table(format, text, unit)?;
             let lib = entries
                 .into_iter()
-                .map(|e| LibraryTool { name: e.name, tool: e.tool, body: None, number: Some(e.number) })
+                .map(|e| LibraryTool { name: e.name, tool: e.tool, body: None, number: Some(e.number), cutter: None })
                 .collect();
             Ok((format, lib))
         }

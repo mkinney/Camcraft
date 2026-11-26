@@ -353,6 +353,7 @@ pub(super) fn emit_runs(
     continuing: bool,
 ) {
     let hop = p.retract_z.unwrap_or(p.clearance_z).min(p.clearance_z);
+    let model_top = sups.iter().flat_map(|s| s.tri.iter().map(|v| v.z)).fold(f64::NEG_INFINITY, f64::max);
     for (i, run) in runs.iter().enumerate() {
         let (x0, y0) = (run[0].0.x, run[0].0.y);
         let z0 = run[0].1 - r;
@@ -378,7 +379,13 @@ pub(super) fn emit_runs(
             // stands, byte for byte as every older file ran.
             b.push(MoveKind::Feed, Point3::new(x0, y0, z0), Some(p.feed));
         } else {
-            let trav = hop.max(z0);
+            // The plain hop (#3627): never below the run end (the tool
+            // rests on the part there), and across only at a plane over
+            // every facet or one the exact sweep clears - else clearance.
+            let trav = hop.max(z0).max(cur.z);
+            let (a, c) = (Point3::new(cur.x, cur.y, trav), Point3::new(x0, y0, trav));
+            let clear = trav >= model_top || super::gaplink::straight_ok(a, c, r, sups);
+            let trav = if clear { trav } else { p.clearance_z.max(trav) };
             b.push(MoveKind::Feed, Point3::new(cur.x, cur.y, trav), Some(p.feed));
             b.push(MoveKind::Rapid, Point3::new(x0, y0, trav), None);
         }

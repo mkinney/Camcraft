@@ -25,6 +25,21 @@ use serde_json::{Value, json};
 
 const PLACEHOLDER: &str = "placeholder-not-a-real-key";
 
+#[test]
+fn cloud_default_catalog_has_one_active_model_per_provider() {
+    use camcraft_app::ai::presets::{CLOUD_DEFAULTS, default_model};
+
+    for endpoint in ENDPOINTS.iter().filter(|e| e.key.is_some()) {
+        let rows: Vec<_> = CLOUD_DEFAULTS.iter()
+            .filter(|entry| entry.provider == endpoint.provider).collect();
+        assert_eq!(rows.len(), 1, "{} needs exactly one default", endpoint.id);
+        let row = rows[0];
+        assert!(!row.retired, "{} default {} is retired", endpoint.id, row.model);
+        assert!(!row.model.is_empty(), "{} needs a model name", endpoint.id);
+        assert_eq!(default_model(endpoint.provider), row.model);
+    }
+}
+
 /// One request as the fake server saw it.
 struct Seen {
     line: String,

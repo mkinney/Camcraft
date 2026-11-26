@@ -156,6 +156,29 @@ fn a_slot_outline_seeds_the_slot_and_cuts_it_to_size() {
     let (x0, x1, y0, y1) = cut_box(&path, 10.0);
     assert!((x0 - 42.0).abs() < 0.02 && (x1 - 78.0).abs() < 0.02, "length to size: {x0}..{x1}");
     assert!((y0 - 22.0).abs() < 0.02 && (y1 - 28.0).abs() < 0.02, "width to size: {y0}..{y1}");
+    // #2906 / #3278: the 10 mm ends are wider than the 4 mm tool, so a wall lap rides
+    // each round end on the 3 mm cutter-centre arc about its arc centre.
+    for (cx, cy) in [(45.0, 25.0), (75.0, 25.0)] {
+        let on_end = path.moves.iter().any(|m| {
+            m.arc.is_some_and(|c| near(c.center, cx, cy))
+                && [m.from, m.to].iter().all(|p| ((p.x - cx).hypot(p.y - cy) - 3.0).abs() < 1e-3)
+        });
+        assert!(on_end, "the round end about ({cx}, {cy}) is cut on its wall arc");
+    }
+    // No cutting move leaves the outline at the tool radius: each end point lies in the
+    // cutter-centre stadium (3 mm about the axis (45, 25) -> (75, 25)), which is convex, so
+    // each line stays in it; each arc turns on a 3 mm circle about an axis end.
+    for m in path.moves.iter().filter(|m| m.kind != MoveKind::Rapid && m.to.z < 10.0 - 1e-6 && m.from.z < 10.0 - 1e-6) {
+        for p in [m.from, m.to] {
+            let off = (p.x.clamp(45.0, 75.0) - p.x).hypot(p.y - 25.0);
+            assert!(off < 3.0 + 1e-3, "{m:?} leaves the outline: {off} mm off the axis");
+        }
+        if let Some(c) = m.arc {
+            let r = (m.from.x - c.center.x).hypot(m.from.y - c.center.y);
+            assert!(near(c.center, 45.0, 25.0) || near(c.center, 75.0, 25.0), "{m:?}: an arc off the round ends");
+            assert!(r < 3.0 + 1e-3, "{m:?}: an arc of radius {r} leaves the outline");
+        }
+    }
     write_golden("slot_dxf_outline.cl", &gen_to_cltext(&path));
 
     let sim = simulate_document(&world).expect("simulate on the stock, with no solid model");
@@ -240,9 +263,17 @@ fn picks_that_are_no_slot_are_refused_by_name() {
         };
 
         // A channel narrower than the tool: the 3 mm outline under the 4 mm cutter.
-        let why = refused(pick(&world, "narrow"), "narrow outline");
-        let named = if kind == OpType::Slot { "slot is narrower than the tool" } else { "is too narrow for a 4.000 mm tool" };
-        assert!(why.contains(named) && why.contains("3.000 mm") && why.contains("4.000 mm"), "{kind}: {why}");
+        // #3475: the plain Slot refuses it at create, in plain words; the
+        // trochoidal slot still at generate.
+        if kind == OpType::Slot {
+            let created = CreateOperation::new(&world, &format!("{name} narrow outline"), TOOL, pick(&world, "narrow"), seed(kind));
+            let why = refusal(created, "narrow outline");
+            assert!(why.contains("is 4 mm wide and the slot is 3 mm wide: choose a tool of 3 mm or less"), "{kind}: {why}");
+        } else {
+            let why = refused(pick(&world, "narrow"), "narrow outline");
+            let named = "is too narrow for a 4.000 mm tool";
+            assert!(why.contains(named) && why.contains("3.000 mm") && why.contains("4.000 mm"), "{kind}: {why}");
+        }
 
         // A closed outline that is not a slot.
         let why = refused(pick(&world, "plate"), "rectangle");
@@ -266,4 +297,19 @@ fn picks_that_are_no_slot_are_refused_by_name() {
         let why = refused(SrcRef::Entity("plate".into()), "whole profile");
         assert!(why.contains("pick one closed slot outline or one open centerline"), "{kind}: {why}");
     }
+}
+
+/// #3475: picks that are no slot seed no width, so the slot fit law does
+/// not speak for the seed's fallback width: a 6 mm tool on them is made,
+/// and generation names the picks, as before.
+#[test]
+fn picks_that_are_no_slot_keep_their_pick_refusal_under_a_wider_tool() {
+    let (world, mut history) = sheet_world();
+    const WIDE: &str = "EM-0600-4FL";
+    let tool = catalog().into_iter().find(|(n, _)| *n == WIDE).map(|(_, t)| t).expect("catalog tool");
+    run(&world, &mut history, AddTool::new(&world, WIDE, tool), "wide tool");
+    let created = CreateOperation::new(&world, "S plate", WIDE, pick(&world, "plate"), seed(OpType::Slot));
+    run(&world, &mut history, created, "a Slot on a rectangle");
+    let why = refusal(GenerateOperation::new(&world, "S plate"), "rectangle");
+    assert!(why.contains("is not a slot outline"), "{why}");
 }

@@ -287,6 +287,7 @@ fn a_plasma_document_posts_through_the_app_gate() {
         pierce_height: None,
         cut_height: None,
         pierce_delay: None,
+        picks: Default::default(),
     };
     let src = SrcRef::Entity("plate".into());
     h.execute(&world, CreateOperation::new(&world, "Plasma1", "PT-KERF-150", src, OpParams::PlasmaProfile(op)).expect("op"));

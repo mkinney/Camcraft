@@ -239,6 +239,7 @@ fn a_z_only_drill_file_never_writes_the_cross_key() {
             stepped: false,
         }],
         cross: vec![],
+        picks: Default::default(),
     };
     create(&world, &mut history, "D1", p);
     // The fixture is an honest program: it generates (R under the box

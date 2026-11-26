@@ -130,7 +130,7 @@ pub fn current_stamp(
         }
     }
     params.stamp_with(world, setup, Some(src), &mut h);
-    if let OpParams::Deburr { exclude_edges, .. } = params {
+    if let OpParams::Deburr { exclude_edges, .. } | OpParams::MultiAxisDeburr { exclude_edges, .. } = params {
         super::deburr_picks::stamp_inputs(world, setup, src, exclude_edges, &mut h)?;
     }
     // #2848: a rotary op's picks named the whole model before. A path
@@ -139,6 +139,12 @@ pub fn current_stamp(
         && matches!(params, OpParams::RotaryContour { .. } | OpParams::RotaryParallel { .. } | OpParams::RotaryOffset { .. })
     {
         h.write(b"rotary-picked-faces-v1");
+    }
+    // #3452: a part-off cached before the kerf moved to the chuck side of
+    // the end face cut half a blade into the part. Such a path is stale
+    // until the op is generated again (and judged by the kerf law).
+    if matches!(params, OpParams::Part { .. }) {
+        h.write(b"part-off-kerf-side-v1");
     }
     // #326: the setup's part alignment is a moved input for every op of
     // the setup (the parts it machines, verifies against or measures
@@ -178,6 +184,41 @@ pub fn current_stamp(
         w(&mut h, deg);
         w(&mut h, o[0]);
         w(&mut h, o[1]);
+    }
+    // #2772 parts 1-2: a stated rotation axis is a moved input of the
+    // rotary kinds. The machine's stated lines (and the work offset's
+    // origin each is anchored through) move the axis the path turns
+    // about, so a change stales the cache. Written only when a line
+    // is stated: no stamp of an op on a machine that states none (or
+    // with no machine at all) moves. A garbled or leaning stated line
+    // rides as its own refusal text - the digest of a refused op is
+    // the refusal, never a silent axis.
+    if matches!(
+        params,
+        OpParams::RotaryContour { .. } | OpParams::RotaryParallel { .. } | OpParams::RotaryOffset { .. }
+            | OpParams::RotaryFlow { .. }
+    ) {
+        match crate::rotary_stated::axis_lines(world, setup, params) {
+            Some(Ok(lines)) => {
+                h.write(b"rotary-stated-axis");
+                for (_, l) in &lines {
+                    for v in [l.origin.x, l.origin.y, l.origin.z, l.dir.x, l.dir.y, l.dir.z] {
+                        w(&mut h, v);
+                    }
+                }
+                // The anchor itself: a moved work offset moves every
+                // stated line with it.
+                let (_, o) = crate::posting::wcs_context(world, setup);
+                for v in o {
+                    w(&mut h, v);
+                }
+            }
+            Some(Err(e)) => {
+                h.write(b"rotary-stated-axis");
+                h.write(e.to_string().as_bytes());
+            }
+            None => {}
+        }
     }
     match src {
         SrcRef::Stock => {

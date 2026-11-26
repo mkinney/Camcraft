@@ -13,6 +13,7 @@ use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::links::Links;
 use camcraft_motion::machining2d::{ContourParams, Lead, Side, contour};
+use camcraft_motion::path_picks::{PathPick, PathPicks};
 
 const BOTTOM: f64 = -4.0;
 const TAB_H: f64 = 1.0;
@@ -56,8 +57,9 @@ fn params(d: f64, side: Side, count: u32, w: f64, lead: Lead) -> ContourParams {
         tab_height: TAB_H,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: Links::PLANAR,
+        picks: PathPicks::default(),
     }
 }
 
@@ -171,7 +173,7 @@ fn outside_tab_centred_on_a_corner_from_a_picked_start() {
         let mut p = params(d, Side::Outside, 3, w, Lead::None);
         let half = (w + d) * 0.5;
         let arc_half = std::f64::consts::FRAC_PI_4 * d * 0.5;
-        p.links.approach.start_point = Some(Point2::new(50.0 - (half - arc_half), -d * 0.5));
+        p.picks.start = vec![PathPick::xy(Point2::new(50.0 - (half - arc_half), -d * 0.5))];
         let t = contour(&rect(0.0, 0.0, 50.0, 50.0), &p).unwrap();
         holds(&t, d, w, 3, &format!("picked corner tab, W = {w}"));
     }
@@ -260,7 +262,7 @@ fn a_tab_that_grows_over_a_picked_start_says_so() {
     // cut is left at the pick. The first cut starts after the tab; before,
     // no note said that the start moved.
     let mut p = params(10.0, Side::Outside, 15, 4.0, Lead::None);
-    p.links.approach.start_point = Some(Point2::new(4.5, -5.0));
+    p.picks.start = vec![PathPick::xy(Point2::new(4.5, -5.0))];
     let t = contour(&rect(0.0, 0.0, 50.0, 50.0), &p).unwrap();
     let note = t.notes.iter().find(|s| s.starts_with("tabs:") && s.contains("start point (4.500, -5.000)"));
     assert!(note.is_some_and(|s| s.contains("the tabbed levels start at (")), "{:?}", t.notes);
@@ -271,7 +273,7 @@ fn a_tab_that_grows_over_a_picked_start_says_so() {
     }
     // A pick on a straight run keeps its start: no note.
     p.tab_count = 3;
-    p.links.approach.start_point = Some(Point2::new(25.0, -5.0));
+    p.picks.start = vec![PathPick::xy(Point2::new(25.0, -5.0))];
     let t = contour(&rect(0.0, 0.0, 50.0, 50.0), &p).unwrap();
     assert!(t.notes.iter().all(|s| !s.contains("start point")), "{:?}", t.notes);
 }

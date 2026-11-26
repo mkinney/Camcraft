@@ -31,7 +31,7 @@ fn roundtrip(params: OpParams, key: Option<&str>) -> OpParams {
 
 #[test]
 fn links_round_trip_and_the_defaults_write_no_key() {
-    let pocket2d = |links: Links| OpParams::Pocket {
+    let pocket2d = |links: Links| OpParams::Pocket { pass_start: Default::default(),
         rest: None,
         blend_radius: None,
         stepover: 3.0,
@@ -52,6 +52,7 @@ fn links_round_trip_and_the_defaults_write_no_key() {
         tilt: None,
         links,
         corner_relief: Default::default(),
+        picks: Default::default(),
     };
     let back = roundtrip(pocket2d(Links::PLANAR), None);
     assert!(matches!(back, OpParams::Pocket { rest: None, .. }), "default pocket stays non-rest after loading");

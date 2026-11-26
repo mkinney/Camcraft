@@ -82,11 +82,14 @@ fn pass(reach: f64, out: bool) -> Toolpath {
 }
 
 fn judge(path: &Toolpath, tool: &Tool) -> Vec<Warning> {
-    let region = stock();
+    judge_on(path, tool, &stock())
+}
+
+fn judge_on(path: &Toolpath, tool: &Tool, region: &Region) -> Vec<Warning> {
     let geom = tool.geom();
     let cx = VerifyContext {
-        region: &region,
-        stock: Some(&region),
+        region,
+        stock: Some(region),
         model: None,
         tool: &geom,
         cutter: Some(Cutter::of(tool)),
@@ -151,6 +154,39 @@ fn a_dive_into_uncut_stock_is_refused() {
     ]);
     let w = acquitted(&path, &tslot(), &slotted(9.0, -6.0));
     assert!(w.contains(&Warning::UndercutLift { at: 1 }), "{w:?}");
+}
+
+#[test]
+fn a_stock_corner_inside_the_head_between_samples_blocks_the_plunge_and_the_retract() {
+    // The 20 mm head stands at (0, 0). The stock corner (9.7, 0.8) is
+    // 9.733 mm from the axis: 0.267 mm inside the head's rim, but between
+    // any ring samples. The 8 mm neck does not reach this stock. The
+    // path goes away from the stock and comes back to the same station.
+    let corner = |lo_y: f64| {
+        let l = Loop::new(vec![
+            Point2::new(9.7, lo_y),
+            Point2::new(20.0, lo_y),
+            Point2::new(20.0, 20.0),
+            Point2::new(9.7, 20.0),
+        ])
+        .unwrap();
+        Region::new(vec![l]).unwrap()
+    };
+    let s = (0.0, 0.0);
+    let path = Toolpath::new(vec![
+        mv(MoveKind::Rapid, (-75.0, 0.0, CLEAR), (s.0, s.1, CLEAR)),
+        mv(MoveKind::Plunge, (s.0, s.1, CLEAR), (s.0, s.1, FLOOR)),
+        mv(MoveKind::Feed, (s.0, s.1, FLOOR), (-15.0, 0.0, FLOOR)),
+        mv(MoveKind::Feed, (-15.0, 0.0, FLOOR), (-75.0, 0.0, FLOOR)),
+        mv(MoveKind::Feed, (-75.0, 0.0, FLOOR), (-15.0, 0.0, FLOOR)),
+        mv(MoveKind::Feed, (-15.0, 0.0, FLOOR), (s.0, s.1, FLOOR)),
+        mv(MoveKind::Rapid, (s.0, s.1, FLOOR), (s.0, s.1, CLEAR)),
+    ]);
+    let lifts = vec![Warning::UndercutLift { at: 1 }, Warning::UndercutLift { at: 6 }];
+    assert_eq!(judge_on(&path, &tslot(), &corner(0.8)), lifts, "the corner inside the head");
+    assert_eq!(judge_on(&path, &tslot(), &corner(0.0)), lifts, "the control: an edge inside the head");
+    // Move the corner 0.69 mm outside the rim: the same path is clean.
+    assert!(judge_on(&path, &tslot(), &corner(4.5)).is_empty(), "the corner outside the head");
 }
 
 #[test]

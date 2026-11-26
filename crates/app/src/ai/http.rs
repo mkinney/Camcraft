@@ -81,6 +81,28 @@ impl Client {
         body: &Value,
         cancel: &AtomicBool,
     ) -> Result<Value, String> {
+        self.request_json_cancellable(ep, path, headers, auth, Some(body), cancel)
+    }
+
+    /// GET JSON with the same endpoint, cancellation, and diagnostic policies as POST.
+    pub fn get_json_cancellable(
+        &self,
+        ep: &Endpoint,
+        path: &str,
+        cancel: &AtomicBool,
+    ) -> Result<Value, String> {
+        self.request_json_cancellable(ep, path, &[], None, None, cancel)
+    }
+
+    fn request_json_cancellable(
+        &self,
+        ep: &Endpoint,
+        path: &str,
+        headers: &[(String, String)],
+        auth: Option<(&'static str, String)>,
+        body: Option<&Value>,
+        cancel: &AtomicBool,
+    ) -> Result<Value, String> {
         endpoint::admit(ep, self.offline_only)?;
         if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".into());
@@ -90,7 +112,7 @@ impl Client {
             .build()
             .map_err(|e| format!("HTTP runtime unavailable: {e}"))?;
         runtime.block_on(async {
-            let request = self.post_async(ep, path, headers, auth.as_ref(), body);
+            let request = self.request_async(ep, path, headers, auth.as_ref(), body);
             tokio::select! {
                 result = request => result,
                 () = async {
@@ -102,13 +124,13 @@ impl Client {
         })
     }
 
-    async fn post_async(
+    async fn request_async(
         &self,
         ep: &Endpoint,
         path: &str,
         headers: &[(String, String)],
         auth: Option<&(&'static str, String)>,
-        body: &Value,
+        body: Option<&Value>,
     ) -> Result<Value, String> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -121,9 +143,12 @@ impl Client {
             .user_agent(concat!("camcraft/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|_| "HTTP client unavailable".to_owned())?;
-        let mut req = client
-            .post(ep.url(path))
-            .header("content-type", "application/json");
+        let mut req = match body {
+            Some(body) => client.post(ep.url(path))
+                .header("content-type", "application/json")
+                .body(body.to_string()),
+            None => client.get(ep.url(path)),
+        };
         for (name, value) in headers {
             req = req.header(name, value);
         }
@@ -132,7 +157,6 @@ impl Client {
         }
         // Do not expose transport diagnostics: they can include header values.
         let resp = req
-            .body(body.to_string())
             .send()
             .await
             .map_err(|_| format!("{} could not be reached", ep.host))?;
@@ -150,10 +174,11 @@ impl Client {
                 }
             });
             return Err(format!(
-                "{} answered HTTP {}: {}",
+                "{} answered HTTP {}: {} (endpoint: POST {})",
                 ep.host,
                 status.as_u16(),
-                provider_message(&text, secret)
+                provider_message(&text, secret),
+                ep.url(path)
             ));
         }
         serde_json::from_str(&text).map_err(|e| format!("{} answer is not JSON ({e})", ep.host))
@@ -177,16 +202,25 @@ impl reqwest::dns::Resolve for CheckedResolver {
     }
 }
 
-/// Redact before truncating, including keys that cross the text limit.
+/// The provider's error text: `error.message`, then the short `error.type`,
+/// `error.code` and `error.status` fields when present. Redact before
+/// truncating, including keys that cross the text limit.
 fn provider_message(text: &str, secret: Option<&str>) -> String {
     let parsed: Option<Value> = serde_json::from_str(text).ok();
     let msg = parsed
         .as_ref()
         .and_then(|v| {
-            v["error"]["message"]
-                .as_str()
-                .or_else(|| v["error"].as_str())
-                .map(str::to_owned)
+            let error = &v["error"];
+            let message = error["message"].as_str().or_else(|| error.as_str())?;
+            let fields: Vec<String> = ["type", "code", "status"]
+                .iter()
+                .filter_map(|name| error_field(&error[*name]).map(|f| format!("{name}: {f}")))
+                .collect();
+            Some(if fields.is_empty() {
+                message.to_owned()
+            } else {
+                format!("{message} [{}]", fields.join(", "))
+            })
         })
         .unwrap_or_else(|| text.to_owned());
     let redacted = match secret.filter(|key| !key.is_empty()) {
@@ -194,6 +228,16 @@ fn provider_message(text: &str, secret: Option<&str>) -> String {
         None => msg,
     };
     redacted.chars().take(ERROR_TEXT).collect()
+}
+
+/// A scalar error field (a string or a number); other shapes are dropped.
+/// It is not cut here: the caller redacts the whole text, then truncates it.
+fn error_field(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_owned()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
 }
 
 /// The auth header for `provider`, per its documentation.
@@ -252,4 +296,86 @@ pub fn probe_ollama_cancellable(
         cancel,
     )?;
     probe::parse_show(&answer)
+}
+
+/// Choose the first installed model that advertises native tool calls.
+/// Discovery stays on the chat endpoint's host and uses its offline policy.
+pub fn discover_ollama_cancellable(
+    client: &Client,
+    ep: &Endpoint,
+    cancel: &AtomicBool,
+) -> Result<String, String> {
+    discover_ollama_within(client, ep, cancel, DISCOVERY_TOTAL)
+}
+
+/// One discovery request (the list, or one `/api/show`) may take this long.
+const DISCOVERY_STEP: Duration = Duration::from_secs(5);
+/// The whole selection over all installed models may take this long.
+const DISCOVERY_TOTAL: Duration = Duration::from_secs(20);
+
+/// As `discover_ollama_cancellable`, with the time limit of the whole selection.
+/// Each cause has its own message: the server does not answer, no installed
+/// model can call tools, the probe of a named model failed, the time ended.
+/// A failed probe of one model does not stop the selection.
+pub fn discover_ollama_within(
+    client: &Client,
+    ep: &Endpoint,
+    cancel: &AtomicBool,
+    total: Duration,
+) -> Result<String, String> {
+    const ADVICE: &str = "Run `ollama pull ornith-1.5:35b`, then send again. \
+                          Get models at https://ollama.com/library";
+    let start = crate::clock::Instant::now();
+    let step = || {
+        let remaining = total.checked_sub(start.elapsed()).filter(|r| !r.is_zero())?;
+        Some(Client {
+            offline_only: client.offline_only,
+            timeouts: Timeouts {
+                connect: client.timeouts.connect.min(DISCOVERY_STEP).min(remaining),
+                total: client.timeouts.total.min(DISCOVERY_STEP).min(remaining),
+            },
+        })
+    };
+    let list_limit = || format!(
+        "Ollama model selection stopped after {} s before reading installed models. \
+         Enter a model name in Model.", total.as_secs());
+    let answer = step().ok_or_else(list_limit)?
+        .get_json_cancellable(&ep.with_base_path(""), "/api/tags", cancel)
+        .map_err(|e| {
+            if cancel.load(Ordering::Relaxed) {
+                e
+            } else if start.elapsed() >= total {
+                list_limit()
+            } else {
+                format!("Ollama server did not answer its model list ({e}). \
+                         Start the Ollama app or run `ollama serve`, then send again.")
+            }
+        })?;
+    let models = probe::parse_tags(&answer)?;
+    let mut failed: Vec<(String, String)> = Vec::new();
+    let limit = |checked| format!(
+        "Ollama model selection stopped after {} s: {checked} of {} installed models \
+         checked, and none can call tools. Enter a model name in Model.",
+        total.as_secs(), models.len());
+    for (checked, model) in models.iter().enumerate() {
+        let step = step().ok_or_else(|| limit(checked))?;
+        let result = probe_ollama_cancellable(&step, ep, model, cancel);
+        if !cancel.load(Ordering::Relaxed) && start.elapsed() >= total {
+            return Err(limit(checked + 1));
+        }
+        match result {
+            Ok(caps) if caps.tools => return Ok(model.clone()),
+            Ok(_) => {}
+            Err(e) if cancel.load(Ordering::Relaxed) => return Err(e),
+            Err(e) => failed.push((model.clone(), e)),
+        }
+    }
+    match failed.first() {
+        None => Err(format!("Ollama has no installed model that can call tools. {ADVICE}")),
+        Some((model, reason)) => Err(format!(
+            "Ollama capability probe failed for {} ({model}: {reason}), and no other installed \
+             model can call tools. Enter a model name in Model. {ADVICE}",
+            failed.iter().map(|(m, _)| format!("'{m}'")).collect::<Vec<_>>().join(", ")
+        )),
+    }
 }

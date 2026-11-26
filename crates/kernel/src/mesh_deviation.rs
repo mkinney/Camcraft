@@ -323,7 +323,13 @@ fn face(
         let q0 = c0.0.1;
         let q1 = [uv::unwrap(c1.0.1[0], q0[0], dom.period[0]), uv::unwrap(c1.0.1[1], q0[1], dom.period[1])];
         let q2 = [uv::unwrap(c2.0.1[0], q0[0], dom.period[0]), uv::unwrap(c2.0.1[1], q0[1], dom.period[1])];
-        let same_uv = q0 == c0.1 && q1 == c1.1 && q2 == c2.1;
+        // A corner at a pole takes its free parameter from the others
+        // (#3034), so no hint inside the triangle crosses the surface.
+        let settled = if analytic.is_none() { crate::mesh_pole::settle(s, dom.period, [q0, q1, q2]) } else { None };
+        let ([q0, q1, q2], same_uv) = match settled {
+            Some(q) => (q, false),
+            None => ([q0, q1, q2], q0 == c0.1 && q1 == c1.1 && q2 == c2.1),
+        };
         let mut grid = [[zero_pt; 5]; 5];
         for (i, row) in grid.iter_mut().enumerate().take(SAMPLE_DIVISIONS + 1) {
             for (j, cell) in row.iter_mut().enumerate().take(SAMPLE_DIVISIONS - i + 1) {

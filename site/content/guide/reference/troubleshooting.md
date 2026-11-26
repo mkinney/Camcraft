@@ -368,6 +368,19 @@ cannot be trusted.
 
 **Fix.** Repair or re-export the model in the CAD program.
 
+### `the STEP file states no length unit`
+
+**Means.** The STEP file has no length unit in its unit contexts.
+CamCraft does not read the model in a guessed unit, because a wrong guess
+makes the part 25.4 times too large or too small.
+
+**Fix.** In the desktop app, choose the unit in the **Length unit**
+question that the import shows. A script or an MCP client imports the file
+again with `units` set to `"mm"` or `"in"`. For a tool holder or a fixture,
+export the file again with its unit stated. CamCraft does not keep the
+answer: the next import of the file, including the import that follows a
+change to a linked file, asks again.
+
 ### `the file states two length units (<a> mm and <b> mm per unit)`
 
 **Means.** A STEP file declares more than one length unit and they

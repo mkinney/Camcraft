@@ -1,7 +1,7 @@
 //! #2011: EDM tool visibility matches selectable machine kinds (Wire EDM has a
 //! wire tool; Sinker Electrode stays hidden when Sinker EDM is not selectable).
 //! Provenance: our own structural UI tests over the tool library and tool editor.
-//! Gate map (#2011): covers ui::machine_modes, ui::egui_app::tool_library, ui::egui_app::tool_settings.
+//! Gate map (#2011): covers ui::machine_modes, ui::egui_app::tool_library_dialog, ui::egui_app::tool_settings.
 
 use camcraft_app::machine::{Kind as MachineKind, parse_mch};
 use camcraft_app::model;

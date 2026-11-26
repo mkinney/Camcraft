@@ -107,10 +107,10 @@ fn entries(ui: &mut egui::Ui, state: &mut State) {
     ui.strong(GROUP_GRAPHICS);
     kept |= ui
         .checkbox(&mut state.show_grid, SHOW_GRID)
-        .on_hover_text("Show the ground grid below the model. The grid needs the origin axes.")
+        .on_hover_text("Show the ground grid below the model. The origin axes do not change it.")
         .changed();
     ui.checkbox(&mut state.show_world_axes, SHOW_AXES)
-        .on_hover_text("Show the axes of the world origin, and the ground grid with them.");
+        .on_hover_text("Show the axes of the world origin. The ground grid stays as it is.");
     ui.radio_value(&mut state.cam.projection, ProjectionMode::Perspective, PERSPECTIVE)
         .on_hover_text("Far objects look smaller, as the eye sees them.");
     ui.radio_value(&mut state.cam.projection, ProjectionMode::Orthographic, ORTHOGRAPHIC)

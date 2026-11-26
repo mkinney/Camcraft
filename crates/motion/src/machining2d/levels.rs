@@ -30,6 +30,8 @@ use super::slots::chord_clears;
 /// never bless a gouge.
 pub(super) enum Cert<'a> {
     Region(&'a Region),
+    /// Cutter-center disk of a Circular vault band or the authored rim.
+    RingDisk { center: Point2, radius: f64, tess: &'a Region },
     Stadium { a: Point2, b: Point2, h: f64, tess: &'a Region },
 }
 
@@ -38,7 +40,7 @@ impl Cert<'_> {
     pub(super) fn room(&self) -> &Region {
         match self {
             Cert::Region(r) => r,
-            Cert::Stadium { tess, .. } => tess,
+            Cert::Stadium { tess, .. } | Cert::RingDisk { tess, .. } => tess,
         }
     }
 
@@ -49,6 +51,9 @@ impl Cert<'_> {
     pub(super) fn chord_ok(&self, p: Point2, q: Point2) -> bool {
         match self {
             Cert::Region(r) => chord_clears(r, p, q),
+            Cert::RingDisk { center, radius, .. } => {
+                [p, q].iter().all(|v| (v.x - center.x).hypot(v.y - center.y) <= radius + 1e-7)
+            }
             Cert::Stadium { a, b, h, .. } => {
                 dist_to_seg(p, *a, *b) <= h + 1e-7 && dist_to_seg(q, *a, *b) <= h + 1e-7
             }
@@ -162,6 +167,15 @@ pub(super) struct Motion {
     /// user's entry (helix, ramp, arc), not a silent plunge - the pocket
     /// family opts in (`with_solid_restart`).
     pub(super) solid_restart: bool,
+    /// #3316: a keep-down pass link must also run through material this
+    /// path already cut (the start-side plan's open pieces end on walls,
+    /// beside stock no cut has reached yet).
+    pub(super) cleared_links: bool,
+    /// #3747: a ring area round a part links ring to ring in the plane.
+    pub(super) ring_links: Option<super::ring_links::RingLinks>,
+    /// #3746: a start-side ladder's air round the stock box; its Arc
+    /// entry plunges there and arcs onto the first ring.
+    pub(super) air: Option<super::air_entry::AirRoom>,
 }
 
 impl Motion {
@@ -189,6 +203,9 @@ impl Motion {
             holes: Vec::new(),
             ring_zig: false,
             solid_restart: false,
+            cleared_links: false,
+            ring_links: None,
+            air: None,
         }
     }
 
@@ -304,6 +321,7 @@ pub(super) fn run_levels(
 /// came out degenerate still crosses in over new material.
 /// Mutable ladder cursor shared between `run_level_walks` and
 /// per-level keep-out walks (#2055).
+#[derive(Clone)]
 pub(super) struct WalkState {
     first: bool,
     pub(super) last_cut_z: Option<f64>,

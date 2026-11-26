@@ -55,6 +55,8 @@ pub(crate) enum Leaf {
     /// A setup's Operations node: the menu row for Paste.
     SetupOps(String),
     Model(String),
+    /// A DXF profile placed on a setup's stock (#1863): its setup, its name.
+    Sketch(String, String),
     Tool(String),
     Op(String),
     /// A Pause / Home entry of the operation list (#155).
@@ -132,6 +134,7 @@ pub(crate) fn kind_name(k: ToolKind) -> &'static str {
         ToolKind::Keyseat => "keyseat cutter",
         ToolKind::Dovetail => "dovetail cutter",
         ToolKind::Lollipop => "lollipop cutter",
+        ToolKind::FormMill => "form mill",
     }
 }
 
@@ -221,6 +224,13 @@ fn setup_children(
     let stock_hidden = state.hidden_stocks.contains(&setup::stock_entity_name(w, ctx));
     let stock_text = if model::stock_world_aabb_for(w, ctx).is_some() { String::new() } else { "not set".to_owned() };
     push_row(rows, leaves, "Stock".to_owned(), stock_text, painted::Kind::Stock, Some(Icon::Stock), is_active && matches!(t, UiTarget::Stock), stock_hidden, depth, Leaf::Stock(name.to_owned()));
+    // #1863: the DXF profiles placed on this stock's top.
+    for profile in camcraft_app::sketch::placed_in(w, ctx) {
+        let hidden = state.hidden_models.contains(&profile);
+        let selected = model::find_by_name(w, &profile).is_some_and(|e| model::is_selected(w, &e));
+        let suffix = if hidden { "DXF profile (hidden)" } else { "DXF profile" }.to_owned();
+        push_row(rows, leaves, profile.clone(), suffix, painted::Kind::Model, Some(Icon::Contour), selected, hidden, depth + 1, Leaf::Sketch(name.to_owned(), profile));
+    }
     let ops = setup_ops(state, ctx);
     let tools = count(distinct_tools(state, &ops), "tool");
     // Operations first - the core CAM workflow stays near the top.

@@ -22,6 +22,7 @@
 
 use super::{ImportError, MAX_FACETS};
 use crate::geometry::Mesh;
+use crate::units::{MM_PER_INCH, Unit};
 
 /// The coarsest chord tolerance a STEP mesh is made at, in millimetres:
 /// half the program sim's verdict tolerance, so the facets' sagitta on a
@@ -95,7 +96,15 @@ pub fn parse_open(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>,
 pub type GradedStep = (Mesh, f64, Vec<String>, Option<String>, bool);
 
 /// Parse the mesh together with its chord, notes, hole and recorded cause.
+/// A file that states no length unit is refused (#1874).
 pub fn parse_with_cause(data: &[u8], budget: usize) -> Result<GradedStep, ImportError> {
+    parse_with_cause_in(data, budget, None)
+}
+
+/// [`parse_with_cause`], with the caller's length unit for a file that
+/// states none (#1874). The length unit that the model was read in is the
+/// last note: the file's own, or the caller's.
+pub fn parse_with_cause_in(data: &[u8], budget: usize, units: Option<Unit>) -> Result<GradedStep, ImportError> {
     // The file's own syntax is checked before the kernel reads it, so the
     // refusals keep their wording: a nesting depth past the cap (#1075),
     // the bad entity by `#id` and line, a string or comment that never
@@ -108,8 +117,9 @@ pub fn parse_with_cause(data: &[u8], budget: usize) -> Result<GradedStep, Import
     if let Some(found) = camcraft_geometry::step_diag::locate(text) {
         return Err(ImportError::Step(found.to_string()));
     }
-    let read = camcraft_geometry::step::parse_open(data, facet_budget(budget), CHORD_CAP).map_err(|e| match e {
+    let read = camcraft_geometry::step::parse_open_assuming(data, facet_budget(budget), CHORD_CAP, units.map(mm_per)).map_err(|e| match e {
         camcraft_geometry::step::StepError::TooLarge => ImportError::TooLarge,
+        camcraft_geometry::step::StepError::MissingUnits => ImportError::StepUnitsMissing,
         camcraft_geometry::step::StepError::Refused(reason) => ImportError::Step(reason),
     })?;
     let chord = read.chord_mm;
@@ -120,6 +130,7 @@ pub fn parse_with_cause(data: &[u8], budget: usize) -> Result<GradedStep, Import
         return Err(ImportError::Empty);
     }
     let mut notes = read.notes;
+    notes.push(unit_note(&read.length_units_mm, read.assumed_mm, units));
     // The geometry note of a model meshed coarser for its edge gaps says
     // the facts; what the checks then do is the fidelity law's (#2976).
     if read.loosened
@@ -129,6 +140,43 @@ pub fn parse_with_cause(data: &[u8], budget: usize) -> Result<GradedStep, Import
         first.push_str(consequence(chord, read.file_tolerance));
     }
     Ok((read.mesh, chord, notes, read.open, read.file_tolerance))
+}
+
+/// Millimetres in one `unit`.
+fn mm_per(unit: Unit) -> f64 {
+    match unit {
+        Unit::Millimeters => 1.0,
+        Unit::Inches => MM_PER_INCH,
+    }
+}
+
+/// The name of a length unit of `mm` millimetres: `mm`, `cm`, `m`, `in`
+/// or `ft`, else the number of millimetres.
+#[must_use]
+pub fn unit_name(mm: f64) -> String {
+    const NAMED: [(f64, &str); 5] = [(1.0, "mm"), (10.0, "cm"), (1000.0, "m"), (MM_PER_INCH, "in"), (304.8, "ft")];
+    NAMED
+        .iter()
+        .find(|(k, _)| ((mm - k) / k).abs() <= 1e-9)
+        .map_or_else(|| format!("{mm} mm"), |(_, name)| (*name).to_owned())
+}
+
+/// The import note that states the length unit the model was read in
+/// (#1874): the file's own, or the caller's for a file that states none.
+/// A caller's unit that the file overrules is named, never dropped.
+#[must_use]
+pub fn unit_note(stated_mm: &[f64], assumed_mm: Option<f64>, asked: Option<Unit>) -> String {
+    let names: Vec<String> = stated_mm.iter().map(|&mm| unit_name(mm)).collect();
+    let list = names.join(", ");
+    let plural = if names.len() > 1 { "s" } else { "" };
+    match (assumed_mm, asked) {
+        (Some(_), _) => format!("length unit: {list} (stated at import; the file states no length unit)"),
+        (None, Some(asked)) => format!(
+            "length unit{plural}: {list} (stated by the file; the {} stated at import is not used)",
+            asked.as_str()
+        ),
+        (None, None) => format!("length unit{plural}: {list} (stated by the file)"),
+    }
 }
 
 /// What the fidelity law (#864) does with a model kept at `chord_mm`, in

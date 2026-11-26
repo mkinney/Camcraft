@@ -99,10 +99,11 @@ impl Script {
         limits.set_recursion_limit(64);
         limits.set_stack_size_limit(4096);
         let host = format!(
-            "var _maxOutputLines = {}; var _outputOperation = {};\n{PRELUDE}\n{}\n{}",
+            "var _maxOutputLines = {}; var _outputOperation = {};\n{PRELUDE}\n{}\n{}\n{}",
             output_budget.max,
             serde_json::to_string(operation)?,
             super::rotary_cap::ROTARY_CAP,
+            super::arc_guard::ARC_GUARD_JS,
             super::explain::EXPLAIN_JS
         );
         ctx.eval(Source::from_bytes(host.as_bytes()).with_path(std::path::Path::new("host.js")))

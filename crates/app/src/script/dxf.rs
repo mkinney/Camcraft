@@ -7,7 +7,7 @@
 
 use super::{arg_str, fnum, only_keys, Env};
 
-use crate::commands::{DxfOptions, ImportDxf};
+use crate::commands::{DxfOptions, ImportDxf, ImportSvg};
 use crate::sketch;
 use crate::units::Unit;
 use camcraft_geometry::dxf;
@@ -71,9 +71,30 @@ pub(crate) fn profile_view(world: &World, name: &str) -> Option<Value> {
 /// default). One undo step. The reply states the units used and the
 /// skipped entities.
 pub(crate) fn v_import_dxf(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
-    let path = PathBuf::from(arg_str(&args, 0, "a DXF path")?);
+    let (path, setup, options) = import_args(&args, "importDxf", "a DXF path")?;
+    let cmd = ImportDxf::new(&env.world, setup.as_deref(), &path, &options).map_err(|e| e.to_string())?;
+    let name = cmd.name().to_owned();
+    env.history.execute(&env.world, cmd);
+    placed(env, &name, "DXF")
+}
+
+/// `cam.importSvg(path, options?)` (#1880) - place an SVG drawing as a
+/// profile, with `importDxf`'s options. `units` is the unit of one drawing
+/// unit of a file that states no physical size; such a file refuses by name
+/// without it, and a file that states its size refuses it. One undo step.
+pub(crate) fn v_import_svg(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
+    let (path, setup, options) = import_args(&args, "importSvg", "an SVG path")?;
+    let cmd = ImportSvg::new(&env.world, setup.as_deref(), &path, &options).map_err(|e| e.to_string())?;
+    let name = cmd.name().to_owned();
+    env.history.execute(&env.world, cmd);
+    placed(env, &name, "SVG")
+}
+
+/// The path, the setup and the options of an import verb.
+fn import_args(args: &[Value], verb: &str, what: &str) -> Result<(PathBuf, Option<String>, DxfOptions), String> {
+    let path = PathBuf::from(arg_str(args, 0, what)?);
     if args.len() > 2 {
-        return Err(format!("importDxf takes a path and one options object, got {} arguments", args.len()));
+        return Err(format!("{verb} takes a path and one options object, got {} arguments", args.len()));
     }
     let given = match args.get(1) {
         None | Some(Value::Null) => Default::default(),
@@ -94,11 +115,12 @@ pub(crate) fn v_import_dxf(env: &mut Env, args: Vec<Value>) -> Result<Value, Str
         None | Some(Value::Null) => None,
         Some(v) => Some(v.as_f64().ok_or_else(|| format!("\"join_tol\" must be a number in mm, got {v}"))?),
     };
-    let options = DxfOptions { units, join_tolerance, name: text("name")? };
-    let cmd = ImportDxf::new(&env.world, text("setup")?.as_deref(), &path, &options).map_err(|e| e.to_string())?;
-    let name = cmd.name().to_owned();
-    env.history.execute(&env.world, cmd);
-    let mut out = profile_view(&env.world, &name).ok_or_else(|| format!("the DXF profile '{name}' did not land"))?;
+    Ok((path, text("setup")?, DxfOptions { units, join_tolerance, name: text("name")? }))
+}
+
+/// The view of a profile that just landed, with its one-line summary.
+fn placed(env: &Env, name: &str, kind: &str) -> Result<Value, String> {
+    let mut out = profile_view(&env.world, name).ok_or_else(|| format!("the {kind} profile '{name}' did not land"))?;
     let used = out["units"]["used"].as_str().unwrap_or_default().to_owned();
     out["summary"] = json!(format!(
         "'{name}' placed on the stock top: {} primitives read in {used}, {} closed and {} open chains, {} rejected, {} entities skipped",

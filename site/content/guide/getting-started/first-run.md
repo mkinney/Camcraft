@@ -105,6 +105,14 @@ from left to right with the cross-slide up (a mill-turn, which is a lathe with l
 the milling view). This changes only the view,
 not the work offset or the posted program.
 
+### Update notices
+
+The desktop app checks GitHub Releases at startup, at most once in
+24 hours. When it finds a newer version, **Update available: vX.Y.Z**
+appears in the title bar. Select it to open the release notes in your
+browser. To turn off startup checks, clear **Check for updates** in
+**Settings**.
+
 ### Themes and screen readers
 
 The ribbon, its group captions, the operation tabs and the browser tree

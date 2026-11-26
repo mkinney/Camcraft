@@ -43,7 +43,8 @@ pub fn post_offer_for(world: &World, declared: Option<&str>) -> Option<PostOffer
     let kind = crate::machine::kind_of_setup(world, declared);
     let current = crate::setup_mount::post_of(world, declared);
     let name = post_name(&current)?;
-    let named = crate::machine::of_setup(world, declared).1.and_then(|m| m.post);
+    let named = crate::machine::of_setup(world, declared).1.and_then(|m| m.post)
+        .map(|n| super::agie::current_name(&n).to_owned());
     if let Some(named) = named.filter(|n| BUILTINS.iter().any(|(b, _)| b == n) && post_serves(n, kind)) {
         let why = OfferWhy::Machine;
         return (named != name).then_some(PostOffer { post: PostRef::Named(named), why });

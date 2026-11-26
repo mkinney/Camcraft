@@ -106,7 +106,7 @@ fn a_v74_machine_opens_with_unstated_installation_facts_and_a_future_file_preser
     assert!(record.get("controller_identity").is_none());
     assert!(record.get("tool_change").is_none());
 
-    let future = project::PROJECT_VERSION + 1;
+    let future = project::NEWEST_PROJECT_VERSION + 1;
     saved["version"] = json!(future);
     let error =
         project::open_noted(&world, &saved.to_string()).expect_err("too new for this reader");

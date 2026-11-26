@@ -72,6 +72,8 @@ mod heights_sel;
 pub use heights_sel::*;
 mod kinds;
 pub use kinds::*;
+mod pick_kinds;
+pub use pick_kinds::*;
 mod seed;
 pub use seed::seed_params;
 pub mod tool_law;
@@ -80,6 +82,7 @@ mod params;
 mod hole_digest;
 mod slot_fit;
 mod trochoid_op;
+pub use trochoid_op::TROCHOIDAL_SLOT_NO_PASS_ORDER;
 mod stamp;
 mod stamp_tool;
 pub use stamp::*;
@@ -87,8 +90,14 @@ mod stamp_stock;
 pub use stamp_stock::reads_setup_stock;
 pub(crate) use stamp_stock::write_setup_stock;
 mod material;
+// #3544: Detect holes on a stock source names the stock and the models.
+mod detect_source;
 // #2496: a drill makes its own size; a wider hole is named.
 mod drill_size;
+// #3525: a cut deeper than the flute length is named first.
+mod flute_law;
+// #3448: a mill names the radial holes it cannot reach.
+mod cross_reach;
 // #2598: a Drill or Thread op's feed against its tool's stated feed.
 pub mod feed_rating;
 pub use material::*;
@@ -99,7 +108,7 @@ mod circle_fit;
 mod slot_pick;
 // #1868: the same room read off DXF sketch chains.
 mod slot_sketch;
-pub use slot_pick::{slot_bound_of, slot_fit_of, slot_from_picks};
+pub use slot_pick::{seed_slot_for_tool, slot_bound_of, slot_fit_of, slot_from_picks, slot_width_is_stated};
 pub use circle_fit::{CIRCLE_FIT_TOL, circle_of_region, circular_fit_of};
 mod material_source;
 // #1071: the thread mill's major-circle rims and solid-law bores.
@@ -111,6 +120,8 @@ mod probe;
 pub mod probe_op;
 // #670: the Plasma Profile's seed and generation glue.
 pub mod plasma_op;
+// #1883: the Waterjet Profile's seed and generation glue.
+pub mod waterjet_op;
 // #894: the thread-milling operation's door, kernel plan and its two verdict readings.
 pub mod thread_op;
 mod thread_entry;
@@ -118,8 +129,15 @@ mod thread_r_plane;
 // #985: external threads - the boss door, the crest region, the neighbour law.
 mod thread_boss;
 pub mod wire_op;
+mod agie_profile;
+mod agie_die;
+pub(crate) use agie_profile::{agie_job, agie_quality, agie_sketch_job};
 mod wire_ruled;
 pub(crate) mod wire_sketch;
+pub(crate) mod wire_sketch_arcs;
+mod agie_inspection;
+pub(crate) use agie_inspection::prepare_inspection;
+pub use agie_inspection::{AgieInspectionReceipt, export_agie_inspection, has_agie_inspection_source};
 // #534: the wire laws' inputs, read live at the post.
 pub mod wire_verify;
 // #541: the sinker EDM burn to depth.
@@ -134,6 +152,10 @@ pub mod sinker_wear_op;
 pub mod sinker_side_op;
 // #1444: the Slot Undercut's seed and generation glue.
 pub mod slot_undercut_op;
+/// #1443: the V-Carve operation's seed and tool doors.
+pub mod vcarve_op;
+/// #1894: the Multi-Axis Deburr operation's seed, tool doors and kernel numbers.
+pub mod multiaxis_deburr_op;
 // #171: the Probe op seeded from one picked face, edge, vertex or round wall.
 mod probe_pick;
 mod probe_pick_round;
@@ -178,6 +200,7 @@ fn boundary_chain_error(error: boundary_chains::BoundaryError) -> GenError {
 }
 mod contour_open;
 mod contour_sketch_pick;
+mod sketch_mark;
 mod sketch_memo;
 pub use contour_sketch_pick::{SketchChainInfo, sketch_chain_infos_fresh, sketch_z_range_fresh};
 pub use sketch_memo::{
@@ -203,6 +226,7 @@ mod tilt_heights;
 pub use tilt_heights::{fold_height, resolve_params_folded};
 mod wcs_yaw;
 pub(crate) mod corner_relief;
+mod pass_start_stock;
 mod corner_relief_sim;
 mod job;
 pub use job::*;
@@ -256,11 +280,15 @@ pub(crate) mod fidelity_law;
 mod clearance_stock;
 mod first_traverse;
 mod first_traverse_posed;
+mod first_traverse_table;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
 mod tap_core;
 pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
+// #3631: a 2D Pocket's tool that no position in its region fits, said at edit time.
+mod pocket_fit;
+pub use pocket_fit::pocket_fit_advice;
 pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
 mod g76_start;

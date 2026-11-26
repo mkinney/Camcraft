@@ -147,7 +147,7 @@ pub fn map_catalog(
     why: &mut BTreeMap<String, String>,
 ) {
     if changed.iter().any(|f| f.starts_with("examples/catalog/"))
-        && root.join("crates/app/tests/example_catalog.rs").is_file()
+        && crate::suites::entry(root, "app", "example_catalog").is_file()
     {
         whole.insert("app:example_catalog".into());
         why.entry("app:example_catalog".into())

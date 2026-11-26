@@ -51,9 +51,27 @@ pub(crate) fn target_extent(points: [f32; 2], scale: f64) -> (u32, u32) {
     (px(points[0]), px(points[1]))
 }
 
+/// `want`, held to the longest texture side the device makes
+/// (`Limits::max_texture_dimension_2d`): a longer side is a fatal wgpu
+/// validation error, so a huge window or a degenerate layout must not reach
+/// `create_texture` (#3582). The limit comes from the device, so it holds on
+/// any GPU. Never zero.
+pub(crate) fn limit_extent(want: (u32, u32), max_side: u32) -> (u32, u32) {
+    let max_side = max_side.max(1);
+    (want.0.min(max_side), want.1.min(max_side))
+}
+
+/// The viewport size to keep after a frame's layout. A window with no area
+/// (minimized) gets egui's default 10000 x 10000 point screen, so that
+/// layout is not the viewport's size: keep the last real one (#3582).
+pub(crate) fn viewport_after_layout(before: [f32; 2], laid_out: [f32; 2], window_px: (u32, u32)) -> [f32; 2] {
+    if window_px.0 == 0 || window_px.1 == 0 { before } else { laid_out }
+}
+
 /// Size the 3D target from last frame's layout. True when the target was
 /// recreated: the caller then rebinds its egui texture id to the new view.
 pub(crate) fn fit_target(view: &mut View3D, device: &wgpu::Device, want: (u32, u32)) -> bool {
+    let want = limit_extent(want, device.limits().max_texture_dimension_2d);
     if view.extent() == want {
         return false;
     }
@@ -110,6 +128,9 @@ pub(crate) fn encode(
     // has a frame; the field view is walked once per Deviate arming.
     let mut traced = false;
     if let Some(se) = stock_eye.as_mut().filter(|_| !state.active_stock_hidden()) {
+        // #3336: a playback that starts now may cut on the GPU layer only
+        // for an eye that draws the packed frame (`play_layer`).
+        state.layer_play.eye = se.traces_on_gpu();
         if !state.display.is_wireframe() {
             crate::actions::ensure_field_view(state);
         }
@@ -122,6 +143,13 @@ pub(crate) fn encode(
             Err(err) => {
                 state.say_once(&format!("the cut stock cannot be drawn, the uncut stock shows: {err}"));
             }
+        }
+        // #3336: the eye took the layer frame but marches it on the CPU,
+        // from a stock that lacks the layer's cut: the CPU playback runs.
+        let held = state.field_view.as_ref().and_then(|r| r.as_ref().ok()).and_then(|fv| se.holds_on_gpu(fv));
+        if state.layer_play.must_end(held.is_some(), held == Some(true)) {
+            crate::play_layer::end(state);
+            traced = false;
         }
     }
     // M13.4: both verdict painters wear the viewer's palette.
@@ -187,7 +215,7 @@ pub(crate) fn state_redraw_delay(
 
 #[cfg(test)]
 mod tests {
-    use super::{redraw_delay, target_extent};
+    use super::{limit_extent, redraw_delay, target_extent, viewport_after_layout};
     use std::time::Duration;
 
     #[test]
@@ -206,6 +234,42 @@ mod tests {
         assert_eq!(target_extent([600.0, 400.0], f64::INFINITY), (4800, 3200));
         assert_eq!(target_extent([600.0, 400.0], f64::NAN), (600, 400));
         assert_eq!(target_extent([0.0, 0.0], 0.0), (1, 1));
+    }
+
+    #[test]
+    fn limit_extent_holds_each_side_to_the_device_limit() {
+        // The minimized-window layout of #3582: 6078 x 9838 points at a 2.5
+        // pixel ratio, on a device whose longest texture side is 8192.
+        assert_eq!(limit_extent((15195, 24595), 8192), (8192, 8192));
+        // Any limit, not only 8192.
+        assert_eq!(limit_extent((3000, 500), 2048), (2048, 500));
+        assert_eq!(limit_extent((15195, 24595), 16384), (15195, 16384));
+        // Inside the limit nothing changes; a zero limit never gives zero.
+        assert_eq!(limit_extent((1500, 1000), 8192), (1500, 1000));
+        assert_eq!(limit_extent((1500, 1000), 0), (1, 1));
+    }
+
+    #[test]
+    fn a_window_with_no_area_keeps_the_last_real_viewport_size() {
+        let real = [1500.0, 1000.0];
+        let degenerate = [6078.0, 9838.0];
+        // Minimized: the window has no pixels, egui laid out its default screen.
+        assert_eq!(viewport_after_layout(real, degenerate, (0, 0)), real);
+        assert_eq!(viewport_after_layout(real, degenerate, (0, 800)), real);
+        assert_eq!(viewport_after_layout(real, degenerate, (1200, 0)), real);
+        // A window with an area takes its own layout.
+        assert_eq!(viewport_after_layout(real, [900.0, 600.0], (1280, 800)), [900.0, 600.0]);
+    }
+
+    #[test]
+    fn fit_target_never_asks_the_device_for_a_texture_past_its_limit() {
+        // Without the clamp, wgpu's fatal validation error ends the process
+        // ("Dimension X value ... exceeds the limit") - #3582.
+        let Some(gpu) = crate::headless_gpu::test_gpu("view_pass").expect("adapter") else { return }; // #3605
+        let limit = gpu.device.limits().max_texture_dimension_2d;
+        let mut view = crate::viewport::View3D::new(&gpu.device, super::VIEW3D_FORMAT, 64, 48);
+        assert!(super::fit_target(&mut view, &gpu.device, (limit + 1, 16)));
+        assert_eq!(view.extent(), (limit, 16));
     }
 
     #[test]

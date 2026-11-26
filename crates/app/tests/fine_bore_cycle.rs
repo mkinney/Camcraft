@@ -90,6 +90,7 @@ fn params(cycle: CycleChoice, dwell: f64) -> OpParams {
             stepped: false,
         }],
         cross: Vec::new(),
+        picks: Default::default(),
     }
 }
 
@@ -288,7 +289,7 @@ fn haas_posts_the_generated_fine_bore_as_g76() {
         let g76: Vec<&str> = p.program.lines().filter(|l| l.split_whitespace().any(|w| w == "G76")).collect();
         assert_eq!(g76.len(), 1, "{tag}:\n{}", p.program);
         let has = |w: &str| g76[0].split_whitespace().any(|v| v == w);
-        assert!(has("I0.3") && has("J-0.4") && has("P500") && has("F60"), "{tag}: {}", g76[0]);
+        assert!(has("I0.3") && has("J-0.4") && has("P500") && has("F60."),"{tag}: {}", g76[0]);
     }
 }
 

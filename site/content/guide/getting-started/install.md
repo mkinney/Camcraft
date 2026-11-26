@@ -36,8 +36,11 @@ problem, see [Windows troubleshooting](@/guide/reference/windows-troubleshooting
 ## macOS
 
 Open the DMG and drag `CamCraft.app` to Applications, or extract the ZIP.
-The app is ad-hoc signed and not notarized, so the first launch may need
-Control-click, then **Open**.
+Releases built with Developer ID credentials are signed and notarized.
+Other builds use ad hoc signing. If macOS 15 or later blocks an ad hoc
+release, first try to open the app. If you trust the download, go to
+**System Settings → Privacy & Security** and choose **Open Anyway**.
+See [Apple's first-launch instructions](https://support.apple.com/en-us/102445).
 
 The app runs from `CamCraft.app/Contents/MacOS/camcraft-ui`. The
 command-line tool (`camcraft-cli`) and the post processor (`post`) sit in

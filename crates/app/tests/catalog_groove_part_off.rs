@@ -44,8 +44,11 @@ fn groove_part_off_case_posts_rough_finish_and_axis_release() {
     }
     let parting = section(&nc, "Part off");
     assert!(parting.iter().any(|line| line.starts_with("G01 ")
-        && word(line, 'X') == Some(0.0) && word(line, 'Z') == Some(13.5)),
-        "the orientation 2 blade reaches the axis at low edge Z13.5, centred on Z15: {parting:?}");
+        && word(line, 'X') == Some(0.0) && word(line, 'Z') == Some(12.0)),
+        "the orientation 2 blade reaches the axis at low edge Z12, its kerf Z12..15 below the part (#3452): {parting:?}");
+    assert!(parting.iter().filter(|line| line.starts_with("G01 "))
+        .filter_map(|line| word(line, 'Z')).all(|z| z + 3.0 <= 15.0 + 1e-6),
+        "no part-off feed puts the 3 mm blade above the part's end face Z15: {parting:?}");
 
     let w = world::new_world();
     let notes = project::load_noted(&w, &dir.join("groove-part-off.camproj"))

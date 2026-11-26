@@ -294,6 +294,8 @@ fn finish_parallel() -> OpParams {
     OpParams::Finish3D {
         gap_link: camcraft_app::finishing3d::GapLink::Jump,
         pattern: camcraft_app::finishing3d::FinishPattern::Parallel,
+        direction_angle: 0.0,
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
         stepover: Some(2.0),
         tolerance: 0.05,
         clearance_z: Height::fixed(40.0),
@@ -310,6 +312,8 @@ fn finish_parallel() -> OpParams {
         steep_stepover: None,
         pencil_reference: None,
         fill_openings: None,
+        waterlines: true,
+        picks: Default::default(),
     }
 }
 
@@ -403,6 +407,7 @@ fn trace_params() -> OpParams {
         plunge_feed: 200.0,
         climb: true,
         tilt: None,
+        picks: Default::default(),
     }
 }
 

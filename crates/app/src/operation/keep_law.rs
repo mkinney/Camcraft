@@ -142,7 +142,7 @@ pub fn is_stock_kept_kind(params: &OpParams) -> bool {
                 | OpParams::Contour { .. }
                 | OpParams::Face { .. }
                 | OpParams::Chamfer2D { .. }
-                | OpParams::Deburr { .. }
+                | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
                 // #1444: an undercut off the stock keeps the setup's parts.
                 | OpParams::SlotUndercut(_)
         )
@@ -207,7 +207,7 @@ pub(super) fn parts_in_stock(
 /// its stock part law spares, as a part source spares its own part.
 /// `None` for any other kind and any other stock.
 fn spared_stock_part(world: &flecs_ecs::prelude::World, setup: Option<&str>, params: &OpParams) -> Option<String> {
-    matches!(params, OpParams::Deburr { .. })
+    matches!(params, OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. })
         .then(|| crate::stock_sim::breaks::stock_part_of(world, setup))
         .flatten()
 }
@@ -246,7 +246,7 @@ pub(super) fn is_part_kept_kind(params: &OpParams, src: &SrcRef) -> bool {
         || is_cross_drill(params)
         || matches!(
             params,
-            OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. } | OpParams::SlotUndercut(_)
+            OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. } | OpParams::MultiAxisDeburr { .. } | OpParams::SlotUndercut(_)
         )
 }
 
@@ -320,7 +320,7 @@ pub(super) fn note_stock_chamfer_gouges(
     let named: fn(usize) -> Warning = match params {
         _ if part_solid => return,
         OpParams::Chamfer2D { .. } => |at| Warning::StockChamferGouge { at },
-        OpParams::Deburr { .. } => |at| Warning::StockDeburrGouge { at },
+        OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. } => |at| Warning::StockDeburrGouge { at },
         _ => return,
     };
     for w in warns {

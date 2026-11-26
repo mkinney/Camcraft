@@ -89,16 +89,21 @@ fn move_an_operation_delete_the_emptied_setup_and_undo_redo_both() {
     assert!(moved["status"].is_string(), "the stamp is kept and read back: {moved}");
     assert_eq!(c.shape().1[0].1, json!("Back"));
 
+    // Setups list in creation order (#3447): Front was added first.
+    let before = c.shape().0;
+    assert_eq!(before, vec!["Front".to_owned(), "Back".to_owned()], "creation order");
+
     // Front is empty now: delete it, one undo step.
     let del = c.ok("delete_setup", json!({ "name": "Front" }));
     assert_eq!(del["setups"], json!(["Back"]), "{del}");
     assert_eq!(c.shape().0, vec!["Back".to_owned()]);
     c.ok("undo", json!({}));
-    // Setups list in name order, so undo puts Front back where it was (#1362).
-    assert_eq!(c.shape().0, vec!["Back".to_owned(), "Front".to_owned()], "undo restores the setup in place");
+    // Undo puts Front back at its old place, first (#1362, #3447).
+    assert_eq!(c.shape().0, before, "undo restores the setup in place");
     c.ok("redo", json!({}));
     assert_eq!(c.shape().0, vec!["Back".to_owned()]);
     c.ok("undo", json!({}));
+    assert_eq!(c.shape().0, before, "a second undo restores the setup in place too");
     // One more undo reverts the move itself.
     c.ok("undo", json!({}));
     assert_eq!(c.shape().1[0].1, json!("Front"));

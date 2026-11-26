@@ -48,10 +48,11 @@ fn slot(tilt: Tilt) -> OpParams {
         plunge_feed: 200.0,
         climb: true,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
-        helix_radius: 1.0,
+        helix_radius: 1.0, blend_turns: false, blend_radius: None,
         tilt: Some(tilt),
         extend_start: 0.0,
         extend_end: 0.0,
+        picks: Default::default(),
     }
 }
 
@@ -144,9 +145,10 @@ fn contour(tilt: Tilt) -> OpParams {
         tab_height: 0.0,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
+        picks: Default::default(),
     }
 }
 
@@ -253,7 +255,7 @@ fn tilted_reference_pocket_preserves_part(src: SrcRef) {
         &world,
         camcraft_app::commands::ImportModel::from_mesh("part", part),
     );
-    let params = OpParams::Pocket {
+    let params = OpParams::Pocket { pass_start: Default::default(),
         rest: None,
         blend_radius: None,
         stepover: 4.0,
@@ -277,6 +279,7 @@ fn tilted_reference_pocket_preserves_part(src: SrcRef) {
         tilt: Some(tilt(90.0, 0.0, [0.0; 3])),
         links: camcraft_app::links::Links::PLANAR,
         corner_relief: Default::default(),
+        picks: Default::default(),
     };
     history.execute(
         &world,

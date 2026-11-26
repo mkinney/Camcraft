@@ -57,6 +57,7 @@ var spindleWait = false;   // TOOL, SECTION - the preamble writes them
 var toolWait = false;      // when the first motion needs them legal
 var toolsLoaded = 0;       // tools named so far: the first needs no stop
 var tNo = 0;
+var loadedTool = null;     // #3445: the tool the operator last loaded; null = unknown
 var coolant = "";          // the M-code this section started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
@@ -169,6 +170,7 @@ function writeHeaderExtras() {
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative
+function arcWord(k, v) { return wo(k, v, k === "X" ? orgX : (k === "Y" ? orgY : orgZ)); }  // #3442: a position word as written, for arcFate
 function msg(s) {  // counted warning where the host offers message()
   if (typeof message === "function") message(s); else writeln("(" + s + ")");
 }
@@ -456,16 +458,21 @@ function startPreamble() {
   if (toolWait) {
     toolNote();
     retract();
-    if (secIdx > 0 && optBool("optionalStop", false)) block(["M1"]);
-    xyUnknown = true;        // a manual change may have jogged X and Y
-    if (optStr("showSequenceNumbers", "off") === "tool-change") seqNextForce = true;
-    if (toolsLoaded > 0) {
-      note("TOOL CHANGE - LOAD T" + ni(tNo) + " - SET Z ZERO - RESUME");
-      block(["M0"]);
-    } else {
-      note("LOAD T" + ni(tNo) + " AND SET Z ZERO BEFORE THE START");
+    // #3445: a tool loaded for this program, with no stop since, is still
+    // in the spindle: no stop to load it again.
+    if (loadedTool !== tNo) {
+      if (secIdx > 0 && optBool("optionalStop", false)) block(["M1"]);
+      if (optStr("showSequenceNumbers", "off") === "tool-change") seqNextForce = true;
+      if (toolsLoaded > 0) {
+        note("TOOL CHANGE - LOAD T" + ni(tNo) + " - SET Z ZERO - RESUME");
+        block(["M0"]);
+      } else {
+        note("LOAD T" + ni(tNo) + " AND SET Z ZERO BEFORE THE START");
+      }
+      toolsLoaded += 1;
+      loadedTool = tNo;
     }
-    toolsLoaded += 1;
+    xyUnknown = true;        // a manual change may have jogged X and Y
     toolWait = false;
   }
   // A touch probe states 0 rpm: no spindle start and no cutting fluid.
@@ -493,8 +500,9 @@ function afterOp() {
     retract();
     note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
   }
-  if (ask === "optional-stop") { block(["M1"]); return; }
-  if (ask === "stop") { block(["M0"]); return; }
+  // The operator may take the tool out at either stop (#3445).
+  if (ask === "optional-stop") { block(["M1"]); loadedTool = null; return; }
+  if (ask === "stop") { block(["M0"]); loadedTool = null; return; }
   if (ask === "home") {
     msg(coolantWho() + "going home after an operation is not posted by the Grbl 1.1 post - the G28/G30 positions are controller settings it cannot see; pick Optional stop or Program stop");
     return;
@@ -607,6 +615,9 @@ function onLinear() {
 }
 function onCircular() {
   startPreamble();
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (!tiltOk(properties)) return;
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G2" : "G3"))) return;
   var p = properties;

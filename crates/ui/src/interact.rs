@@ -141,9 +141,14 @@ pub(crate) fn pick_at(state: &mut State, p: [f32; 2], mods: Mods) {
 /// keeps the toolbar's mode on purpose (it takes faces, edges and points
 /// alike), so in the default Model mode its clicks must still reach
 /// `feature_click`, or the draft never receives a pick. Disarmed or
-/// paused, the mode's own click behaviour is back.
+/// paused, the mode's own click behaviour is back. #3335: an armed
+/// Boundary row ("Do not touch" included) is the same: it takes faces and
+/// edges whatever the toolbar's mode (`feature_click::ask`), so with
+/// "Click selects" on Models its clicks must still reach the row, not
+/// select the whole model. The page clears the row when the group closes.
 pub(crate) fn feature_routed(state: &State) -> bool {
     state.geo_pick != GeoPick::Model
+        || state.boundary_pick.is_some()
         || crate::wcs_pick::collecting(state)
         || crate::start_exit_pick::collecting(state)
 }
@@ -781,6 +786,7 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
             }
         }
     }
+    out.extend(crate::operator_side::label(state, &mvp)); // #2632
     out
 }
 
@@ -849,12 +855,12 @@ const GRID_MAJOR_EVERY: i64 = 5;
 /// at any zoom. World-space geometry in the overlay buffer, not a
 /// screen-space overlay, so the part occludes it like a real table.
 ///
-/// The same switch as the triads (`show_world_axes`): the grid is
-/// reference furniture, and hiding the axes hides it too. The Display
-/// menu's "Grid" box (`show_grid`, #2818) hides the grid alone. It fades
+/// Its own switch: the Display menu's "Grid" box (`show_grid`, #2818)
+/// hides the grid alone. The axes switch (`show_world_axes`) hides the axes
+/// alone and does not change the grid (#3322). It fades
 /// toward the viewport ground at the rim rather than stopping on a rectangle.
 pub(crate) fn ground_grid_lines(state: &State) -> Vec<[f32; 6]> {
-    if !state.show_world_axes || !state.show_grid {
+    if !state.show_grid {
         return Vec::new();
     }
     let step = nice_step(state.cam.dist / 10.0);
@@ -992,7 +998,9 @@ pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
     out.extend(time("scene/overlay.toolpaths", || toolpath_lines(state)));
     out.extend(time("scene/overlay.regions", || region_lines(state)));
     out.extend(time("scene/overlay.height_planes", || height_plane_lines(state)));
-    out.extend(time("scene/overlay.envelope", || crate::work_envelope::envelope_lines(state)));
+    // #1863: the active setup's DXF profiles on its stock top.
+    out.extend(time("scene/overlay.sketches", || crate::sketch_overlay::sketch_lines(state)));
+    out.extend(time("scene/overlay.envelope", || crate::work_envelope::overlay_lines(state)));
     out.extend(time("scene/overlay.selection_features", || selection_feature_lines(state)).iter().copied());
     capped(out)
 }
@@ -1318,6 +1326,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // where the pocket hops, and the chamfer ride between its
         // chains the trace's way (M2.4 B) - all the store-either shape.
         | operation::OpParams::Trace { retract_z, .. }
+        | operation::OpParams::VCarve { retract_z, .. }
         | operation::OpParams::Engrave { retract_z, .. }
         | operation::OpParams::Chamfer2D { retract_z, .. }
         | operation::OpParams::Circular { retract_z, .. }
@@ -1365,11 +1374,18 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // The deburr ride says it too: every run starts and ends at
         // the clearance plane by the kernel's own word - no hop
         // height exists to author or draw (M2.5 E B).
-        | operation::OpParams::Deburr { .. }
+        | operation::OpParams::Deburr { .. } | operation::OpParams::MultiAxisDeburr { .. }
+        // The flow band's links ride the RETRACT RADIUS about the
+        // stated axis (#2826) - a radius is no world-Z plane to draw,
+        // and the links are the kernel's own radial law. "Hop at
+        // clearance, say nothing extra" is the honest answer.
+        | operation::OpParams::RotaryFlow { .. }
         // The probe travels at its clearance plane only (#108), and
         // so does the torch between contours (#670).
         | operation::OpParams::Probe { .. }
         | operation::OpParams::PlasmaProfile(_)
+        // The jet travels at its clearance plane only too (#1883).
+        | operation::OpParams::WaterjetProfile(_)
         // The wire never lifts out of the work (#532): no hop plane.
         | operation::OpParams::WireContour(_) => None,
         // The electrode retracts to its approach plane only (#541).
@@ -1466,6 +1482,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         | operation::OpParams::MultiAxisContour { top_z, bottom_z, .. }
         | operation::OpParams::Slot { top_z, bottom_z, .. }
         | operation::OpParams::TrochoidalSlot { top_z, bottom_z, .. }
+        | operation::OpParams::VCarve { top_z, bottom_z, .. }
         // The engrave twin draws the trace's ladder - first level up
         // top, floor below - and the circular ladder its rings' two
         // rungs: vault or flat, the dome law's stations live between
@@ -1505,6 +1522,8 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // The plate the torch cuts through: its top (the cut plane) and
         // bottom (#670).
         | operation::OpParams::PlasmaProfile(operation::PlasmaOp { top_z, bottom_z, .. })
+        // The sheet the jet cuts through (#1883).
+        | operation::OpParams::WaterjetProfile(operation::WaterjetOp { top_z, bottom_z, .. })
         // The workpiece the wire cuts through: its two programmed
         // planes (#532).
         | operation::OpParams::WireContour(operation::WireContourOp { top_z, bottom_z, .. })
@@ -1517,7 +1536,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         })
         // #1444: the material top and the undercut's floor.
         | operation::OpParams::SlotUndercut(operation::SlotUndercutOp { top_z, bottom_z, .. })
-        | operation::OpParams::Deburr { top_z, bottom_z, .. } => {
+        | operation::OpParams::Deburr { top_z, bottom_z, .. } | operation::OpParams::MultiAxisDeburr { top_z, bottom_z, .. } => {
             if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {
                     z,
@@ -1560,12 +1579,13 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
             }
         }
         // The chamfer ride draws its one authored plane: the top edge's
-        // own Z, where the cone's apex stands. The face's floor is
-        // DERIVED (width·tan(angle), variant docs) - a rectangle at a
+        // own Z. The virtual cone tip stands below it by the selected
+        // cone-band reach. The face's floor is DERIVED
+        // (width·tan(angle), variant docs) - a rectangle at a
         // z no height author could disagree with is honest, and Part's
         // law above says an advertised window the path cannot be
-        // measured against is not. The corner Z rides the pane's read
-        // of the same two numbers.
+        // measured against is not. The cone-tip note reads the same
+        // two face numbers plus the minimum radius.
         operation::OpParams::Chamfer2D { top_z, .. } => {
             if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {
@@ -1610,6 +1630,11 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
                 });
             }
         }
+        // The flow band's heights are BALL-CENTER RADII about the stated
+        // axis (#2826) - never world Z planes: a radius drawn at a Z
+        // would advertise a window the band does not have. The picked
+        // chains bound it; nothing to paint here.
+        operation::OpParams::RotaryFlow { .. } => {}
     }
     out.retain(|p| p.z.is_finite());
     out

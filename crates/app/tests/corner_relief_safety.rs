@@ -174,7 +174,18 @@ fn adaptive2d_spiral_and_offset2d_support_relief_while_trochoidal_and_do_not_tou
     };
     let (tp, warns) = camcraft_app::operation::generate(&world, &adp_op, "AdpDog").expect("adaptive2d dogbone");
     assert!(!tp.moves.is_empty());
-    assert!(warns.is_empty(), "adaptive2d dogbone verify must be silent: {warns:?}");
+    // #3035: an Adaptive area that rides the Offset rings is one advisory
+    // warning (it does not hold the post); verify is silent otherwise.
+    let fell = camcraft_app::machining2d::rings_fallbacks(&tp.notes);
+    assert_eq!(warns.len(), usize::from(fell > 0), "adaptive2d dogbone verify must be silent: {warns:?}");
+    assert!(
+        warns.iter().all(|w| {
+            matches!(w, camcraft_app::verify::Warning::StrategyFallback { areas, .. } if *areas == fell)
+                && !w.blocks_post()
+        }),
+        "adaptive2d dogbone: only the advisory fallback: {warns:?}\nnotes {:?}",
+        tp.notes
+    );
 
     // Trochoidal method with corner relief refuses by name.
     let mut adp_troch = adp_dog;

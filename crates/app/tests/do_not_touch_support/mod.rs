@@ -4,7 +4,7 @@ use camcraft_app::mcp::Server;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
-fn tmp_dir(tag: &str) -> PathBuf {
+pub fn tmp_dir(tag: &str) -> PathBuf {
     let mut p = std::env::temp_dir();
     p.push(format!("camcraft-2055-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
@@ -13,7 +13,7 @@ fn tmp_dir(tag: &str) -> PathBuf {
 }
 
 /// Write a box STL with min (x0, y0, z0) and max (x1, y1, z1).
-fn write_box_stl(path: &std::path::Path, x0: f64, y0: f64, z0: f64, x1: f64, y1: f64, z1: f64) {
+pub fn write_box_stl(path: &std::path::Path, x0: f64, y0: f64, z0: f64, x1: f64, y1: f64, z1: f64) {
     let v = |i: usize| -> [f64; 3] {
         [
             if i & 1 == 0 { x0 } else { x1 },
@@ -91,11 +91,22 @@ impl Client {
     }
 }
 
+// Each test binary that includes this module uses one of the two setups.
+#[allow(dead_code)]
 pub fn setup_plate_and_tower(tag: &str) -> (PathBuf, Client, String, String, String, String) {
+    setup_plate_and_tower_on(tag, [-40.0, -40.0, 40.0, 40.0])
+}
+
+/// [`setup_plate_and_tower`] with the plate's XY bounds `[x0, y0, x1, y1]`
+/// (mm). The tower stays at the origin; the stock box is centred there and
+/// covers the plate.
+pub fn setup_plate_and_tower_on(tag: &str, plate: [f64; 4]) -> (PathBuf, Client, String, String, String, String) {
     let dir = tmp_dir(tag);
     let plate_stl = dir.join("plate.stl");
     let tower_stl = dir.join("tower.stl");
-    write_box_stl(&plate_stl, -40.0, -40.0, 0.0, 40.0, 40.0, 10.0);
+    let [x0, y0, x1, y1] = plate;
+    write_box_stl(&plate_stl, x0, y0, 0.0, x1, y1, 10.0);
+    let (dx, dy) = (2.0 * x0.abs().max(x1.abs()), 2.0 * y0.abs().max(y1.abs()));
     write_box_stl(&tower_stl, -6.0, -6.0, 0.0, 6.0, 6.0, 24.0);
 
     let mut c = Client::new();
@@ -109,7 +120,7 @@ pub fn setup_plate_and_tower(tag: &str) -> (PathBuf, Client, String, String, Str
     );
     c.ok(
         "set_stock",
-        json!({ "box": { "dx": 80.0, "dy": 80.0, "dz": 24.0 } }),
+        json!({ "box": { "dx": dx, "dy": dy, "dz": 24.0 } }),
     );
     c.ok(
         "add_tool",

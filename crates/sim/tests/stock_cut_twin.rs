@@ -5,14 +5,19 @@
 //! subtract_batch`, `preview::pack_cut`) as the reference; nothing
 //! from vendor binaries.
 //!
-//! Gate map: covers camcraft_sim::stock_sim::cut_twin and
-//! camcraft_sim::stock_sim::cut_twin_work.
+//! The layer playback (#2629, S3b) at the end: seeks, keyframes and the
+//! move in flight against the one-batch twin.
+//!
+//! Gate map: covers camcraft_sim::stock_sim::cut_twin,
+//! camcraft_sim::stock_sim::cut_twin_work and
+//! camcraft_sim::stock_sim::layer_play.
 
 use camcraft_sim::cl::{Move, MoveKind};
 use camcraft_sim::geometry::{cube, Point3};
 use camcraft_sim::stock_sim::preview::{pack_cut, pack_field, LatticeMeta};
 use camcraft_sim::stock_sim::{
-    from_ordered_bits, ordered_bits, twin_cut, twin_work, SdfField, SdfTool, StockError,
+    cpu_layer_cutter, from_ordered_bits, layer_tool, merge_max, ordered_bits, partial_move, run_twin, run_twin_items_onto,
+    twin_cut, twin_items, twin_work, LayerPlay, LayerSpan, SdfField, SdfTool, SimOp, Stock, StockError,
 };
 
 fn p(x: f64, y: f64, z: f64) -> Point3 {
@@ -179,6 +184,76 @@ fn the_work_list_covers_every_claimed_cell_inside_its_bricks() {
     }
 }
 
+/// The text of the GPU kernel's parity fixture (#2627): the kernel
+/// items of the twin, the twin's layer and the f64 layer, as f32 bit
+/// patterns, sparse (only texels off the `-4 cap` floor).
+fn gpu_fixture(tool: SdfTool, name: &str) -> String {
+    // the level feed, the ramp and the plunge: the three flat paths
+    let moves = program()[..3].to_vec();
+    let (want, meta) = reference(&tool, &moves);
+    let work = twin_work(&moves, &tool, &meta).expect("the work list");
+    let items = twin_items(&work, &meta).expect("the kernel items");
+    let twin = run_twin(&work, &meta).expect("the twin cuts");
+    let h = |v: f32| format!("{:08x}", v.to_bits());
+    // FNV-1a over the twin layer's bits, in slot order
+    let fnv = twin.iter().flat_map(|v| v.to_bits().to_le_bytes()).fold(0xcbf2_9ce4_8422_2325u64, |acc, b| {
+        (acc ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    let mut s = format!(
+        "# {name}: the f32 cut twin (#2626) on the block and the first three moves\n\
+         # of crates/sim/tests/stock_cut_twin.rs, for the GPU kernel parity of #2627.\n\
+         # Written by the_gpu_kernel_fixtures_match_the_twin; CAMCRAFT_BLESS=1 writes it again.\n\
+         # f32 values are hex bit patterns. grid: dims cell cap. item: a b r flank margin\n\
+         # ball base lo hi. twin: FNV-1a 64 of the twin layer's bits (slot order, LE).\n\
+         # t: slot step from the last t line, f64 reference (texels off the floor).\n"
+    );
+    let [dx, dy, dz] = meta.dims;
+    s += &format!("grid {dx} {dy} {dz} {} {}\n", h(meta.cell as f32), h(meta.cap as f32));
+    for it in &items {
+        let t = &it.tile;
+        let v3 = |p: [f32; 3]| format!("{} {} {}", h(p[0]), h(p[1]), h(p[2]));
+        let i3 = |p: [i64; 3]| format!("{} {} {}", p[0], p[1], p[2]);
+        s += &format!(
+            "item {} {} {} {} {} {} {} {} {}\n",
+            v3(t.a),
+            v3(t.b),
+            h(t.r),
+            h(t.flank),
+            h(t.margin),
+            u8::from(t.ball),
+            i3(it.base.map(i64::from)),
+            i3(it.lo.map(i64::from)),
+            i3(it.hi.map(i64::from)),
+        );
+    }
+    s += &format!("twin {fnv:016x}\n");
+    let floor = (-4.0 * meta.cap) as f32;
+    let mut last = 0;
+    for (n, w) in want.iter().enumerate() {
+        if w.to_bits() != floor.to_bits() {
+            s += &format!("t {} {}\n", n - last, h(*w));
+            last = n;
+        }
+    }
+    s
+}
+
+/// The fixtures that `crates/gpu/tests/cut_parity.rs` reads are the
+/// twin's current output (the `facet_grid_2619` pattern of #2620).
+#[test]
+fn the_gpu_kernel_fixtures_match_the_twin() {
+    for (tool, name) in [(BALL, "cut_twin_ball_2627"), (FLAT, "cut_twin_flat_2627")] {
+        let path = format!("{}/../gpu/tests/fixtures/{name}.txt", env!("CARGO_MANIFEST_DIR"));
+        let text = gpu_fixture(tool, name);
+        if std::env::var("CAMCRAFT_BLESS").is_ok_and(|v| v == "1") {
+            std::fs::write(&path, &text).expect("write the fixture");
+            continue;
+        }
+        let have = std::fs::read_to_string(&path).unwrap_or_default().replace("\r\n", "\n");
+        assert!(have == text, "{path} is stale or missing; CAMCRAFT_BLESS=1 writes it again");
+    }
+}
+
 fn refusal(moves: &[Move], tool: &SdfTool, needle: &str) {
     let (_, meta) = block();
     match twin_cut(moves, tool, &meta) {
@@ -208,4 +283,92 @@ fn every_other_tool_refuses_by_name() {
     refusal(&ok, &SdfTool::Taper { r: 2.0, cot: 1.0 }, "taper");
     refusal(&ok, &SdfTool::Drill { r: 2.0, cot: 0.6, flank: 10.0 }, "drill");
     refusal(&ok, &SdfTool::BullNose { r: 3.0, corner: 1.0, flank: 10.0 }, "bull nose");
+}
+
+/// The one-batch twin of the moves before `k` of each span, merged: the
+/// layer that the playback must show at `k`.
+fn one_batch(spans: &[LayerSpan<'_>], k: usize, meta: &LatticeMeta) -> Vec<f32> {
+    let n = meta.dims.iter().map(|d| *d as usize).product();
+    let mut out = vec![(-4.0 * meta.cap) as f32; n];
+    for s in spans {
+        let upto = k.saturating_sub(s.start).min(s.moves.len());
+        if upto > 0 {
+            merge_max(&mut out, &twin_cut(&s.moves[..upto], s.tool, meta).expect("the twin")).expect("same lattice");
+        }
+    }
+    out
+}
+
+fn bits(v: &[f32]) -> Vec<u32> {
+    v.iter().map(|x| x.to_bits()).collect()
+}
+
+#[test]
+fn the_layer_playback_is_the_one_batch_twin_at_every_seek() {
+    let (_, meta) = block();
+    let moves = program();
+    let spans = [
+        LayerSpan { start: 0, moves: &moves, tool: &BALL },
+        LayerSpan { start: moves.len(), moves: &moves, tool: &FLAT },
+    ];
+    let total = 2 * moves.len();
+    let mut play = LayerPlay::new(meta.clone(), cpu_layer_cutter(), 2).expect("the layer");
+    // forward, a jump, backward past keyframes, the end, and back to 0
+    for k in [1, 2, 3, 7, total, 4, 9, 0, total, 5] {
+        play.seek(k, &spans).expect("the seek");
+        assert_eq!(play.at(), k);
+        let got = play.frame(k, 0.0, &spans).expect("the frame");
+        assert_eq!(bits(&got), bits(&one_batch(&spans, k, &meta)), "the layer at {k}");
+    }
+    assert!(play.keyframes() > 2, "the seeks keep keyframes: {}", play.keyframes());
+}
+
+#[test]
+fn the_layer_frame_shows_the_travelled_part_of_the_move_in_flight() {
+    let (_, meta) = block();
+    let moves = program();
+    let spans = [LayerSpan { start: 0, moves: &moves, tool: &FLAT }];
+    let mut play = LayerPlay::new(meta.clone(), cpu_layer_cutter(), 3).expect("the layer");
+    let k = 3; // the second ramp, a golden-section move
+    let half = play.frame(k, 0.5, &spans).expect("the half frame");
+    let sub = partial_move(&moves[k], 0.5).expect("a travelled part");
+    let mut with = moves[..k].to_vec();
+    with.push(sub);
+    let want = twin_cut(&with, &FLAT, &meta).expect("the twin");
+    assert_eq!(bits(&half), bits(&want), "the move in flight");
+    let whole = play.frame(k, 0.0, &spans).expect("the whole frame");
+    assert_eq!(bits(&whole), bits(&one_batch(&spans, k, &meta)), "the partial cut is on a copy");
+    assert_ne!(bits(&half), bits(&whole), "the fixture's half move cuts something");
+}
+
+#[test]
+fn an_op_without_a_twin_stays_on_the_field_by_name() {
+    let (f, _) = block();
+    let stock = Stock::Field(f);
+    let moves = program();
+    let ball = SimOp { moves: &moves, radius: 2.5, ball: true, cone: None, corner: None };
+    assert!(matches!(layer_tool(&ball, &stock), Ok(SdfTool::Ball { .. })));
+    let flat = SimOp { ball: false, ..ball };
+    assert!(matches!(layer_tool(&flat, &stock), Ok(SdfTool::Flat { .. })));
+    let bull = SimOp { corner: Some(0.5), ..flat };
+    let err = layer_tool(&bull, &stock).expect_err("a bull nose").to_string();
+    assert!(err.contains("bull nose"), "{err}");
+    let mut arc = moves.clone();
+    arc[0].arc = Some(camcraft_sim::cl::ArcMove { center: camcraft_sim::geo2d::Point2::new(8.0, 8.0), ccw: false, plane: Default::default() });
+    let err = layer_tool(&SimOp { moves: &arc, ..ball }, &stock).expect_err("an arc").to_string();
+    assert!(err.contains("arc"), "{err}");
+}
+
+#[test]
+fn a_bad_base_layer_is_refused_by_name() {
+    let (_, meta) = block();
+    let work = twin_work(&program(), &BALL, &meta).expect("the work");
+    let items = twin_items(&work, &meta).expect("the items");
+    let n: usize = meta.dims.iter().map(|d| *d as usize).product();
+    let err = run_twin_items_onto(&items, &meta, &vec![0.0; n - 1]).expect_err("a short base").to_string();
+    assert!(err.contains("base layer has"), "{err}");
+    let mut nan = vec![-1.0; n];
+    nan[3] = f32::NAN;
+    let err = run_twin_items_onto(&items, &meta, &nan).expect_err("a NaN").to_string();
+    assert!(err.contains("not finite"), "{err}");
 }

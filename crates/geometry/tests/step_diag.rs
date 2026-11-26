@@ -52,3 +52,16 @@ fn no_data_section_and_open_strings_keep_their_wording() {
     let s = locate(&file("#1 = A('open);\n")).expect("found");
     assert!(s.to_string().contains("string starting at line 6 is never closed"), "{s}");
 }
+
+/// #3767: since solidcore fa67b3f5 the parser holds a text's parameter count
+/// to its own length. A dense, legal record alone in the probe frame passes
+/// that density; the locator must not name it. A real fault after it is
+/// still named.
+#[test]
+fn a_dense_legal_record_is_not_named() {
+    let deep = format!("#9 = DEEP_LIST({}1.0{});\n", "(".repeat(63), ")".repeat(63));
+    let zeros = format!("#8 = INTS(({}0));\n", "0,".repeat(200));
+    assert_eq!(locate(&file(&format!("#1 = A(1.0);\n{deep}{zeros}"))), None);
+    let f = locate(&file(&format!("{deep}#22 = B(1,,2);\n"))).expect("found");
+    assert!(matches!(f, Failure::Entity { id: Some(ref i), .. } if i == "#22"), "{f:?}");
+}

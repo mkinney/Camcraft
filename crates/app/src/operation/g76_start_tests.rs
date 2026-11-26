@@ -98,6 +98,7 @@ fn eval(
         plunge_feed: 40.0,
         infeed_plan: Default::default(),
         hand: ThreadHand::Right,
+        picks: Default::default(),
     };
     let mut prior = PriorCell::new(None);
     judge(&params, &mut path, &cx, &mut prior);

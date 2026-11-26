@@ -339,3 +339,32 @@ fn the_sheet_job_checklist_refuses_an_inactive_setup() {
     assert_eq!(camcraft_app::sheet_job::of(&st.world, "Setup1"), None);
     assert_eq!(st.history.done_len(), before, "nothing entered the history");
 }
+
+/// #2410: the Sheet job group is a router option. A router machine shows
+/// it, a mill hides it, and a stated job stays shown on the mill (a stated
+/// option is never hidden). The page reads `router_offer`, as MCP does.
+#[test]
+fn the_sheet_job_group_shows_on_a_router_and_not_on_a_mill() {
+    use crate::egui_app::setup_sheet_job_row::{APPLY, GROUP};
+    use camcraft_app::commands::{LoadMachine, SetSheetJob};
+    let mount = |h: &mut H, name: &str| {
+        let st = &mut h.state_mut().state;
+        let cmd = LoadMachine::builtin(&st.world, name).unwrap_or_else(|e| panic!("{name}: {e}"));
+        st.history.execute(&st.world, cmd);
+    };
+    let mut h = setups(1, "Setup1");
+    mount(&mut h, "Tormach 24R");
+    open(&mut h, "Setup1");
+    assert!(h.query_by_label(GROUP).is_some(), "a router shows the Sheet job group");
+    h.get_by_label(APPLY).click();
+    h.run_steps(3);
+    mount(&mut h, "VMC 3-axis");
+    open(&mut h, "Setup1");
+    assert!(h.query_by_label(GROUP).is_some(), "a stated job stays shown on a mill");
+    let st = &mut h.state_mut().state;
+    let clear = SetSheetJob::clear(&st.world).unwrap_or_else(|e| panic!("clear: {e}"));
+    st.history.execute(&st.world, clear);
+    open(&mut h, "Setup1");
+    gone(&h, GROUP);
+    gone(&h, APPLY);
+}

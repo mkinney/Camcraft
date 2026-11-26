@@ -40,11 +40,13 @@ fork, `upstream` is NeoTech/Camcraft and `origin` is the fork).
 - Never build in the main checkout. Work in a worktree under
   `.claude/worktrees/` with its own `target/` (the worktree default, no `CARGO_TARGET_DIR` env var - it defeats the shared compile cache); remove both when done.
 - Build cache: Prefer `cargo xtask gate ...` (it turns the compile cache on); for a direct cargo call set `RUSTC_WRAPPER=sccache` only when `sccache` is on PATH (cargo fails if the wrapper is missing), and never export `CARGO_TARGET_DIR`.
-- A PR flagged ready and labelled `merge-ready` takes no pushes (AGENTS.md
-  "Every PR opens as a draft"). A conflicting PR has already lost
-  `merge-ready` (the label is `conflicts`), so pushing a merge to it is
-  allowed. If the PR is still marked ready (ours or a contributor's), run
-  `gh pr ready <N> --undo` before pushing and say why in a PR comment -
+- A push to a ready PR moves its head, so the earlier review and the
+  `merge-ready` label do not count for the new head (AGENTS.md "Every PR
+  opens as a draft", #3727). A conflicting PR has already lost `merge-ready`
+  (the label is `conflicts`), so pushing a merge to it is allowed. An orange
+  `conflicts` verdict makes the PR a draft: if the PR is still marked ready
+  (ours or a contributor's), run `gh pr ready <N> --undo` before pushing and
+  say why in a PR comment -
   except a refresh that is only a merge of main with no hand edits
   (`cargo xtask merge-plan --delta` says SAME; AGENTS.md "Every PR opens as
   a draft", superseded since 2026-11-12 by the decision "Refresh only at

@@ -330,6 +330,11 @@ pub struct SetupDto {
     /// step). Absent - every older file - states none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sheet_job: Option<crate::sheet_job::SheetJob>,
+    /// #3447: the setup's place in the program (its creation order), v77.
+    /// Absent - every older file - sorts first, by name. An old reader
+    /// must refuse the file rather than drop the key and post in name order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u32>,
 }
 
 /// A setup's WCS as files hold it. v54 (#342) writes one entity name

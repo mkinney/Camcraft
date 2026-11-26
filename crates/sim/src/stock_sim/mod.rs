@@ -96,6 +96,8 @@ mod dual;
 // #2626: the f32 twin of the GPU cell cut and its brick work list.
 mod cut_twin;
 mod cut_twin_work;
+// #2629 (GPU stock sim S3b): the playback layer of the twin-able ops.
+mod layer_play;
 mod field;
 mod field_arc;
 mod field_batch;
@@ -158,7 +160,13 @@ pub use mark::{credit_marks, Mark};
 // The floor a mark must leave on the part's underside (#1595).
 pub use crate::verify::MARK_FLOOR;
 pub use cut_twin::{cell_cut, from_ordered_bits, ordered_bits, TileChord, TwinChord, TwinTool, TWIN_ULPS};
-pub use cut_twin_work::{run_twin, twin_cut, twin_work, TwinWork, WorkItem, TWIN_MAX_CELLS_PER_CHORD};
+pub use cut_twin_work::{
+    run_twin, run_twin_items_onto, twin_cut, twin_items, twin_refusal, twin_work, TwinItem, TwinWork, WorkItem,
+    TWIN_MAX_CELLS_PER_CHORD,
+};
+pub use layer_play::{
+    cpu_layer_cutter, layer_tool, merge_max, LayerCutter, LayerKey, LayerPlay, LayerSpan, LAYER_KEYS, LAYER_KEY_BUDGET,
+};
 pub use field::SdfField;
 pub use field_body::Lattice;
 pub use field_carry::{box_signed, CarriedField, Clip, ClipRefusal};

@@ -116,7 +116,7 @@ fn face_op(world: &World, h: &mut History) {
     let params = OpParams::Face {
         holes: Default::default(),
         tilt: None,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         stepover: 3.0,
         clearance_z: Height::of(HeightReference::TopOfStock, 25.0),
         cut_z: Height::of(HeightReference::TopOfStock, -0.5),
@@ -125,6 +125,7 @@ fn face_op(world: &World, h: &mut History) {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     };
     h.execute(world, CreateOperation::new(world, "Face1", "EM-0400-2FL", SrcRef::Stock, params).expect("op"));
     h.execute(world, GenerateOperation::new(world, "Face1").expect("generated"));

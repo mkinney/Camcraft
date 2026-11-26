@@ -13,8 +13,8 @@ const TOOL: &str = "EM-0600-4FL";
 
 /// The editor on the Profile tab, switched to Draw cutter.
 fn cutter_tab() -> Harness<'static, ShellUi> {
-    // A tall shell: the Properties page and its Apply are on screen at
-    // once, so the test does not fight a scroll.
+    // A tall shell: the shape window and the tool library window are on
+    // screen at once, so the test does not fight a scroll.
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 1400.0))
         .build_ui_state(super::frame, ShellUi::seeded());
@@ -133,14 +133,12 @@ fn the_editors_apply_carries_a_landed_cutter_onto_new_numbers() {
     harness.run();
     assert_eq!(landed(&harness.state().state), (6.0, Some(NECK), true));
     // A diameter edit under a drawn cutter used to be refused; now the
-    // drawn outline rides along.
-    harness.state_mut().state.tool_ui.diameter = 7.0;
+    // drawn outline rides along. #3930: the settings Apply is the tool
+    // library window's; the shape window has no Apply of its own.
+    super::tool_library_editor::open_in_window(&mut harness, TOOL);
+    super::tool_library_editor::draft(&mut harness).diameter = 7.0;
     harness.run();
-    // #2397: the settings Apply is on the Properties page; the shape
-    // window has no Apply of its own.
-    harness.get_by_label("Apply").click();
-    harness.run();
-    harness.run();
+    super::tool_library_editor::click_window_button(&mut harness, "Apply");
     let st = &harness.state().state;
     assert_eq!(landed(st), (7.0, Some(NECK), true), "error: {:?}", st.error_for(crate::state::ErrorScope::Tool));
     harness.state_mut().state.pending.push_back(CommandKind::Undo);

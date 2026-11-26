@@ -173,7 +173,7 @@ fn haas_writes_g76_with_the_shift_of_the_chain() {
         assert!(has("Z-12.") && has("R2."), "bottom and R: {b:?}");
         assert!(has("I0.3") && has("J-0.4"), "the shift words are the chain's shift: {b:?}");
         assert!(has("P500"), "the 0.5 s dwell, in whole milliseconds: {b:?}");
-        assert!(has("F60"), "the cycle's own feed: {b:?}");
+        assert!(has("F60."), "the cycle's own feed, with its point (#3681): {b:?}");
         assert!(!b.iter().any(|w| w.starts_with('Q')), "Q takes its direction from a control setting: never written: {b:?}");
     }
     let ws: Vec<&String> = bs.iter().flatten().collect();

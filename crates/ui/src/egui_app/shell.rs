@@ -48,6 +48,8 @@ pub(crate) enum Tab {
     Properties,
     Machines,
     AiChat,
+    /// #3892: retired - the tool library is its own window now. Kept
+    /// because a saved panel setup can name it; `setups::decode` drops it.
     Tools,
     DebugInfo,
 }
@@ -100,8 +102,11 @@ pub(crate) fn shell_layout(
     state.geo_hover_drawn = state.geo_hover.take();
     state.geo_row_marked.clear();
     panes::shortcuts(ui, state);
-    // #1450: a model file dropped on the window goes through Model's import.
-    super::file_drop::take_drop(ui, state);
+    // #1450: a model file dropped on the window goes through Model's import;
+    // #2950: a drop with a machine or post file goes to those lists instead.
+    if !super::setup_file_drop::take(ui, state) {
+        super::file_drop::take_drop(ui, state);
+    }
     // The live theme, read once per pass: the strips and every pane below
     // share one token table, so the widget path and the painted ink cannot
     // disagree on a retheme (M6.1 A). `ribbon_h` tracks the cell box.
@@ -172,6 +177,8 @@ pub(crate) fn shell_layout(
     // no panel below it ever moves in the snapshot until something opens it.
     let windows = crate::frame_cost::span("ui/windows");
     pages::tool_shape_editor_window(ui.ctx(), state);
+    // #3892: the tool library - same window law, closed on a fresh State.
+    super::tool_library_dialog::tool_library_window(ui.ctx(), state);
     // M1.7d: the G-code viewer - same window law as the tool editor (an
     // in-app egui::Window over the dock; the single-OS-window law
     // stands). None on a fresh State, closed by ✖, reopened by the next
@@ -192,6 +199,12 @@ pub(crate) fn shell_layout(
     super::fixture_library_dialog::window(ui.ctx(), state);
     // #2339: the Panel setups window - same window law, closed by default.
     super::panel_setups::window(ui.ctx(), state);
+    // #1874: the length unit of a STEP file that states none.
+    super::step_units_prompt::window(ui.ctx(), state);
+    // #1863: the DXF units prompt (None on a fresh State).
+    super::dxf_units_dialog::window(ui.ctx(), state);
+    // #3608: the changed-on-disk prompt of a held Save (None on a fresh State).
+    super::overwrite_prompt::window(ui.ctx(), state);
     // #107: the unsaved-changes prompt, last so it sits over everything.
     unsaved_prompt::window(ui.ctx(), state);
     drop(windows);
@@ -275,7 +288,9 @@ impl TabViewer for ShellTabs<'_> {
                 let pal = theme::current();
                 pages::properties(ui, self.state, &pal);
             }
-            Tab::Tools => super::tool_library::draw(ui, self.state),
+            // #3892: the tool library is a window now; a dock that still
+            // holds the old tab (a saved setup) drops it on load.
+            Tab::Tools => {}
             Tab::Machines => {
                 let pal = theme::current();
                 machines_pane::draw(ui, self.state, &pal);
@@ -324,6 +339,7 @@ fn viewport_panel(
         // through material. Held while the stock removal is calculated.
         crate::play_precalc::advance_playhead(state, f64::from(ui.input(|i| i.stable_dt).clamp(0.0, 0.1)), total);
         let held = crate::play_precalc::holds_playhead(state);
+        let starts = super::sim_steps::cached_op_starts(state);
         let mut stop = false;
         ui.horizontal(|ui| {
             let Some(sim) = state.sim.as_mut() else {
@@ -349,6 +365,8 @@ fn viewport_panel(
                 stop = true;
             }
             if total > 0.0 {
+                // #2608: step to an operation's start (sim_steps).
+                super::sim_steps::op_step_buttons(ui, sim, &sc, &starts, held);
                 ui.add_enabled(!held, egui::Slider::new(&mut sim.t, 0.0..=total).show_value(false));
                 egui::ComboBox::from_id_salt("sim_speed")
                     .selected_text(format!("{:.0}x", sim.speed))

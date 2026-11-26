@@ -4,7 +4,8 @@
 //!
 //! Gate map (#1888): covers app::mcp (pick, edit),
 //! app::project (the Deburr params DTO), app::commands
-//! (SetOperationGeometry, EditOperationParams).
+//! (SetOperationGeometry, EditOperationParams), app::operation::tool_gate
+//! (#3368: a flat or ball taper tip refused at generation).
 
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::mcp::Server;
@@ -102,5 +103,23 @@ fn deburr_takes_edge_chains_and_its_filters_through_mcp() {
     // The command door, through the same tool: a bad range is refused.
     let why = c.refused("edit_operation", json!({ "name": "D1", "params": { "hole_min_diameter": 20.0 } }));
     assert!(!why.is_empty());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// #3368: a Deburr whose chamfer mill is edited to a flat or ball tip
+/// after the operation exists is refused by name at generation - no
+/// toolpath reads the tip as a sharp cone. Back to sharp, it generates.
+#[test]
+fn a_deburr_refuses_its_tool_after_a_flat_tip_edit() {
+    let (mut c, dir) = deburr_job("tip-form");
+    c.ok("edit_tool", json!({ "name": "CM-0600-90", "patch": { "tip_form": "flat", "tip_diameter": 1.0 } }));
+    let (err, body) = c.call("generate", json!({ "name": "D1" }));
+    let text = body.to_string();
+    assert!(text.contains("'CM-0600-90' has a flat tip"), "generation names the tip (error {err}): {text}");
+    let job = c.ok("get_job", json!({}));
+    assert_ne!(job["operations"][0]["status"], json!("ok"), "no toolpath for a flat tip: {job}");
+    c.ok("undo", json!({}));
+    let (err, body) = c.call("generate", json!({ "name": "D1" }));
+    assert!(!body.to_string().contains("has a flat tip"), "the sharp tip generates (error {err}): {body}");
     let _ = std::fs::remove_dir_all(dir);
 }

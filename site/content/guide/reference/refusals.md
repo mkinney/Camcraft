@@ -73,6 +73,7 @@ also gives the operation, dimensions or picked geometry.
 | `mesh may have nested or overlapping shells` | An inward mesh shell can describe a cavity, so automatic orientation is ambiguous. | Re-export separate non-overlapping solids. Isolated closed inward STL and OBJ solids are corrected at import, with a note. |
 | `'Do not touch' item ... is also in the operation's machining selection` | The same face, patch or edge chain was placed in both the cutting selection and **Do not touch**. | Remove the conflicting item from one list. |
 | `cannot cut clear of protected 'Do not touch' ...: no safe cutting room remains` | Subtracting full-tool keep-out volumes around protected faces or edges leaves no room to machine. | Reduce **Clearance**, pick a smaller tool/holder, or shrink the protected area. |
+| `... - the 'Do not touch' keep-out of ... takes part of the region` | On 2D Adaptive, the area left clear of the protected items is too narrow for the method (for Trochoidal: no single channel for the lanes). | Use **Method = Spiral**, reduce **Clearance**, or shrink the protected area. |
 
 For a reduced-fidelity model, Cross Drill checks include the model's
 excess in entry, reach, holder and part clearances. A refusal means those

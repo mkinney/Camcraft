@@ -143,3 +143,52 @@ fn nonfinite_stock_top_never_clears_the_nominal_radius() {
         assert!(has_gouge(&warnings), "stock top {top} cannot prove a reduced cone radius: {warnings:?}");
     }
 }
+
+fn judge_with_part_top(movement: Move, rim_top_z: f64) -> Vec<Warning> {
+    let region = bore();
+    let mut geometry = tool();
+    geometry.radius = 4.0;
+    geometry.shank_radius = 4.0;
+    let cutter = Cutter { tip_angle: 90.0, ..Cutter::flat(&geometry) };
+    let rims = [(Point2::new(0.0, 0.0), 2.5)];
+    verify(&path(vec![movement]), &VerifyContext {
+        region: &region,
+        tool: &geometry,
+        cutter: Some(cutter),
+        mode: Mode::Boundary,
+        stock_top_z: 13.0,
+        rim_top_z: Some(rim_top_z),
+        clearance_z: 27.0,
+        gouge_tol: 0.01,
+        z_tol: 1e-6,
+        rims: &rims,
+        ..Default::default()
+    })
+}
+
+#[test]
+fn extra_stock_above_the_part_does_not_enlarge_the_spot_footprint() {
+    let warnings = judge_with_part_top(plunge(2.0), 12.0);
+    assert!(!has_gouge(&warnings), "the 2 mm cone radius clears the 2.5 mm bore at the part top: {warnings:?}");
+}
+
+#[test]
+fn a_spot_that_cuts_the_part_wall_still_gouges_below_extra_stock() {
+    let warnings = judge_with_part_top(plunge(3.0), 12.0);
+    assert!(has_gouge(&warnings), "the 3 mm cone radius cuts the 2.5 mm bore: {warnings:?}");
+}
+
+#[test]
+fn nonfinite_part_top_never_clears_the_nominal_radius() {
+    for top in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let warnings = judge_with_part_top(plunge(2.0), top);
+        assert!(has_gouge(&warnings), "part top {top} cannot prove a reduced cone radius: {warnings:?}");
+    }
+}
+
+#[test]
+fn a_part_top_does_not_clear_a_lateral_feed() {
+    let lateral = Move::new(MoveKind::Feed, Point3::new(0.0, 0.0, 10.0), Point3::new(0.2, 0.0, 10.0), Some(80.0));
+    let warnings = judge_with_part_top(lateral, 12.0);
+    assert!(has_gouge(&warnings), "a lateral feed keeps the nominal cutter radius: {warnings:?}");
+}

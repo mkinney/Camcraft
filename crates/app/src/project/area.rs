@@ -93,6 +93,11 @@ pub struct AreaDto {
     pub containment: Option<ContainmentDto>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub offset: f64,
+    /// #3338: absent means "the same as `offset`" - a file saved before
+    /// the outer offset existed moved both lines by its one value, and a
+    /// save of equal values keeps those bytes (no version bump).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outer_offset: Option<f64>,
     #[serde(default, skip_serializing_if = "CornerDto::is_round")]
     pub corner: CornerDto,
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -171,6 +176,7 @@ impl AreaDto {
                 Containment::Outside => ContainmentDto::Outside,
             }),
             offset: a.offset,
+            outer_offset: (a.outer_offset != a.offset).then_some(a.outer_offset),
             corner: match a.corner {
                 CornerStyle::Round => CornerDto::Round,
                 CornerStyle::Sharp => CornerDto::Sharp,
@@ -214,6 +220,7 @@ impl AreaDto {
                 ContainmentDto::Outside => Containment::Outside,
             }),
             offset: self.offset,
+            outer_offset: self.outer_offset.unwrap_or(self.offset),
             corner: match self.corner {
                 CornerDto::Round => CornerStyle::Round,
                 CornerDto::Sharp => CornerStyle::Sharp,

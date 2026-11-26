@@ -279,3 +279,7 @@ fn typed_move_and_turn_respect_units_and_refuse_bad_input() {
     assert!(!state.history.is_dirty());
     assert!(state.status.contains("part not turned"), "{}", state.status);
 }
+
+#[path = "viewport_bar_tooltip_tests.rs"]
+mod tooltip_tests;
+

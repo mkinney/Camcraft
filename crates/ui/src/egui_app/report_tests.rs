@@ -13,6 +13,7 @@ use egui::Vec2;
 use egui_kittest::kittest::Queryable;
 use egui_kittest::Harness;
 
+use super::gpu_test_lock::gpu_guard;
 use super::{debug_info, panes, report, theme};
 use crate::state::State;
 
@@ -141,6 +142,7 @@ fn the_report_door_scrubs_a_status_path_that_is_not_the_project() {
 
 #[test]
 fn the_door_opens_the_window_and_a_kind_button_files_the_url() {
+    let _gpu = gpu_guard(); // #3589: the screenshot renderer makes a wgpu instance
     let mut h = harness();
     h.run();
     assert!(h.query_by_label("Report a bug").is_none(), "closed on a fresh state");
@@ -167,6 +169,7 @@ fn the_door_opens_the_window_and_a_kind_button_files_the_url() {
 
 #[test]
 fn the_title_field_travels_into_the_url() {
+    let _gpu = gpu_guard(); // #3589: the screenshot renderer makes a wgpu instance
     let mut h = harness();
     h.get_by_label("Report an issue").click();
     h.run();
@@ -185,6 +188,7 @@ fn the_title_field_travels_into_the_url() {
 
 #[test]
 fn a_kind_button_asks_the_shell_for_the_whole_window() {
+    let _gpu = gpu_guard(); // #3589: the screenshot renderer makes a wgpu instance
     // The request is the whole-window picture, not a model-area picture:
     // egui's viewport screenshot command, aimed at the root window, with
     // the door's own token (#1696, the maintainer's GUI finding).
@@ -208,6 +212,7 @@ fn a_kind_button_asks_the_shell_for_the_whole_window() {
 
 #[test]
 fn the_answer_copies_the_picture_and_says_the_word() {
+    let _gpu = gpu_guard(); // #3589: the screenshot renderer makes a wgpu instance
     let mut h = harness();
     h.get_by_label("Report an issue").click();
     h.run();
@@ -222,6 +227,7 @@ fn the_answer_copies_the_picture_and_says_the_word() {
 
 #[test]
 fn the_picture_is_still_copied_after_the_window_is_closed() {
+    let _gpu = gpu_guard(); // #3589: the screenshot renderer makes a wgpu instance
     // The answer lands a frame after the press. A user who closes the
     // window in that moment must still get the clipboard picture they
     // were told was coming.
@@ -257,6 +263,7 @@ fn an_answer_for_another_token_is_left_alone() {
 
 #[test]
 fn no_answer_copies_nothing() {
+    let _gpu = gpu_guard(); // #3589: the screenshot renderer makes a wgpu instance
     // No shell, no picture: the report still opens (the URL and the text
     // are the whole point), and the door must not claim a copy it never
     // made (Prime Directive: log or say, never silence).

@@ -105,6 +105,22 @@
 //!   [`crate::fixture::FIXTURE_HIT_TOL`]
 //!   of a face is silent (mating surfaces touch by design); everything
 //!   else errs toward HIT.
+//! - [`Warning::PlungeTooDeep`] - a feed plunge (d3, #3679) whose disc
+//!   meets stock that the cuts before it did not clear, and whose
+//!   cutter takes more of that stock in the one move than one
+//!   stepdown of the operation - the move's own bite, the lesser of
+//!   its start and the floor, so a tip a rapid already stood inside
+//!   stock answers for its own descent only. The floor is the rest
+//!   model's own `surface_before` under the full disc (a dive beside a
+//!   tab reads the tab's stock top, not the level its centre passed
+//!   through), each sample judged at the tool's height there, the
+//!   worst sample named once, and the program ahead's own surface
+//!   acquits a dive the same way it acquits a rapid
+//!   ([`acquit_plunge_by_prior`]). Advisory by the #3525 pattern: the
+//!   risk is the tool load, not a gouge or a collision, so the
+//!   finding names the dive and the post is not held.
+//!   [`VerifyContext::plunge_stepdown`] gates it: `None` keeps every
+//!   kind that cuts no levels silent.
 //! - [`Warning::Envelope`] - the measured verdict of a 3-D finish
 //!   (`Mode::Envelope`, law (f) below): the swept ball envelope cuts
 //!   below, or leaves above, the model surface by more than
@@ -171,11 +187,14 @@ mod contact;
 mod crossing;
 mod cut_index;
 mod engine;
+mod entry_advice;
 mod excess;
 mod fine_bore;
 mod finish;
 mod first_traverse;
 mod first_traverse_posed;
+// #3525: a cut deeper than the flute length, named by its cause.
+mod flute_reach;
 mod hidden;
 mod hidden_span;
 mod hole_wall;
@@ -193,11 +212,25 @@ mod prior;
 mod prior_traverse;
 mod body_bands;
 mod probe;
+// #3367: the tool meridian's atoms against `Cutter::atoms`.
+#[cfg(test)]
+mod probe_meridian_tests;
 mod rapids;
 mod rapids_posed;
 mod rapids_radial;
 mod reach;
+#[cfg(test)]
+mod reach_reference;
+#[cfg(test)]
+mod reach_tests;
+mod sample_grid;
 mod rest;
+// #3831: the prismatic Z slabs a ramped path sections once.
+mod slab;
+#[cfg(test)]
+mod slab_tests;
+// #3615: the exact Y-slab point-location index over a cached slice.
+mod slice_index;
 mod rotary;
 mod rotary_geom;
 mod seat;
@@ -218,6 +251,8 @@ mod turn_hidden;
 mod types;
 // #1444: the undercut cutters' Z-move and neck law.
 mod undercut;
+// #3679: the feed plunge depth law (d3).
+mod plunge_depth;
 mod upright;
 mod workholding;
 mod corner_relief;
@@ -229,14 +264,16 @@ pub use excess::{band_growth, excess_floor, excess_floor_for, strict_floor, PROM
 pub use first_traverse::{box_top, first_traverse_low, first_traverse_low_swept, swept_top, SweptSteel};
 pub use first_traverse_posed::{first_traverse_low_posed, posed_top, PosedTurn, PosedWork};
 pub use live_traverse::{live_first_traverse, LiveHit, LiveSolids, LiveStart, LiveUnjudged};
-pub use types::{FixturePart, Mode, VerifyContext, Warning};
+pub use entry_advice::{AdvisedEntry, entry_advice};
+pub use types::{FallbackCause, FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]
 pub use crossing::{crossed_pairs, crossed_pairs_all};
 pub use laws::CROSSING_TOUCH;
 pub use engine::{verify, verify_bodies};
+pub use flute_reach::{flute_note, flute_reach};
 pub use thread_bore::{CHORD_CREDIT, ThreadBore};
 pub use air::cuts_no_material;
-pub use prior::{acquit_by_prior, prior_surface};
+pub use prior::{acquit_by_prior, acquit_plunge_by_prior, prior_surface};
 pub use undercut::acquit_undercut_by_prior;
 pub use prior_traverse::{acquit_traverses_by_prior, Traverse};
 pub use traverse_solids::acquit_traverses_by_solids;

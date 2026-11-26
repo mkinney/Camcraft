@@ -103,6 +103,11 @@ pub fn verify_bodies(
         warns.extend(rapids_vs_fixtures_spindle(path, cx.tool, cx.fixtures, cx.spindle));
     }
 
+    // (d3) Feed plunge depth (#3679) - [`plunge_depth`]: a feed descent
+    // judged against the floor the cuts before it left under the full
+    // disc, at the op's stated stepdown. Advisory by the #3525 pattern.
+    super::plunge_depth::plunge_depth(path, cx, &rest, &cutter, &mut warns);
+
     // (e) Cycle reach - [`reach::cycle_reach`].
     reach::cycle_reach(path, cx, &mut warns);
 

@@ -139,7 +139,7 @@ fn without_a_body_the_side_preview_has_no_envelope_bands() {
 /// (as the steel outline) while they validate, before any Apply.
 #[test]
 fn the_profile_tab_draws_its_drafts_in_the_one_preview() {
-    use super::super::tool_profile_page::preview_inputs;
+    use super::super::tool_preview_inputs::preview_inputs;
     let mut harness = editor();
     harness.get_by_label("Profile").click();
     harness.run();

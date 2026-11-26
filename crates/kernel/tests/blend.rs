@@ -117,10 +117,12 @@ fn cube_blends_match_closed_form() {
     let all_round =
         core.powi(3) + 6.0 * core * core * d + 3.0 * PI * d * d * core + 4.0 / 3.0 * PI * d.powi(3);
     // Inclusion-exclusion over the 12 edge prisms (d^2 a / 2 each; at each of
-    // the 8 corners three pairs overlap d^3 / 3 and the triple d^3 / 4), less
-    // the tetrahedron each corner's flat bevel triangle (through the three
-    // setback points) cuts off, d^3 / 12.
-    let all_chamfer = a.powi(3) - 6.0 * a * d * d + 6.0 * d.powi(3) - 8.0 * d.powi(3) / 12.0;
+    // the 8 corners three pairs overlap d^3 / 3 and the triple d^3 / 4). The
+    // three chamfer planes meet in one mitred vertex at each corner: since
+    // solidcore fa67b3f5 (#3767, upstream "retire the fillet_chamfer_corner
+    // flag", #21269) the chamfer-corner event is the only chamfer corner, and
+    // it cuts no flat bevel triangle (the d^3 / 12 tetrahedron of the old pin).
+    let all_chamfer = a.powi(3) - 6.0 * a * d * d + 6.0 * d.powi(3);
     let cases: [(&[P3], Blend, Want); 6] = [
         (
             &one,

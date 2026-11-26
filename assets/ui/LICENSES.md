@@ -52,7 +52,10 @@ SolidCraft or any other product's icons. AGENTS.md's "operation-specific
 glyphs are drawn original when no generic set fits"; public-domain
 subjects, our renderings; no license notice owed, and they are not part of
 the Tabler set below. (The exclusion lists here are the only record of
-which pixels are ours, so both headings name the same files.)
+which pixels are ours, so both headings name the same files.) The
+Rotary Flow glyph (`op-rotary-flow`, #2827) joins the same set: drawn
+original for #2826's flow band, on the same 24-unit grid, no vendor
+material.
 
 ## Tabler Icons (file-plus, folder-open, file-import, device-floppy, arrow-back-up, arrow-forward-up, trash, tools, heart, home PNGs and assets/ui/svg/heart.svg, assets/ui/svg/home.svg, act-report PNG and assets/ui/svg/act-report.svg - loaded by crates/ui/src/egui_app/icons.rs)
 
@@ -194,8 +197,9 @@ the SMLib and SM_API components of NVIDIA's USD BRep, Apache-2.0. Linked as a
 dependency of camcraft-kernel only; no source copied into this repo. Since
 #916 it is taken as a git dependency at one commit of the owner's fork,
 https://github.com/NeoTech/solidcore, rev
-55d0e7638b9e1ebbf91ab8c10657e595c114ecda (the fork's tag
-camcraft-pin-2026-11-11); before that it was the crates.io release 1.0.1.
+fa67b3f560b7a8d59e99cb728f72f85e91dee2da (the fork's main, fast-forwarded
+to upstream tangency-labs/solidcore main on 2026-11-24, #3767); before that
+it was the crates.io release 1.0.1.
 
 The same commit supplies the other crates of that workspace camcraft-kernel
 links: `solidcore-step` (the STEP reader, written from ISO 10303-21 and
@@ -213,7 +217,8 @@ Apache-2.0 section 4 asks that redistributions carry the License and
 the NOTICE file's attribution text: both follow, verbatim. The NOTICE and
 LICENSE files at the pinned commit are byte-identical to those of the
 published 1.0.1 crate (checked with `git diff solidcore-v1.0.1 55d0e763 --
-NOTICE LICENSE`: no difference).
+NOTICE LICENSE`: no difference; the blobs at fa67b3f5 are the same as at
+55d0e763).
 
 NOTICE (verbatim):
 
@@ -458,9 +463,9 @@ LICENSE (verbatim):
 
 The logotype is the project's own artwork, made by the maintainer; the sizes under `assets/logo/icons/` are generated from it by `cargo xtask logo`.
 
-## Agie Processor (native Wire EDM export)
+## Native Wire EDM export (our own earlier implementation)
 
-The Agie Classic Cut 2S writer uses the JEScript job attributes and Fine Ra0.30 settings documented by Agie Processor.
+The Agie Classic Cut 2S writer uses the JEScript job attributes and Fine Ra0.30 settings of our own earlier implementation, under this licence.
 
 ```text
 MIT License

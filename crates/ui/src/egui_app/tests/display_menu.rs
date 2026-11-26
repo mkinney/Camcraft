@@ -86,6 +86,8 @@ fn the_graphics_entries_set_their_fields() {
     h.run_steps(2);
     assert!(!h.state().state.show_world_axes);
     assert_eq!(checked(&h, menu::SHOW_AXES), Some(Toggled::False));
+    assert!(h.state().state.show_grid, "the Origin axes box leaves the grid switch alone");
+    assert!(grid_lines(&h) > 0, "the grid still draws with the axes off (#3322)");
     // Projection: one choice of two.
     assert_eq!(h.state().state.cam.projection, ProjectionMode::Perspective);
     assert_eq!(checked(&h, menu::PERSPECTIVE), Some(Toggled::True));

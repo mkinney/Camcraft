@@ -91,13 +91,16 @@ fn dovetail_properties_and_editor_edit_flank_angle_without_corner_radius() {
 
     crate::actions::target(&mut h.state_mut().state, UiTarget::Tool("DT-20-60".into()));
     h.run_steps(3);
-    assert!(h.query_by_label("Flank angle (deg)").is_some(), "Properties shows Flank angle (deg)");
-    assert!(h.query_by_label("Corner radius").is_none(), "Properties hides Corner radius for dovetail");
+    assert!(h.query_by_label("Corner radius").is_none(), "the Properties summary hides Corner radius for dovetail");
 
-    // #2397: the settings stay in Properties (the shape window holds the
-    // body, profile and holder), so the flank angle is edited there.
+    // #3930: the settings are edited in the tool library window (Properties
+    // shows a summary), so the flank angle is edited there.
+    super::tool_library_editor::open_in_window(&mut h, "DT-20-60");
+    let win = || super::tool_library_editor::library_window(&h);
+    assert!(win().query_by_label("Flank angle (deg)").is_some(), "the window shows Flank angle (deg)");
+    assert!(win().query_by_label("Corner radius").is_none(), "the window hides Corner radius for dovetail");
 
-    let angle_drag = h
+    let angle_drag = win()
         .query_all_by_role(Role::SpinButton)
         .find(|n| n.accesskit_node().numeric_value() == Some(60.0))
         .expect("flank angle SpinButton")
@@ -109,14 +112,24 @@ fn dovetail_properties_and_editor_edit_flank_angle_without_corner_radius() {
     h.run();
     h.drop_at(angle_drag + Vec2::new(-50.0, 0.0));
     h.run();
-    let staged = h.state().state.tool_ui.tip_angle;
+    let staged = super::tool_library_editor::draft(&mut h).tip_angle;
     assert!((staged - 60.0).abs() > 0.5, "dragging flank angle stages tip_angle: {staged}");
-    h.get_by_label("Apply").click();
-    h.run_steps(3);
+    super::tool_library_editor::click_window_button(&mut h, "Apply");
     let updated = model::find_by_name(&h.state().state.world, "DT-20-60")
         .and_then(|e| model::tool_of(&h.state().state.world, &e))
         .expect("updated dovetail");
     assert!((updated.tip_angle - staged).abs() < 1e-6, "Apply updates tip_angle in world");
+
+    // #2397: the body and profile have their own window; its cutter
+    // parameters show the dovetail's flank angle too.
+    crate::actions::open_tool_shape_editor(&mut h.state_mut().state, "DT-20-60");
+    h.run_steps(3);
+    // The cutter parameters stand on the Profile tab's drawn cutter.
+    h.get_by_label("Profile").click();
+    h.run_steps(2);
+    h.get_by_label("Draw cutter").click();
+    h.run_steps(3);
+    assert!(h.query_by_label("flank angle °").is_some(), "shape window shows the flank angle");
 }
 
 #[test]

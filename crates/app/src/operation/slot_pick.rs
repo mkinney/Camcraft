@@ -144,6 +144,33 @@ pub fn slot_from_picks(world: &World, setup: Option<&str>, params: &OpParams, it
     Some(seeded)
 }
 
+/// #3475: a NEW plain Slot's width from its tool - the seed's width, or
+/// the tool diameter when that is wider, so that a default Slot always
+/// holds the tool it is made with. Called where a Slot is made from a
+/// seed with a known tool (the ribbon's quick-add, MCP `add_operation`
+/// before its params patch, a change of kind); a width that the caller
+/// or the picks state is never touched. A tool of the seed's width or
+/// less leaves the seed exactly as it was.
+pub fn seed_slot_for_tool(params: &mut OpParams, tool_diameter: f64) {
+    if let OpParams::Slot { width, .. } = params
+        && tool_diameter.is_finite()
+        && tool_diameter > *width
+    {
+        *width = tool_diameter;
+    }
+}
+
+/// #3475: does the slot fit law speak for this Slot's width? Not when its
+/// picks seed no slot (`slot_from_picks` is `None`): the width is then
+/// only the seed's fallback, and generation names the picks instead.
+#[must_use]
+pub fn slot_width_is_stated(world: &World, setup: Option<&str>, src: &SrcRef, params: &OpParams) -> bool {
+    match src {
+        SrcRef::Selection(items) => slot_from_picks(world, setup, params, items).is_some(),
+        _ => true,
+    }
+}
+
 /// What the op page echoes for a Slot with picks: the room and the
 /// slot that fills it when the typed slot fits, else the refusal
 /// generation would make. `None` without picks or for another kind.

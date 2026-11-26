@@ -87,6 +87,23 @@ function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
 function ni(v) { return has(v) ? String(Math.round(v)) : "0"; }
 function w(letter, v) { return has(v) ? letter + fu(v) : ""; }
 function fw(v) { return has(v) ? "F" + ff(v) : ""; }
+// #3699: a tap feed is pitch x rpm, kept at 0.001 mm/min by the stream, and
+// the control cuts the pitch F / S. G84 writes the feed at three mm or four
+// inch decimals; a tap whose written F and S do not hold the pitch to 0.01
+// percent is refused by name.
+function tapFeed(v) { return fu(v); }
+function tapPitchHolds(feed) {
+  var speed = Math.round(sRpm);
+  var written = Number(fu(feed)) * (inch ? 25.4 : 1);
+  var want = sRpm > 0 ? feed / sRpm : 0;
+  var got = speed > 0 ? written / speed : 0;
+  if (!(want > 0 && Math.abs(got - want) / want <= 1e-4)) {
+    msg("canned cycle G84 (tap)" + (coolantOp ? " in operation " + coolantOp : "") + " feed " + feed + " mm/min at " + sRpm +
+      " rpm posts as F" + tapFeed(feed) + " S" + speed + " - refused: the written pitch differs by more than 0.01 percent");
+    return false;
+  }
+  return true;
+}
 function block(words) {  // one numbered line per block - the DIN law
   var a = [];
   for (var i = 0; i < words.length; i++) {
@@ -101,6 +118,7 @@ function block(words) {  // one numbered line per block - the DIN law
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }
+function arcWord(k, v) { return wo(k, v, k === "X" ? orgX : (k === "Y" ? orgY : orgZ)); }  // #3442: a position word as written, for arcFate
 function msg(s) {  // counted warning where the host offers message()
   if (typeof message === "function") message(s); else writeln("; " + s);
 }
@@ -668,6 +686,9 @@ function onLinear() {
 function onCircular() {
   startPreamble();
   compRefuse("an arc");
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (!tiltOk(properties) || chainCut()) return;
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G2" : "G3"))) return;
   var p = properties;
@@ -780,6 +801,7 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
+  if (g === "G84" && !tapPitchHolds(Number(p.FeedRate))) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var words = [g, wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), wo("R", p.R, orgZ)];
@@ -797,7 +819,7 @@ function onCycle() {
   // page 95, gives G89 dwell in milliseconds. Section 6.3.1 says cycle
   // parameters are modal: write P0 when a Back bore has no dwell.
   if ((ms > 0 && g !== "G73" && g !== "G84") || g === "G89") words.push("P" + ms);
-  words.push(fw(p.FeedRate));
+  words.push(g === "G84" ? "F" + tapFeed(p.FeedRate) : fw(p.FeedRate));
   block(words);
   cycX = p.X; cycY = p.Y; cycR = p.R;
   seatKnown = true;

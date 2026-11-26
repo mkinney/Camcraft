@@ -21,8 +21,8 @@
 //! stack of its `ToolGeom` - never smaller than the real cutter - and
 //! the operation layer's depth law via [`solid_hits`], with the tool's
 //! own tip. A cutting move that enters the solid is a [`Warning::Gouge`];
-//! a rapid that does is a [`Warning::RapidInStock`] - the part is stock
-//! too, and steel at rapid feed is a crash.
+//! a rapid that does is a [`Warning::RapidInPart`] - steel at rapid feed
+//! is a crash.
 
 use super::corner_relief::CornerReliefZone;
 use super::hole_wall::HoleAxis;
@@ -129,7 +129,7 @@ pub fn solid_hits_relieved(
 /// under the edge): a cutting move whose shank or holder enters the
 /// solid is a [`Warning::ShankHit`] on the part whatever its edge does,
 /// and a rapid that enters it with any of the assembly a
-/// [`Warning::RapidInStock`]. The edge of a cutting move is not judged
+/// [`Warning::RapidInPart`]. The edge of a cutting move is not judged
 /// here. One pose more is excused, and only that pose: on a straight
 /// retract UP the tool's own axis from where a cutting move left it, the
 /// edge where it already stands - the kerf that move made, which the
@@ -217,7 +217,7 @@ fn judged(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw,
                 // the cylinder the feed in cut ([`super::fine_bore`]); the
                 // shank and holder are read where the shift puts them.
                 if hits(&body) {
-                    out.push(Warning::RapidInStock { at: i });
+                    out.push(Warning::RapidInPart { at: i });
                 }
                 continue;
             }
@@ -228,12 +228,12 @@ fn judged(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw,
                 // the caller's; everything the lift enters is ours.
                 let (fr, column) = (Frame::new(m.from, None), rise(&edge, m.to.z - m.from.z));
                 if hits(&body) || (!column.is_empty() && index.hits(&fr, [0.0; 3], &column, allow, 0.0, &[], &[], &[])) {
-                    out.push(Warning::RapidInStock { at: i });
+                    out.push(Warning::RapidInPart { at: i });
                 }
                 continue;
             }
             if hits(&atoms) {
-                out.push(Warning::RapidInStock { at: i });
+                out.push(Warning::RapidInPart { at: i });
             }
         } else if !stack_only && hits(&edge) {
             out.push(Warning::Gouge { at: i });

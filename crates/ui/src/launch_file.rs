@@ -48,9 +48,14 @@ pub fn command(files: &[String]) -> Result<Option<CommandKind>, String> {
 }
 
 /// Queue the command for the file arguments on a new `state`, or put the
-/// refusal on its status line. Called once, at start.
-pub fn queue(state: &mut State, files: &[String]) {
+/// refusal on its status line. Called once, at start. `read_only`
+/// (`--read-only`, #3609) opens a project read-only; a model import makes
+/// a new project with no file, so the flag changes nothing there.
+pub fn queue(state: &mut State, files: &[String], read_only: bool) {
     match command(files) {
+        Ok(Some(CommandKind::OpenProjectFile(path))) if read_only => {
+            state.pending.push_back(CommandKind::OpenProjectReadOnly(path));
+        }
         Ok(Some(cmd)) => state.pending.push_back(cmd),
         Ok(None) => {}
         Err(msg) => state.refuse_drop(msg),
